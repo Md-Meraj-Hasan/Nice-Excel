@@ -99,6 +99,8 @@ jobs:
           name: libreoffice-arm64-build-diagnostics
           path: |
             native-engine/ARM64-BUILD-MANIFEST.txt
+            native-engine/ARM64-CORE-DISCOVERY.txt
+            native-engine/ARM64-ABI-PREFLIGHT-FAILED.txt
             native-engine/LIBREOFFICE-SOURCE-COMMIT.txt
             libreoffice-core/config.log
             libreoffice-core/autogen.input
