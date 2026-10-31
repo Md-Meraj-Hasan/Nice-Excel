@@ -24,13 +24,21 @@ SDK="$(cd "$SDK" && pwd)"
 NDK="$(cd "$NDK" && pwd)"
 LO_SRC="$(cd "$LO_SRC" && pwd)"
 
-# Force the 64-bit Android host triplet explicitly. LibreOffice's Android
-# distro defaults to 32-bit ARM when --host is omitted; that produced the
-# previous arm-linux-androideabi / armv7a build despite the workflow name.
+# Use LibreOffice's dedicated AArch64 Android distro configuration.
+# Do NOT combine --host=aarch64-linux-android with LibreOfficeAndroid:
+# that 32-bit distro config appends --host=arm-linux-androideabi later,
+# and Autoconf accepts the last --host value (silently selecting armv7a).
+DISTRO_CONFIG="$LO_SRC/distro-configs/LibreOfficeAndroidAarch64.conf"
+[[ -s "$DISTRO_CONFIG" ]] || fail "Missing $DISTRO_CONFIG. This LibreOffice ref does not provide the required AArch64 Android distro config."
+if ! grep -Eq '^--host=aarch64-linux-android$' "$DISTRO_CONFIG"; then
+  fail "LibreOfficeAndroidAarch64.conf does not declare --host=aarch64-linux-android; refusing an unverified distro config."
+fi
+if grep -Eq '^--host=(arm-linux-androideabi|arm-unknown-linux-androideabi)$' "$DISTRO_CONFIG"; then
+  fail "LibreOfficeAndroidAarch64.conf contains a 32-bit ARM host override."
+fi
 cat > "$LO_SRC/autogen.input" <<AUTOGEN
 --build=x86_64-unknown-linux-gnu
---host=aarch64-linux-android
---with-distro=LibreOfficeAndroid
+--with-distro=LibreOfficeAndroidAarch64
 --with-android-sdk=$SDK
 --with-android-ndk=$NDK
 --disable-debug
