@@ -46,3 +46,9 @@ Acceptance tests before switching the app:
 
 ## Safety rule
 Do not remove the current formula/POI path or connect the probe to production cell editing until native initialization and workbook open/recalculate/save/reopen tests pass. This protects the working grid during migration.
+
+
+## Phase 2 — JNI dependency-load preparation (v1.2)
+The diagnostic probe now follows the dependency load order used by LibreOffice's official Android Bootstrap `NativeLibLoader`: NSPR/NSS libraries, `c++_shared`, then `lo-native-code`. A unit test checks this order. The Gradle `jniLibs` source-set declaration is consolidated to one block.
+
+This is still only a loader preparation. The libraries are not included in this ZIP, and the matching official `LibreOfficeKit.java` bootstrap/JNI classes, runtime assets, native initialization, and XLSX calculation adapter are not yet integrated. A successful probe load would not by itself prove workbook calculation.

@@ -6,15 +6,7 @@ plugins {
 }
 
 android {
-    // Native libraries from the matching LibreOffice Android core build.
-    // The directory is empty until genuine LO outputs are supplied.
-    sourceSets {
-        main {
-            jniLibs.srcDirs = ["${rootProject.projectDir}/native-engine/jniLibs"]
-        }
-    }
-    // LibreOffice Android native outputs are supplied separately after a genuine
-    // LibreOffice core build. Keep the path stable for Gradle and CI validation.
+    // Package genuine, matching LibreOffice Android native outputs when supplied.
     sourceSets {
         main {
             jniLibs.srcDirs = ["${rootProject.projectDir}/native-engine/jniLibs"]
