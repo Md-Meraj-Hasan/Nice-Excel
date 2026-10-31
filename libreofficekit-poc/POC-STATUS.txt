@@ -1,0 +1,6 @@
+POC status: isolated scaffold created.
+Native liblo-native-code.so: NOT PRESENT.
+Official LibreOffice JNI bootstrap: NOT INTEGRATED.
+Native initialization: NOT TESTED.
+XLSX recalculation: NOT TESTED.
+Production NiceExcel UI: UNCHANGED.
