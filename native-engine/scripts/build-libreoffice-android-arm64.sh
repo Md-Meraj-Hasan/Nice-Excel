@@ -95,25 +95,25 @@ done
 
 [[ ${#ARM64_CORES[@]} -gt 0 ]] || fail "Found ${#ALL_CORES[@]} core candidate(s), but none is ELF64 AArch64. See $REPORT."
 
-# Prefer the strippedUIDebug output that matches the Android app build used by
-# this workflow. If it is absent, accept multiple copies only when byte-identical.
-PREFERRED=()
+# Select the single final, symbol-stripped output for the exact variant built
+# by this workflow. Gradle also keeps intermediate copies under
+# merged_jni_libs, merged_native_libs, jniLibs and obj/local; those are NOT
+# competing final outputs and must not make selection ambiguous.
+FINAL_SUFFIX="/intermediates/stripped_native_libs/strippedUIDebug/stripStrippedUIDebugDebugSymbols/out/lib/arm64-v8a/liblo-native-code.so"
+FINAL_CORES=()
 for candidate in "${ARM64_CORES[@]}"; do
-  [[ "$candidate" == *"/strippedUIDebug/"* ]] && PREFERRED+=("$candidate")
+  [[ "$candidate" == *"$FINAL_SUFFIX" ]] && FINAL_CORES+=("$candidate")
 done
-if [[ ${#PREFERRED[@]} -eq 1 ]]; then
-  CORE="${PREFERRED[0]}"
-elif [[ ${#PREFERRED[@]} -gt 1 ]]; then
-  fail "Multiple AArch64 strippedUIDebug cores found. Inspect $REPORT; refusing an ambiguous selection."
-else
-  declare -A HASH_TO_PATH=()
-  for candidate in "${ARM64_CORES[@]}"; do
-    hash="$(sha256sum "$candidate" | awk '{print $1}')"
-    HASH_TO_PATH["$hash"]="$candidate"
-  done
-  [[ ${#HASH_TO_PATH[@]} -eq 1 ]] || fail "Multiple non-identical AArch64 core variants found. Inspect $REPORT; refusing an ambiguous selection."
-  for candidate in "${ARM64_CORES[@]}"; do CORE="$candidate"; break; done
+if [[ ${#FINAL_CORES[@]} -ne 1 ]]; then
+  {
+    echo "Expected exactly one final strippedUIDebug ARM64 core; found ${#FINAL_CORES[@]}."
+    echo "Expected path suffix: $FINAL_SUFFIX"
+    echo "ARM64 candidates discovered:"
+    printf '  %s\n' "${ARM64_CORES[@]}"
+  } | tee -a "$REPORT" >&2
+  fail "Cannot uniquely identify the final stripped ARM64 core. Refusing to select an intermediate copy."
 fi
+CORE="${FINAL_CORES[0]}"
 
 OUT_DIR="$(dirname "$CORE")"
 printf '\nSELECTED ARM64 CORE: %s\n' "$CORE" | tee -a "$REPORT"
