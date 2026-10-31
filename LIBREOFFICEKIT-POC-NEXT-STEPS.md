@@ -1,23 +1,11 @@
-# LibreOfficeKit Android proof-of-concept — next stage
+# LibreOfficeKit POC — next steps
 
-## Why not add a Maven dependency only?
-LibreOfficeKit is a native C/C++ API that exposes LibreOffice functionality. The official Android application bundles a LibreOffice core native library and uses JNI. Its documented architecture uses separate UI, OpenGL rendering, LOKit and native LibreOffice threads; rendering and edit events must be handled by the client.
+1. Build the official LibreOffice Android ARM64 native core with a pinned source revision and compatible Android toolchain.
+2. Add all matching native dependencies to `native-engine/jniLibs/arm64-v8a/` and run `check-arm64-core.sh`.
+3. Import matching JNI/bootstrap Java sources and runtime data from that same revision; initialize off the UI thread.
+4. Prove native initialization and XLSX open, recalculate, save, and reopen in an isolated test harness.
+5. Implement a Kotlin workbook adapter that preserves the existing NiceExcel grid and transfers workbook/cell state safely.
+6. Run formula acceptance tests on a physical ARM64 device.
+7. Only after passing, route formula recalculation through LibreOffice and remove legacy formula engines in a separate, reviewable change.
 
-Official references:
-- https://docs.libreoffice.org/android.html
-- https://docs.libreoffice.org/libreofficekit.html
-- https://github.com/LibreOffice/core/blob/master/android/README.md
-
-## POC acceptance checklist
-1. Build an Android ARM64 test APK with a compatible LibreOffice native core.
-2. Open a small `.xlsx` file containing formulas, cell styles, multiple sheets, and a chart.
-3. Edit a cell and formula, save, reopen in desktop LibreOffice, and compare results/styles.
-4. Measure installed APK size, first-open time, memory, and scroll/edit latency on a real phone.
-5. Only integrate into Nice Excel if build reproducibility, licensing notices, app size, and UI embedding are acceptable.
-
-## Current status
-This file is a technical plan only. LibreOfficeKit and its native binaries are **not integrated** in this project. The current app continues to use the existing Kotlin grid and lightweight XLSX codec.
-
-
-## Current Nice Excel milestone
-The Kotlin app now has a small additional text-formula evaluator for common text functions. It is not a substitute for LibreOffice's calculation engine. The Android LibreOfficeKit proof-of-concept remains separate and unintegrated.
+A normal `assembleDebug` success is not proof of LibreOffice integration. The `Verify LibreOffice Calc Native APK` workflow intentionally fails unless the genuine native core is present and packaged.

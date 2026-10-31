@@ -1,6 +1,3 @@
-POC status: isolated scaffold created.
-Native liblo-native-code.so: NOT PRESENT.
-Official LibreOffice JNI bootstrap: NOT INTEGRATED.
-Native initialization: NOT TESTED.
-XLSX recalculation: NOT TESTED.
-Production NiceExcel UI: UNCHANGED.
+POC STATUS: scaffolding and packaging wiring only.
+The LibreOffice native core, matching JNI/bootstrap classes, UNO runtime data, and XLSX calculation adapter are not included.
+No formula-engine switch has been made. Existing production formula path is intentionally retained until end-to-end Android tests pass.
