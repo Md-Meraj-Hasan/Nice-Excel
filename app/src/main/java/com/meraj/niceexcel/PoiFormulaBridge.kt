@@ -9,6 +9,72 @@ import java.util.Locale
 internal object PoiFormulaBridge {
     data class Result(val text: String? = null, val number: Double? = null, val error: String? = null)
 
+    /**
+     * Evaluate every formula in one workbook/evaluator pass. The previous grid path
+     * rebuilt an HSSFWorkbook for every formula cell, which made initial workbook
+     * loading scale very poorly on formula-heavy XLSX files.
+     */
+    fun evaluateAll(allSheets: Map<String, out Map<String, String>>): Map<String, Result> = try {
+        HSSFWorkbook().use { workbook ->
+            val addressPattern = Regex("^([A-Z]+)([0-9]+)$")
+            fun coordinates(address: String): Pair<Int, Int>? {
+                val m = addressPattern.matchEntire(address.uppercase(Locale.US)) ?: return null
+                var col = 0
+                m.groupValues[1].forEach { col = col * 26 + (it - 'A' + 1) }
+                val row = m.groupValues[2].toIntOrNull() ?: return null
+                if (row < 1) return null
+                return (row - 1) to (col - 1)
+            }
+            val safeNames = linkedMapOf<String, String>()
+            allSheets.keys.forEach { name ->
+                val safeName = runCatching { org.apache.poi.ss.util.WorkbookUtil.createSafeSheetName(name) }
+                    .getOrDefault("Sheet${safeNames.size + 1}")
+                safeNames[name] = safeName
+                if (workbook.getSheet(safeName) == null) workbook.createSheet(safeName)
+            }
+            val formulaCells = linkedMapOf<String, org.apache.poi.ss.usermodel.Cell>()
+            for ((originalName, cells) in allSheets) {
+                val sheet = workbook.getSheet(safeNames[originalName]) ?: continue
+                for ((address, raw) in cells) {
+                    val pos = coordinates(address) ?: continue
+                    val row = sheet.getRow(pos.first) ?: sheet.createRow(pos.first)
+                    val cell = row.getCell(pos.second) ?: row.createCell(pos.second)
+                    when {
+                        raw.trimStart().startsWith("=") -> {
+                            cell.cellFormula = normalizeXor(
+                                normalizeXlookup(normalizeArgumentSeparators(raw.trim().removePrefix("=")))
+                            )
+                            formulaCells["$originalName!${address.uppercase(Locale.US)}"] = cell
+                        }
+                        raw.toDoubleOrNull() != null -> cell.setCellValue(raw.toDouble())
+                        raw.equals("TRUE", ignoreCase = true) -> cell.setCellValue(true)
+                        raw.equals("FALSE", ignoreCase = true) -> cell.setCellValue(false)
+                        raw.isNotEmpty() -> cell.setCellValue(raw)
+                        else -> cell.setBlank()
+                    }
+                }
+            }
+            val evaluator = workbook.creationHelper.createFormulaEvaluator()
+            evaluator.clearAllCachedResultValues()
+            evaluator.evaluateAll()
+            val results = linkedMapOf<String, Result>()
+            formulaCells.forEach { (key, cell) ->
+                val value = runCatching { evaluator.evaluate(cell) }.getOrNull() ?: return@forEach
+                val result = when (value.cellType) {
+                    CellType.NUMERIC -> Result(number = value.numberValue)
+                    CellType.STRING -> Result(text = value.stringValue)
+                    CellType.BOOLEAN -> Result(text = if (value.booleanValue) "TRUE" else "FALSE")
+                    CellType.ERROR -> Result(error = FormulaError.forInt(value.errorValue.toInt()).string)
+                    else -> null
+                }
+                if (result != null) results[key] = result
+            }
+            results
+        }
+    } catch (_: Throwable) {
+        emptyMap()
+    }
+
     /** Backward-compatible single-sheet entry point used by unit tests. */
     fun evaluate(cells: Map<String, String>, formulaAddress: String, expression: String): Result? =
         evaluate(linkedMapOf("Sheet1" to cells), "Sheet1", formulaAddress, expression)
