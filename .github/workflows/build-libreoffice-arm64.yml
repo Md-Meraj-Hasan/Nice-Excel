@@ -1,12 +1,15 @@
 name: Build official LibreOffice Android ARM64 core
 
 on:
+  push:
+    paths:
+      - '.github/workflows/build-libreoffice-arm64.yml'
   workflow_dispatch:
     inputs:
       libreoffice_ref:
         description: LibreOffice core branch, tag, or commit to build
         required: true
-        default: master
+        default: 6e0b39149b549bd05065d451006c4d060589891d
         type: string
       build_jobs:
         description: Parallel build jobs (keep low on hosted runners)
@@ -28,7 +31,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 360
     env:
-      LO_BUILD_JOBS: ${{ inputs.build_jobs }}
+      LO_BUILD_JOBS: ${{ inputs.build_jobs || '2' }}
     steps:
       - name: Checkout NiceExcel
         uses: actions/checkout@v4
@@ -69,7 +72,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: LibreOffice/core
-          ref: ${{ inputs.libreoffice_ref }}
+          ref: ${{ inputs.libreoffice_ref || '6e0b39149b549bd05065d451006c4d060589891d' }}
           path: libreoffice-core
           fetch-depth: 1
 
@@ -91,6 +94,31 @@ jobs:
         run: |
           bash native-engine/scripts/check-arm64-core.sh
           bash native-engine/scripts/check-native-dependency-closure.sh
+
+      - name: Verify generated LibreOffice runtime assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s android/app/assets/program/fundamentalrc
+          test -s android/app/assets/program/bootstraprc
+          test -s android/app/assets/program/unorc
+          test -s android/app/assets/unpack/program/sofficerc
+          test -s android/app/assets_strippedUI/share/registry/main.xcd
+          test -s android/app/assets_strippedUI/share/registry/res/registry_en-US.xcd
+          files=$(find android/app/assets android/app/assets_strippedUI -type f | wc -l)
+          echo "LibreOffice runtime asset files: $files"
+          test "$files" -gt 20
+
+      - name: Upload LibreOffice runtime assets
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: libreoffice-arm64-runtime-assets
+          path: |
+            android/app/assets/**
+            android/app/assets_strippedUI/**
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Upload native build logs and manifest even on failure
         if: always()
