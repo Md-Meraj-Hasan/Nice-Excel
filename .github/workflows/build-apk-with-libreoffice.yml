@@ -4,9 +4,12 @@ on:
   workflow_dispatch:
     inputs:
       native_run_id:
-        description: "Successful LibreOffice native-core workflow Run ID"
+        description: "Successful LibreOffice native-core workflow Run ID (including runtime assets)"
         required: true
         type: string
+  workflow_run:
+    workflows: ["Build official LibreOffice Android ARM64 core"]
+    types: [completed]
 
 permissions:
   contents: read
@@ -14,6 +17,7 @@ permissions:
 
 jobs:
   build:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 90
 
@@ -29,6 +33,30 @@ jobs:
           run-id: ${{ inputs.native_run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           path: /tmp/libreoffice-core
+
+      - name: Download matching LibreOffice runtime assets
+        uses: actions/download-artifact@v4
+        with:
+          name: libreoffice-arm64-runtime-assets
+          repository: ${{ github.repository }}
+          run-id: ${{ github.event.workflow_run.id || inputs.native_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: /tmp/libreoffice-runtime
+
+      - name: Stage LibreOffice runtime assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT=app/src/main/assets
+          mkdir -p "$ROOT"
+          test -s /tmp/libreoffice-runtime/assets/program/fundamentalrc
+          test -s /tmp/libreoffice-runtime/assets/unpack/program/sofficerc
+          cp -a /tmp/libreoffice-runtime/assets/. "$ROOT/"
+          cp -a /tmp/libreoffice-runtime/assets_strippedUI/. "$ROOT/"
+          for required in program/fundamentalrc program/bootstraprc program/unorc program/services.rdb unpack/program/sofficerc share/registry/main.xcd share/registry/res/registry_en-US.xcd; do
+            test -s "$ROOT/$required" || { echo "Missing LibreOffice runtime asset: $required" >&2; exit 1; }
+          done
+          echo "Staged $(find "$ROOT" -type f | wc -l) LibreOffice runtime files"
 
       - name: Stage native libraries
         shell: bash
@@ -91,8 +119,10 @@ jobs:
       - name: Run unit tests and compile official Java bootstrap
         run: gradle --no-daemon testDebugUnitTest
 
-      - name: Verify native and Java bootstrap prerequisites
-        run: gradle --no-daemon :app:verifyLibreOfficeArm64Core
+      - name: Verify native, Java bootstrap, and runtime prerequisites
+        run: |
+          gradle --no-daemon :app:verifyLibreOfficeArm64Core
+          gradle --no-daemon :app:verifyLibreOfficeRuntimeAssets
 
       - name: Build APK
         run: gradle --no-daemon assembleDebug
