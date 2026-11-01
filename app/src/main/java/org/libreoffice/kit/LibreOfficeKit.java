@@ -10,6 +10,7 @@
 package org.libreoffice.kit;
 
 import android.app.Activity;
+import android.content.Context;
 import android.content.pm.ApplicationInfo;
 import android.content.res.AssetManager;
 import android.util.Log;
@@ -155,21 +156,30 @@ public final class LibreOfficeKit
     // LO-based apps.
     public static synchronized void init(Activity activity)
     {
+        init((Context) activity);
+    }
+
+    // Context-based entry point allows initialization in an isolated Android
+    // service process without manufacturing or retaining an Activity.
+    public static synchronized void init(Context context)
+    {
         if (initializeDone) {
             return;
         }
 
-        mgr = activity.getResources().getAssets();
+        Context appContext = context.getApplicationContext();
+        if (appContext == null) appContext = context;
+        mgr = appContext.getResources().getAssets();
 
-        ApplicationInfo applicationInfo = activity.getApplicationInfo();
+        ApplicationInfo applicationInfo = appContext.getApplicationInfo();
         String dataDir = applicationInfo.dataDir;
         prepareUnpackedRuntime(mgr, dataDir);
         Log.i(LOGTAG, String.format("Initializing LibreOfficeKit, dataDir=%s\n", dataDir));
 
         redirectStdio(true);
 
-        String cacheDir = activity.getApplication().getCacheDir().getAbsolutePath();
-        String apkFile = activity.getApplication().getPackageResourcePath();
+        String cacheDir = appContext.getCacheDir().getAbsolutePath();
+        String apkFile = appContext.getPackageResourcePath();
 
         if (!initializeNative(dataDir, cacheDir, apkFile, mgr)) {
             Log.e(LOGTAG, "Initialize native failed!");
