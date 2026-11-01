@@ -3,6 +3,7 @@ package com.meraj.niceexcel
 import android.app.Activity
 import android.net.Uri
 import android.os.Looper
+import android.os.Build
 import java.nio.ByteBuffer
 import org.apache.poi.ss.usermodel.CellType
 import org.apache.poi.ss.usermodel.FormulaError
@@ -41,6 +42,9 @@ internal object LibreOfficeCalcEngine {
     ): Map<String, String> {
         check(Looper.myLooper() != Looper.getMainLooper()) {
             "LibreOffice recalculation must run off the Android UI thread"
+        }
+        check(Build.SUPPORTED_ABIS.contains("arm64-v8a")) {
+            "The bundled LibreOffice Calc native engine is available for arm64-v8a only"
         }
         if (workbookSnapshot.values.none { cells -> cells.values.any { it.trimStart().startsWith("=") } }) {
             return emptyMap()
