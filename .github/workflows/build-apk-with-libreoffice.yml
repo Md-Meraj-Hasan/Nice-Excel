@@ -84,27 +84,22 @@ jobs:
           echo "Native libraries found: $count"
           test "$count" -eq 14
 
-      - name: Fetch matching official LibreOffice Android Java bootstrap
+      - name: Verify repository LibreOffice Java bootstrap is retained
         shell: bash
-        env:
-          LO_COMMIT: 6e0b39149b549bd05065d451006c4d060589891d
         run: |
           set -euo pipefail
-          SRC=/tmp/libreoffice-source
-          mkdir -p "$SRC"
-          git -C "$SRC" init
-          git -C "$SRC" remote add origin https://github.com/LibreOffice/core.git
-          git -C "$SRC" fetch --depth=1 --filter=blob:none origin "$LO_COMMIT"
-          git -C "$SRC" sparse-checkout init --cone
-          git -C "$SRC" sparse-checkout set android/Bootstrap/src
-          git -C "$SRC" checkout --detach FETCH_HEAD
-          BOOTSTRAP="$SRC/android/Bootstrap/src"
-          test -s "$BOOTSTRAP/org/libreoffice/kit/LibreOfficeKit.java"
-          mkdir -p app/src/main/java
-          cp -a "$BOOTSTRAP/." app/src/main/java/
-          echo "Imported official Java bootstrap from LibreOffice commit $LO_COMMIT"
-          find app/src/main/java/org/libreoffice -type f -name '*.java' -print
-
+          # Use the checked-in NiceExcel bootstrap adapter. Do not overwrite it
+          # with upstream Java sources: the adapter extracts UNO registries
+          # before JNI startup and validates the runtime layout.
+          for source in \
+            app/src/main/java/org/libreoffice/kit/LibreOfficeKit.java \
+            app/src/main/java/org/libreoffice/kit/Office.java \
+            app/src/main/java/org/libreoffice/kit/Document.java; do
+            test -s "$source" || { echo "Missing checked-in LibreOffice bootstrap source: $source" >&2; exit 1; }
+          done
+          grep -q 'prepareUnpackedRuntime' app/src/main/java/org/libreoffice/kit/LibreOfficeKit.java
+          echo "Using checked-in NiceExcel LibreOffice bootstrap adapter."
+          
       - name: Verify ARM64 architecture
         run: bash native-engine/scripts/check-arm64-core.sh
 
