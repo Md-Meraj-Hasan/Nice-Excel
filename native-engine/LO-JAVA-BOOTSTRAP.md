@@ -1,29 +1,33 @@
-# LibreOffice Android Java bootstrap sources
+# LibreOffice Android bootstrap and runtime packaging
 
-This branch adds the official LibreOffice Android Bootstrap Java wrappers to the NiceExcel app source tree.
+## Pinned upstream revision
 
-## Source pin
+The following official LibreOffice Android Bootstrap Java wrappers are copied unchanged into `app/src/main/java/org/libreoffice/kit/` from core revision `6e0b39149b549bd05065d451006c4d060589891d`:
 
-The four Java files under `app/src/main/java/org/libreoffice/kit/` are copied unchanged from the LibreOffice core revision:
+- `LibreOfficeKit.java`
+- `Office.java`
+- `Document.java`
+- `DirectBufferAllocator.java`
 
-`6e0b39149b549bd05065d451006c4d060589891d`
+The ARM64 native-core build diagnostics confirm that the native core was also built from this exact revision. The wrappers retain their upstream MPL-2.0 notices.
 
-Files:
-- `LibreOfficeKit.java` — native library loading and JNI initialization entry point
-- `Office.java` — LibreOfficeKit office/document factory wrapper
-- `Document.java` — document API wrapper
-- `DirectBufferAllocator.java` — direct ByteBuffer helper
+## Completed groundwork
 
-Each file retains its upstream MPL-2.0 header.
+- The four Java wrappers compile with the NiceExcel Android project.
+- CI `testDebugUnitTest assembleDebug` passed on this branch.
+- The native-core workflow now has a matching-revision gate and a separate artifact for official Android runtime assets: `assets`, `assets_strippedUI`, generated license and notice resources, and the source commit marker.
+- The LibreOffice APK workflow downloads native libraries and runtime assets from the same native build run, verifies the pinned source SHA, stages the assets without replacing NiceExcel's existing `niceexcel_index.html`, and rewrites the fontconfig cache path for package `com.meraj.niceexcel`.
+- An APK verification script checks required runtime files, fonts, and license resources.
 
-## Safety boundary
+## Not yet completed
 
-These classes are compiled into the Android app but are not called by the production grid or formula engine. The existing formula path and UI remain unchanged.
+These changes are still isolated from the production grid and formula engine. A successful Java compile or APK packaging check does not prove that LibreOfficeKit initializes or calculates a workbook.
 
-This is only the Java/JNI wrapper layer. A working LibreOffice runtime still requires:
-1. the matching ARM64 native libraries from the same LibreOffice revision;
-2. the Android runtime assets/data and fonts produced by that same build;
-3. initialization on a dedicated worker/LOKit thread;
-4. an XLSX open → hard-recalculate → save → reopen adapter and physical-device acceptance tests.
+Remaining gates:
+1. Run the native build workflow at the pinned revision and verify both native-core and runtime-assets artifacts are produced.
+2. Run the APK workflow using that same native build run ID.
+3. On an ARM64 Android device, verify `LibreOfficeKit.init(Activity)` succeeds on a dedicated worker thread and the returned LOK handle is valid.
+4. Implement and test an isolated XLSX open → hard-recalculate → save → reopen adapter.
+5. Verify formulas, formula errors, cached values, sheet names, and formatting survive the round trip.
 
-Do not switch production formula calculation to LibreOffice until those checks pass.
+Do not connect LibreOffice to production cell editing or remove the current formula path until all runtime and device acceptance tests pass.
