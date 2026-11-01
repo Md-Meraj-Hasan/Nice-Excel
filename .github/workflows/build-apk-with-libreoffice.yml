@@ -1,11 +1,18 @@
 name: Build NiceExcel APK with LibreOffice ARM64
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'app/**'
+      - 'native-engine/scripts/check-apk-libreoffice.sh'
+      - '.github/workflows/build-apk-with-libreoffice.yml'
   workflow_dispatch:
     inputs:
       native_run_id:
         description: "Successful LibreOffice native-core workflow Run ID (including runtime assets)"
         required: true
+        default: '41288955912'
         type: string
   workflow_run:
     workflows: ["Build official LibreOffice Android ARM64 core"]
@@ -30,7 +37,7 @@ jobs:
         with:
           name: libreoffice-arm64-native-core
           repository: ${{ github.repository }}
-          run-id: ${{ github.event.workflow_run.id || inputs.native_run_id }}
+          run-id: ${{ github.event.workflow_run.id || inputs.native_run_id || '41288955912' }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           path: /tmp/libreoffice-core
 
