@@ -164,7 +164,7 @@ internal object LibreOfficeCalcEngine {
                 for (row in sheet) {
                     for (cell in row) {
                         if (cell.cellType != CellType.FORMULA) continue
-                        val address = CellReference(cell.rowIndex, cell.columnIndex)
+                        val address = CellReference(cell.rowIndex, cell.columnIndex.toShort())
                             .formatAsString().replace("$", "")
                         val value = when (cell.cachedFormulaResultType) {
                             CellType.NUMERIC -> cell.numericCellValue.toString()
