@@ -54,15 +54,25 @@ gradle --no-daemon assembleDebug
 bash native-engine/scripts/check-apk-libreoffice.sh app/build/outputs/apk/debug/app-debug.apk
 ```
 
-## Important integration gap after packaging
+## Integration and remaining acceptance gap
 
-Even after the `.so` files are packaged, Calc is not yet usable from NiceExcel.
-The next code milestone must import the matching official JNI/bootstrap classes,
-initialize the runtime on a dedicated worker thread, provide the required
-LibreOffice program/runtime data, and implement an XLSX open → recalculate →
-save → reopen adapter. Only then should formula test workbooks be run on a
-physical ARM64 Android device. Keep the existing formula engine and Kotlin grid
-until that acceptance test passes.
+The NiceExcel repository now includes the matching official Java/JNI bootstrap
+classes and `LibreOfficeCalcEngine.kt`. The adapter serializes LibreOfficeKit
+calls on a dedicated worker thread, creates a temporary XLSX snapshot from the
+current workbook model, requests a hard Calc recalculation, saves as XLSX,
+reopens the result, and returns cached formula results to the existing grid.
+LibreOffice is the preferred evaluator when the native runtime is available;
+the established POI/local evaluator remains the fallback.
+
+The APK workflow now stages both the matching ARM64 shared libraries and the
+generated Android runtime assets (program/share/unpack data and fonts) from the
+same LibreOffice build run. It verifies the native core, Java bootstrap, and
+runtime assets before packaging.
+
+A successful CI build still does not prove device-side JNI initialization or
+formula correctness. Run the formula acceptance workbook on a physical ARM64
+Android device and verify XLSX save/reopen, formula errors, cross-sheet
+references, and app stability before removing the fallback evaluator.
 
 ## CI resource caution
 
