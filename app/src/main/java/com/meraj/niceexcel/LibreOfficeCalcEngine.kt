@@ -73,9 +73,10 @@ internal object LibreOfficeCalcEngine {
                 val sheet = workbook.createSheet(sheetName)
                 values.forEach cellLoop@{ (address, rawValue) ->
                     val ref = runCatching { CellReference(address) }.getOrNull() ?: return@cellLoop
-                    if (ref.row < 0 || ref.col < 0 || rawValue.isEmpty()) return@cellLoop
+                    val columnIndex = ref.col.toInt()
+                    if (ref.row < 0 || columnIndex < 0 || rawValue.isEmpty()) return@cellLoop
                     val row = sheet.getRow(ref.row) ?: sheet.createRow(ref.row)
-                    val cell = row.getCell(ref.col) ?: row.createCell(ref.col)
+                    val cell = row.getCell(columnIndex) ?: row.createCell(columnIndex)
                     val value = rawValue.trim()
                     when {
                         value.startsWith("=") -> cell.cellFormula = value.drop(1)
