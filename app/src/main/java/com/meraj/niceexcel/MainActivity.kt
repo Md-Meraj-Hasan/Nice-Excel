@@ -1672,28 +1672,14 @@ class MainActivity : Activity() {
         try {
             backgroundExecutor.execute {
                 val results = linkedMapOf<String, Pair<String, String>>()
-                // LibreOffice Calc is the primary evaluator. If the native runtime is
-                // unavailable on this device/build, retain the established POI/local path.
-                val libreOfficeResults = runCatching {
-                    LibreOfficeCalcEngine.recalculateSnapshot(this@MainActivity, allSheetsSnapshot)
-                }.onFailure { error ->
-                    Log.w("NiceExcelLO", "LibreOffice Calc unavailable; using compatibility evaluator", error)
-                }.getOrNull()
-
+                // LibreOfficeKit is intentionally disabled in the production calculation
+                // path until its native Android runtime passes initialization and device tests.
+                // Keep formula evaluation on the existing Apache POI + Kotlin compatibility path.
                 formulas.forEach { (formulaSheet, address, raw) ->
                     if (jobId != formulaRecalcJobId.get() || isFinishing || isDestroyed) return@forEach
                     val st = stylesSnapshot[formulaSheet]?.get(address)
                     val cacheKey = "$formulaSheet|$address|$raw|${st?.numberFormat ?: "General"}"
                     val rendered = runCatching {
-                        val libreOfficeValue = libreOfficeResults?.get("$formulaSheet!$address")
-                        if (libreOfficeValue != null) {
-                            val numericValue = libreOfficeValue.toDoubleOrNull()
-                            if (numericValue != null) {
-                                formatNumber(numericValue, st?.numberFormat ?: "General", libreOfficeValue)
-                            } else {
-                                libreOfficeValue
-                            }
-                        } else {
                         val expression = raw.drop(1)
                         val formulaCells = allSheetsSnapshot[formulaSheet].orEmpty()
                         val localEngine = FormulaEngine(formulaCells)
@@ -1713,8 +1699,6 @@ class MainActivity : Activity() {
                                 }
                             }
                         } ?: imported?.error ?: "#ERROR"
-                        }
-                        }
                     }.getOrElse { error -> error.message?.takeIf { it.startsWith("#") } ?: "#ERROR" }
                     results["$formulaSheet!$address"] = cacheKey to rendered
                 }
@@ -2834,9 +2818,9 @@ class MainActivity : Activity() {
             }.setNegativeButton("Cancel", null).showProfessional()
     }
     /**
-     * Save a stable workbook snapshot off the UI thread. LibreOffice Calc writes
-     * formula caches into the actual XLSX when available; the original OOXML
-     * remains a safe fallback and requests recalculation when opened in Excel.
+     * Save a stable workbook snapshot off the UI thread. LibreOfficeKit is disabled
+     * until its native Android runtime is proven stable; the OOXML writer preserves
+     * formulas and requests recalculation when opened in a spreadsheet application.
      */
     private fun saveXlsxWithCalc(uri: android.net.Uri) {
         val sheetSnapshot = sheets.mapValues { (_, cells) -> cells.toMap() }
@@ -2856,20 +2840,9 @@ class MainActivity : Activity() {
                     java.io.FileOutputStream(sourceFile).use { output ->
                         XlsxCodec.write(output, sheetSnapshot, styleSnapshot, metadataSnapshot, mergeSnapshot)
                     }
-                    val hasFormulas = sheetSnapshot.values.any { cells ->
-                        cells.values.any { it.trimStart().startsWith("=") }
-                    }
-                    val finalFile = if (hasFormulas) {
-                        runCatching {
-                            LibreOfficeCalcEngine.recalculateXlsxFile(this@MainActivity, sourceFile, calculatedFile)
-                            usedLibreOffice = true
-                            calculatedFile
-                        }.onFailure { error ->
-                            Log.w("NiceExcelLO", "Save-time Calc recalculation unavailable; saving original XLSX", error)
-                        }.getOrElse { sourceFile }
-                    } else {
-                        sourceFile
-                    }
+                    // Do not initialize the LibreOffice native engine while saving.
+                    // XlsxCodec keeps the original formula expressions in the workbook.
+                    val finalFile = sourceFile
 
                     val destination = contentResolver.openOutputStream(uri)
                         ?: error("Could not open the selected save destination")
