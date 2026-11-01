@@ -100,6 +100,7 @@ tasks.register("verifyLibreOfficeRuntimeAssets") {
             "program/unorc",
             "program/services.rdb",
             "unpack/program/sofficerc",
+            "unpack/etc/fonts/fonts.conf",
             "share/registry/main.xcd",
             "share/registry/res/registry_en-US.xcd"
         ]
