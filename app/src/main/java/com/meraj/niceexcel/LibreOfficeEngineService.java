@@ -14,6 +14,9 @@ import android.util.Log;
 import org.libreoffice.kit.LibreOfficeKit;
 
 import java.io.File;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -23,6 +26,7 @@ import java.util.concurrent.Executors;
  * Protocol:
  *   1 -> initialize; reply 2
  *   3 -> recalculate XLSX using KEY_INPUT_PATH and KEY_OUTPUT_PATH; reply 4
+ *   5 -> recalculate a bounded workbook snapshot; reply 6 with formula result pairs
  */
 public final class LibreOfficeEngineService extends Service {
     private static final String TAG = "NiceExcel-LO-Service";
@@ -30,10 +34,16 @@ public final class LibreOfficeEngineService extends Service {
     public static final int MSG_INITIALIZE_RESULT = 2;
     public static final int MSG_RECALCULATE_XLSX = 3;
     public static final int MSG_RECALCULATE_XLSX_RESULT = 4;
+    public static final int MSG_RECALCULATE_SNAPSHOT = 5;
+    public static final int MSG_RECALCULATE_SNAPSHOT_RESULT = 6;
     public static final String KEY_OK = "ok";
     public static final String KEY_DETAIL = "detail";
     public static final String KEY_INPUT_PATH = "inputPath";
     public static final String KEY_OUTPUT_PATH = "outputPath";
+    public static final String KEY_SNAPSHOT = "snapshot";
+    public static final String KEY_RESULT_KEYS = "resultKeys";
+    public static final String KEY_RESULT_VALUES = "resultValues";
+    private static final int MAX_SNAPSHOT_CHARS = 350_000;
 
     private final ExecutorService engineExecutor = Executors.newSingleThreadExecutor(r -> {
         Thread thread = new Thread(r, "NiceExcel-LO-Service-Worker");
@@ -42,7 +52,7 @@ public final class LibreOfficeEngineService extends Service {
     });
 
     private final Messenger messenger = new Messenger(new Handler(Looper.getMainLooper(), message -> {
-        if (message.what != MSG_INITIALIZE && message.what != MSG_RECALCULATE_XLSX) return false;
+        if (message.what != MSG_INITIALIZE && message.what != MSG_RECALCULATE_XLSX\n                && message.what != MSG_RECALCULATE_SNAPSHOT) return false;
         final int request = message.what;
         final Messenger replyTo = message.replyTo;
         final Bundle requestData = message.getData();
@@ -52,7 +62,7 @@ public final class LibreOfficeEngineService extends Service {
 
     private void handleRequest(int request, Bundle requestData, Messenger replyTo) {
         Message reply = Message.obtain(null,
-                request == MSG_INITIALIZE ? MSG_INITIALIZE_RESULT : MSG_RECALCULATE_XLSX_RESULT);
+                request == MSG_INITIALIZE ? MSG_INITIALIZE_RESULT\n                        : request == MSG_RECALCULATE_XLSX ? MSG_RECALCULATE_XLSX_RESULT\n                        : MSG_RECALCULATE_SNAPSHOT_RESULT);
         Bundle result = new Bundle();
         try {
             if (!LibreOfficeKit.isInitialized()) {
@@ -62,7 +72,7 @@ public final class LibreOfficeEngineService extends Service {
                 throw new IllegalStateException("LibreOfficeKit native initialization returned false");
             }
 
-            if (request == MSG_RECALCULATE_XLSX) {
+            if (request == MSG_RECALCULATE_SNAPSHOT) {\n                @SuppressWarnings("unchecked")\n                Map<String, Map<String, String>> snapshot =\n                        (Map<String, Map<String, String>>) requestData.getSerializable(KEY_SNAPSHOT);\n                if (snapshot == null) throw new IllegalArgumentException("Workbook snapshot is missing");\n                int payloadChars = 0;\n                for (Map<String, String> cells : snapshot.values()) {\n                    for (Map.Entry<String, String> cell : cells.entrySet()) {\n                        payloadChars += cell.getKey().length() + cell.getValue().length();\n                        if (payloadChars > MAX_SNAPSHOT_CHARS) {\n                            throw new IllegalArgumentException("Workbook snapshot exceeds safe IPC size; use XLSX file IPC");\n                        }\n                    }\n                }\n                Map<String, String> calculated = LibreOfficeCalcEngine.INSTANCE.recalculateSnapshot(\n                        getApplicationContext(), snapshot);\n                ArrayList<String> keys = new ArrayList<>(calculated.size());\n                ArrayList<String> values = new ArrayList<>(calculated.size());\n                for (Map.Entry<String, String> entry : calculated.entrySet()) {\n                    keys.add(entry.getKey());\n                    values.add(entry.getValue());\n                }\n                result.putStringArrayList(KEY_RESULT_KEYS, keys);\n                result.putStringArrayList(KEY_RESULT_VALUES, values);\n                result.putString(KEY_DETAIL, "LibreOffice Calc snapshot recalculation completed");\n                Log.i(TAG, "Recalculated snapshot formulas: " + calculated.size());\n            } else if (request == MSG_RECALCULATE_XLSX) {
                 String inputPath = requestData.getString(KEY_INPUT_PATH);
                 String outputPath = requestData.getString(KEY_OUTPUT_PATH);
                 if (inputPath == null || outputPath == null) {
