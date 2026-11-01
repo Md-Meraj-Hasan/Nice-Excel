@@ -1677,8 +1677,9 @@ class MainActivity : Activity() {
                 val libreOfficeBatchResults = runCatching {
                     LibreOfficeServiceClient.recalculateSnapshot(this@MainActivity, allSheetsSnapshot)
                 }.onFailure { failure ->
-                    Log.w("NiceExcel-Formula", "LibreOffice Calc unavailable; using existing formula fallback", failure)
+                    Log.e("NiceExcel-Formula", "LIBREOFFICE_RUNTIME_FAILURE: Calc service/recalculation failed; POI fallback will be used", failure)
                 }.getOrNull().orEmpty()
+                Log.i("NiceExcel-Formula", "LIBREOFFICE_RUNTIME_RESULT: formulas=${allFormulas.size}, returned=${libreOfficeBatchResults.size}, sampleG2=${libreOfficeBatchResults.entries.firstOrNull { it.key.endsWith("!G2") }?.value ?: "<missing>"}")
                 val allFormulaKeys = allFormulas.map { (name, address, _) ->
                     "$name!${address.uppercase(Locale.US)}"
                 }.toSet()
