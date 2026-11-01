@@ -1699,6 +1699,7 @@ class MainActivity : Activity() {
                                 }
                             }
                         } ?: imported?.error ?: "#ERROR"
+                        }
                     }.getOrElse { error -> error.message?.takeIf { it.startsWith("#") } ?: "#ERROR" }
                     results["$formulaSheet!$address"] = cacheKey to rendered
                 }
