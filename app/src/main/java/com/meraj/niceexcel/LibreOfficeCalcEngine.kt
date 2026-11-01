@@ -172,7 +172,7 @@ object LibreOfficeCalcEngine {
             ).invoke(document, ".uno:CalculateHard", "{}", false)
             documentClass.getMethod(
                 "saveAs", String::class.java, String::class.java, String::class.java
-            ).invoke(document, outputUrl, "Calc MS Excel 2007 XML", null)
+            ).invoke(document, outputUrl, "Calc MS Excel 2007 XML", "")
         } finally {
             documentClass.getMethod("destroy").invoke(document)
         }
