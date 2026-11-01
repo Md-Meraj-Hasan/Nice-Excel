@@ -67,6 +67,24 @@ internal object LibreOfficeCalcEngine {
         }
     }
 
+    /**
+     * Recalculate an existing XLSX file in place-to-output form. Used by Save so
+     * formula caches are written into the actual workbook the user receives.
+     */
+    fun recalculateXlsxFile(activity: Activity, input: File, output: File) {
+        check(Looper.myLooper() != Looper.getMainLooper()) {
+            "LibreOffice recalculation must run off the Android UI thread"
+        }
+        check(Build.SUPPORTED_ABIS.contains("arm64-v8a")) {
+            "The bundled LibreOffice Calc native engine is available for arm64-v8a only"
+        }
+        require(input.isFile && input.length() > 0L) { "Input XLSX file is missing or empty" }
+        output.delete()
+        loThread.submit(Callable {
+            recalculateOnLibreOfficeThread(activity, input, output)
+        }).get(10, TimeUnit.MINUTES)
+    }
+
     private fun writeSnapshot(file: File, snapshot: Map<String, Map<String, String>>) {
         XSSFWorkbook().use { workbook ->
             snapshot.forEach { (sheetName, values) ->
