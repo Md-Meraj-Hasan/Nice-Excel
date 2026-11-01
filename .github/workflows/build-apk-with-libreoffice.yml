@@ -30,7 +30,7 @@ jobs:
         with:
           name: libreoffice-arm64-native-core
           repository: ${{ github.repository }}
-          run-id: ${{ inputs.native_run_id }}
+          run-id: ${{ github.event.workflow_run.id || inputs.native_run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           path: /tmp/libreoffice-core
 
