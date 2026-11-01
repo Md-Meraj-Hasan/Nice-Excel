@@ -1672,6 +1672,9 @@ class MainActivity : Activity() {
         try {
             backgroundExecutor.execute {
                 val results = linkedMapOf<String, Pair<String, String>>()
+                // Evaluate the complete workbook with one POI evaluator. Rebuilding an
+                // HSSFWorkbook for every formula made initial opening slow on large files.
+                val poiBatchResults = PoiFormulaBridge.evaluateAll(allSheetsSnapshot)
                 // LibreOfficeKit is intentionally disabled in the production calculation
                 // path until its native Android runtime passes initialization and device tests.
                 // Keep formula evaluation on the existing Apache POI + Kotlin compatibility path.
@@ -1687,7 +1690,7 @@ class MainActivity : Activity() {
                         val localSpecial = if (preserveReferencedValue || Regex("(?i)^(XOR|VLOOKUP|MATCH|NA|INDEX)\\s*\\(").containsMatchIn(expression))
                             localEngine.evalText(expression) else null
                         if (localSpecial != null) localSpecial else {
-                        val imported = PoiFormulaBridge.evaluate(allSheetsSnapshot, formulaSheet, address, expression)
+                        val imported = poiBatchResults["$formulaSheet!${address.uppercase(Locale.US)}"]
                         when {
                             imported?.error == null && imported?.text != null -> imported.text
                             imported?.error == null && imported?.number != null -> formatNumber(imported.number, st?.numberFormat ?: "General", imported.number.toString())
