@@ -87,3 +87,28 @@ tasks.register("verifyLibreOfficeArm64Core") {
 }
 
 
+
+tasks.register("verifyLibreOfficeRuntimeAssets") {
+    group = "verification"
+    description = "Verify the official LibreOffice Android runtime assets required by LibreOfficeKit.init()."
+    doLast {
+        def assetRoot = file("${projectDir}/src/main/assets")
+        def required = [
+            "program/fundamentalrc",
+            "program/bootstraprc",
+            "program/unorc",
+            "program/services.rdb",
+            "unpack/program/sofficerc",
+            "share/registry/main.xcd",
+            "share/registry/res/registry_en-US.xcd"
+        ]
+        def missing = required.findAll { path ->
+            def candidate = new File(assetRoot, path)
+            !candidate.isFile() || candidate.length() == 0
+        }
+        if (!missing.isEmpty()) {
+            throw new GradleException("Missing LibreOffice runtime assets: ${missing.join(', ')}. These must come from the same LibreOffice ARM64 build as the native libraries.")
+        }
+        logger.lifecycle("LibreOffice runtime assets verified: ${required.size()} required files present.")
+    }
+}
