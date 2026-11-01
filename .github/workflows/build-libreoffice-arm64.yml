@@ -6,7 +6,7 @@ on:
       libreoffice_ref:
         description: LibreOffice core branch, tag, or commit to build
         required: true
-        default: master
+        default: 6e0b39149b549bd05065d451006c4d060589891d
         type: string
       build_jobs:
         description: Parallel build jobs (keep low on hosted runners)
@@ -105,6 +105,44 @@ jobs:
             libreoffice-core/config.log
             libreoffice-core/autogen.input
           if-no-files-found: warn
+          retention-days: 14
+
+      - name: Verify matching LibreOffice source revision
+        shell: bash
+        run: |
+          set -euo pipefail
+          EXPECTED="6e0b39149b549bd05065d451006c4d060589891d"
+          ACTUAL="$(cat native-engine/LIBREOFFICE-SOURCE-COMMIT.txt)"
+          test "$ACTUAL" = "$EXPECTED" || {
+            echo "::error::Native core revision $ACTUAL does not match Java bootstrap revision $EXPECTED."
+            exit 1
+          }
+
+      - name: Stage official Android runtime assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP="libreoffice-core/android/app"
+          test -s "$APP/assets/program/fundamentalrc"
+          test -s "$APP/assets/unpack/program/offapi.rdb"
+          test -s "$APP/assets/unpack/etc/fonts/fonts.conf"
+          test -s "$APP/assets_strippedUI/share/registry/main.xcd"
+          test -s "$APP/res_generated/raw/license.txt"
+          test -s "$APP/res_generated/raw/notice.txt"
+
+          mkdir -p /tmp/lo-runtime/assets /tmp/lo-runtime/assets_strippedUI /tmp/lo-runtime/res_generated/raw
+          cp -a "$APP/assets/." /tmp/lo-runtime/assets/
+          cp -a "$APP/assets_strippedUI/." /tmp/lo-runtime/assets_strippedUI/
+          cp -a "$APP/res_generated/raw/." /tmp/lo-runtime/res_generated/raw/
+          cp native-engine/LIBREOFFICE-SOURCE-COMMIT.txt /tmp/lo-runtime/SOURCE-COMMIT.txt
+
+      - name: Upload official Android runtime assets
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: libreoffice-arm64-runtime-assets
+          path: /tmp/lo-runtime/**
+          if-no-files-found: error
           retention-days: 14
 
       - name: Upload genuine ARM64 native core
