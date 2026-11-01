@@ -1688,20 +1688,21 @@ class MainActivity : Activity() {
                         val localEngine = FormulaEngine(formulaCells)
                         val preserveReferencedValue = shouldUseLocalReferenceResult(expression, formulaCells)
                         val localSpecial = if (preserveReferencedValue || Regex("(?i)^(XOR|VLOOKUP|MATCH|NA|INDEX)\\s*\\(").containsMatchIn(expression))
-                            localEngine.evalText(expression) else null
+                            localEngine.evalText(expression)?.takeUnless { it == "#ERROR" } else null
                         if (localSpecial != null) localSpecial else {
-                        val imported = poiBatchResults["$formulaSheet!${address.uppercase(Locale.US)}"]
-                        when {
-                            imported?.error == null && imported?.text != null -> imported.text
-                            imported?.error == null && imported?.number != null -> formatNumber(imported.number, st?.numberFormat ?: "General", imported.number.toString())
-                            else -> {
-                                val engine = FormulaEngine(allSheetsSnapshot[formulaSheet].orEmpty())
-                                val textResult = engine.evalText(raw.drop(1))
-                                textResult ?: engine.eval(raw.drop(1)).let { value ->
-                                    if (value.isNaN() || value.isInfinite()) "#NUM!" else formatNumber(value, st?.numberFormat ?: "General", value.toString())
+                            val imported = poiBatchResults["$formulaSheet!${address.uppercase(Locale.US)}"]
+                            when {
+                                imported?.error != null -> imported.error
+                                imported?.text != null -> imported.text
+                                imported?.number != null -> formatNumber(imported.number, st?.numberFormat ?: "General", imported.number.toString())
+                                else -> {
+                                    val engine = FormulaEngine(allSheetsSnapshot[formulaSheet].orEmpty())
+                                    val textResult = engine.evalText(raw.drop(1))
+                                    textResult ?: engine.eval(raw.drop(1)).let { value ->
+                                        if (value.isNaN() || value.isInfinite()) "#NUM!" else formatNumber(value, st?.numberFormat ?: "General", value.toString())
+                                    }
                                 }
-                            }
-                        } ?: imported?.error ?: "#ERROR"
+                            } ?: "#ERROR"
                         }
                     }.getOrElse { error -> error.message?.takeIf { it.startsWith("#") } ?: "#ERROR" }
                     results["$formulaSheet!$address"] = cacheKey to rendered
@@ -2760,16 +2761,18 @@ class MainActivity : Activity() {
             // Numeric and ordinary text formulas must keep the established POI-first path.
             val preserveReferencedValue = shouldUseLocalReferenceResult(expression, data)
             val localSpecial = if (preserveReferencedValue || Regex("(?i)^(XOR|VLOOKUP|MATCH|NA|INDEX)\\s*\\(").containsMatchIn(expression))
-                localEngine.evalText(expression) else null
+                localEngine.evalText(expression)?.takeUnless { it == "#ERROR" } else null
             if (localSpecial != null) {
                 formulaDisplayCache[cacheKey] = localSpecial
                 return localSpecial
             }
-            // Try Apache POI first for all other formulas to preserve existing coverage.
+            // Preserve an Excel error returned by POI; do not replace it with the
+            // local evaluator's generic #ERROR fallback.
             val imported = PoiFormulaBridge.evaluate(sheets, sheetName, address, expression)
             when {
-                imported?.error == null && imported?.text != null -> imported.text
-                imported?.error == null && imported?.number != null -> formatNumber(imported.number, st?.numberFormat ?: "General", imported.number.toString())
+                imported?.error != null -> imported.error
+                imported?.text != null -> imported.text
+                imported?.number != null -> formatNumber(imported.number, st?.numberFormat ?: "General", imported.number.toString())
                 else -> runCatching {
                     val engine=FormulaEngine(data)
                     val textResult = engine.evalText(expression)
@@ -2778,7 +2781,7 @@ class MainActivity : Activity() {
                         val value=engine.eval(expression)
                         if(value.isNaN()||value.isInfinite()) "#NUM!" else formatNumber(value, st?.numberFormat ?: "General", value.toString())
                     }
-                }.getOrElse { error -> error.message?.takeIf { it.startsWith("#") } ?: imported?.error ?: "#ERROR" }
+                }.getOrElse { error -> error.message?.takeIf { it.startsWith("#") } ?: "#ERROR" }
             } ?: "#ERROR"
         } catch(error:Exception) { error.message?.takeIf { it.startsWith("#") } ?: "#ERROR" }
         formulaDisplayCache[cacheKey] = result
