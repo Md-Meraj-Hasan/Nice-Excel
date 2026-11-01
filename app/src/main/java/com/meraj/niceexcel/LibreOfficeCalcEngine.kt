@@ -158,23 +158,25 @@ object LibreOfficeCalcEngine {
         val document = loadDocument(inputUrl)
             ?: error("LibreOffice could not open the generated XLSX workbook: ${officeError()}")
 
-        val documentClass = document.javaClass
-        val expectedType = Class.forName("org.libreoffice.kit.Document")
-            .getField("DOCTYPE_SPREADSHEET").getInt(null)
-        fun checkSpreadsheet(candidate: Any) {
-            val actualType = candidate.javaClass.getMethod("getDocumentType").invoke(candidate) as Int
-            check(actualType == expectedType) { "LibreOffice opened a non-spreadsheet document" }
-        }
+        // Once documentLoad succeeds, every subsequent operation must be covered by
+        // destroy(), including reflection/type checks that can themselves fail.
         try {
+            val documentClass = document.javaClass
+            val expectedType = Class.forName("org.libreoffice.kit.Document")
+                .getField("DOCTYPE_SPREADSHEET").getInt(null)
+            fun checkSpreadsheet(candidate: Any) {
+                val actualType = candidate.javaClass.getMethod("getDocumentType").invoke(candidate) as Int
+                check(actualType == expectedType) { "LibreOffice opened a non-spreadsheet document" }
+            }
             checkSpreadsheet(document)
             documentClass.getMethod(
                 "postUnoCommand", String::class.java, String::class.java, java.lang.Boolean.TYPE
             ).invoke(document, ".uno:CalculateHard", "{}", false)
             documentClass.getMethod(
                 "saveAs", String::class.java, String::class.java, String::class.java
-            ).invoke(document, outputUrl, "Calc MS Excel 2007 XML", null)
+            ).invoke(document, outputUrl, "Calc MS Excel 2007 XML", "")
         } finally {
-            documentClass.getMethod("destroy").invoke(document)
+            runCatching { document.javaClass.getMethod("destroy").invoke(document) }
         }
 
         check(output.isFile && output.length() > 0L) {
