@@ -78,7 +78,11 @@ tasks.register("verifyLibreOfficeArm64Core") {
         if (!core.isFile() || core.length() < 1_000_000L) {
             throw new GradleException("Missing genuine LibreOffice ARM64 core: ${core}. Build LibreOffice Android core separately and copy its real output here.")
         }
-        logger.lifecycle("LibreOffice ARM64 core file found (${core.length()} bytes). ELF architecture and APK inclusion are checked by native-engine/scripts.")
+        def bootstrap = file("${rootProject.projectDir}/app/src/main/java/org/libreoffice/kit/LibreOfficeKit.java")
+        if (!bootstrap.isFile() || bootstrap.length() < 500) {
+            throw new GradleException("Missing official LibreOffice Android Java bootstrap: ${bootstrap}. Fetch Bootstrap/src from the pinned LibreOffice revision before building.")
+        }
+        logger.lifecycle("LibreOffice ARM64 core and official Java bootstrap found. JNI initialization and workbook calculation still require runtime integration tests.")
     }
 }
 
