@@ -155,6 +155,15 @@ object LibreOfficeCalcEngine {
 
         val inputUrl = Uri.fromFile(input).toString()
         val outputUrl = Uri.fromFile(output).toString()
+        // Resolve spreadsheet metadata before opening a document, so a metadata
+        // lookup failure cannot leave a loaded native document undisposed.
+        val expectedType = Class.forName("org.libreoffice.kit.Document")
+            .getField("DOCTYPE_SPREADSHEET").getInt(null)
+        fun checkSpreadsheet(candidate: Any) {
+            val actualType = candidate.javaClass.getMethod("getDocumentType").invoke(candidate) as Int
+            check(actualType == expectedType) { "LibreOffice opened a non-spreadsheet document" }
+        }
+
         val document = loadDocument(inputUrl)
             ?: error("LibreOffice could not open the generated XLSX workbook: ${officeError()}")
 
@@ -162,12 +171,6 @@ object LibreOfficeCalcEngine {
         // destroy(), including reflection/type checks that can themselves fail.
         try {
             val documentClass = document.javaClass
-            val expectedType = Class.forName("org.libreoffice.kit.Document")
-                .getField("DOCTYPE_SPREADSHEET").getInt(null)
-            fun checkSpreadsheet(candidate: Any) {
-                val actualType = candidate.javaClass.getMethod("getDocumentType").invoke(candidate) as Int
-                check(actualType == expectedType) { "LibreOffice opened a non-spreadsheet document" }
-            }
             checkSpreadsheet(document)
             documentClass.getMethod(
                 "postUnoCommand", String::class.java, String::class.java, java.lang.Boolean.TYPE
@@ -188,7 +191,7 @@ object LibreOfficeCalcEngine {
         try {
             checkSpreadsheet(reopened)
         } finally {
-            reopened.javaClass.getMethod("destroy").invoke(reopened)
+            runCatching { reopened.javaClass.getMethod("destroy").invoke(reopened) }
         }
     }
 
