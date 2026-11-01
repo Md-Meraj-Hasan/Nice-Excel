@@ -36,8 +36,8 @@ jobs:
           set -euo pipefail
           mkdir -p native-engine/jniLibs/arm64-v8a
           mapfile -t libs < <(find /tmp/libreoffice-core -type f -name '*.so' -print)
-          test ""${libs[@]}"" -eq 14
-          for lib in "\${libs[@]}"; do
+          test "${#libs[@]}" -eq 14
+          for lib in "${libs[@]}"; do
             cp -v "$lib" native-engine/jniLibs/arm64-v8a/
           done
           test -s native-engine/jniLibs/arm64-v8a/liblo-native-code.so
