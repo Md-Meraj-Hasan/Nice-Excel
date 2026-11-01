@@ -3,13 +3,12 @@ package com.meraj.niceexcel
 import android.app.Activity
 import android.net.Uri
 import android.os.Looper
+import java.nio.ByteBuffer
 import org.apache.poi.ss.usermodel.CellType
 import org.apache.poi.ss.usermodel.FormulaError
 import org.apache.poi.ss.usermodel.WorkbookFactory
 import org.apache.poi.ss.util.CellReference
 import org.apache.poi.xssf.usermodel.XSSFWorkbook
-import org.libreoffice.kit.LibreOfficeKit
-import org.libreoffice.kit.Office
 import java.io.File
 import java.io.FileOutputStream
 import java.util.concurrent.Callable
@@ -31,7 +30,7 @@ internal object LibreOfficeCalcEngine {
     }
 
     @Volatile
-    private var office: Office? = null
+    private var office: Any? = null
 
     @Volatile
     private var initializationFailure: Throwable? = null
@@ -94,11 +93,13 @@ internal object LibreOfficeCalcEngine {
                 throw IllegalStateException("LibreOfficeKit initialization previously failed", it)
             }
             try {
-                LibreOfficeKit.initializeLibrary()
-                LibreOfficeKit.init(activity)
-                val handle = LibreOfficeKit.getLibreOfficeKitHandle()
+                val kitClass = Class.forName("org.libreoffice.kit.LibreOfficeKit")
+                kitClass.getMethod("initializeLibrary").invoke(null)
+                kitClass.getMethod("init", Activity::class.java).invoke(null, activity)
+                val handle = kitClass.getMethod("getLibreOfficeKitHandle").invoke(null) as? ByteBuffer
                     ?: error("LibreOfficeKit returned a null native handle after initialization")
-                activeOffice = Office(handle)
+                val officeClass = Class.forName("org.libreoffice.kit.Office")
+                activeOffice = officeClass.getConstructor(ByteBuffer::class.java).newInstance(handle)
                 office = activeOffice
             } catch (failure: Throwable) {
                 initializationFailure = failure
@@ -106,33 +107,47 @@ internal object LibreOfficeCalcEngine {
             }
         }
 
+        val officeClass = activeOffice!!.javaClass
+        fun loadDocument(url: String): Any? =
+            officeClass.getMethod("documentLoad", String::class.java).invoke(activeOffice, url)
+        fun officeError(): String =
+            runCatching { officeClass.getMethod("getError").invoke(activeOffice)?.toString().orEmpty() }
+                .getOrDefault("unknown LibreOfficeKit error")
+
         val inputUrl = Uri.fromFile(input).toString()
         val outputUrl = Uri.fromFile(output).toString()
-        val document = activeOffice!!.documentLoad(inputUrl)
-            ?: error("LibreOffice could not open the generated XLSX workbook: ${activeOffice!!.getError()}")
+        val document = loadDocument(inputUrl)
+            ?: error("LibreOffice could not open the generated XLSX workbook: ${officeError()}")
 
+        val documentClass = document.javaClass
+        val expectedType = Class.forName("org.libreoffice.kit.Document")
+            .getField("DOCTYPE_SPREADSHEET").getInt(null)
+        fun checkSpreadsheet(candidate: Any) {
+            val actualType = candidate.javaClass.getMethod("getDocumentType").invoke(candidate) as Int
+            check(actualType == expectedType) { "LibreOffice opened a non-spreadsheet document" }
+        }
         try {
-            check(document.documentType == org.libreoffice.kit.Document.DOCTYPE_SPREADSHEET) {
-                "LibreOffice opened the workbook as a non-spreadsheet document"
-            }
-            document.postUnoCommand(".uno:CalculateHard", "{}", false)
-            document.saveAs(outputUrl, "Calc MS Excel 2007 XML", null)
+            checkSpreadsheet(document)
+            documentClass.getMethod(
+                "postUnoCommand", String::class.java, String::class.java, Boolean::class.javaPrimitiveType
+            ).invoke(document, ".uno:CalculateHard", "{}", false)
+            documentClass.getMethod(
+                "saveAs", String::class.java, String::class.java, String::class.java
+            ).invoke(document, outputUrl, "Calc MS Excel 2007 XML", null)
         } finally {
-            document.destroy()
+            documentClass.getMethod("destroy").invoke(document)
         }
 
         check(output.isFile && output.length() > 0L) {
             "LibreOffice did not create a recalculated XLSX file"
         }
 
-        val reopened = activeOffice!!.documentLoad(outputUrl)
-            ?: error("LibreOffice could not reopen its recalculated XLSX output: ${activeOffice!!.getError()}")
+        val reopened = loadDocument(outputUrl)
+            ?: error("LibreOffice could not reopen its recalculated XLSX output: ${officeError()}")
         try {
-            check(reopened.documentType == org.libreoffice.kit.Document.DOCTYPE_SPREADSHEET) {
-                "Recalculated output is not recognized as a spreadsheet"
-            }
+            checkSpreadsheet(reopened)
         } finally {
-            reopened.destroy()
+            reopened.javaClass.getMethod("destroy").invoke(reopened)
         }
     }
 
