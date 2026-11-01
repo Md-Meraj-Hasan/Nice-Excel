@@ -52,6 +52,10 @@ public final class LibreOfficeKit
 
     static boolean initializeDone = false;
 
+    public static synchronized boolean isInitialized() {
+        return initializeDone;
+    }
+
     /**
      * Files under assets/unpack are runtime files which LibreOffice expects on
      * the writable filesystem. In particular, unorc resolves UNO_TYPES under
