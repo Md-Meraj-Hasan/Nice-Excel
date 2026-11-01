@@ -129,7 +129,7 @@ internal object LibreOfficeCalcEngine {
         try {
             checkSpreadsheet(document)
             documentClass.getMethod(
-                "postUnoCommand", String::class.java, String::class.java, Boolean::class.javaPrimitiveType
+                "postUnoCommand", String::class.java, String::class.java, java.lang.Boolean.TYPE
             ).invoke(document, ".uno:CalculateHard", "{}", false)
             documentClass.getMethod(
                 "saveAs", String::class.java, String::class.java, String::class.java
