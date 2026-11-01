@@ -85,6 +85,22 @@ object LibreOfficeCalcEngine {
         }).get(10, TimeUnit.MINUTES)
     }
 
+    /** Build the XLSX snapshot in the app process so large workbooks never cross Binder. */
+    fun createSnapshotWorkbook(context: Context, snapshot: Map<String, Map<String, String>>): File {
+        val workDir = File(context.cacheDir, "niceexcel-libreoffice").apply { mkdirs() }
+        val file = File.createTempFile("snapshot-", ".xlsx", workDir)
+        try {
+            writeSnapshot(file, snapshot)
+            return file
+        } catch (failure: Throwable) {
+            file.delete()
+            throw failure
+        }
+    }
+
+    /** Read formula caches from the XLSX file returned by the isolated Calc process. */
+    fun readFormulaResults(file: File): Map<String, String> = readCachedFormulaResults(file)
+
     private fun writeSnapshot(file: File, snapshot: Map<String, Map<String, String>>) {
         XSSFWorkbook().use { workbook ->
             snapshot.forEach { (sheetName, values) ->
