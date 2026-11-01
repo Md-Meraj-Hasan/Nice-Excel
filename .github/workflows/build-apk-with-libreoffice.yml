@@ -31,7 +31,16 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           path: /tmp/libreoffice-core
 
-      - name: Stage native libraries
+      - name: Download matching LibreOffice Android runtime assets
+        uses: actions/download-artifact@v4
+        with:
+          name: libreoffice-arm64-runtime-assets
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.native_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: /tmp/libreoffice-runtime
+
+      - name: Stage matching native libraries and runtime assets
         shell: bash
         run: |
           set -euo pipefail
@@ -43,6 +52,21 @@ jobs:
             -maxdepth 1 -name '*.so' | wc -l)
           echo "Native libraries found: $count"
           test "$count" -eq 14
+
+          EXPECTED="6e0b39149b549bd05065d451006c4d060589891d"
+          ACTUAL="$(cat /tmp/libreoffice-runtime/SOURCE-COMMIT.txt)"
+          test "$ACTUAL" = "$EXPECTED" || {
+            echo "::error::Runtime assets revision $ACTUAL does not match Java bootstrap revision $EXPECTED."
+            exit 1
+          }
+
+          mkdir -p app/src/main/assets app/src/main/res/raw
+          cp -a /tmp/libreoffice-runtime/assets/. app/src/main/assets/
+          cp -a /tmp/libreoffice-runtime/assets_strippedUI/. app/src/main/assets/
+          cp -f /tmp/libreoffice-runtime/res_generated/raw/license.txt app/src/main/res/raw/lo_license.txt
+          cp -f /tmp/libreoffice-runtime/res_generated/raw/notice.txt app/src/main/res/raw/lo_notice.txt
+          sed -i 's#@@APPLICATION_ID@@#com.meraj.niceexcel#g' app/src/main/assets/unpack/etc/fonts/fonts.conf
+          grep -q '/data/data/com.meraj.niceexcel/fontconfig' app/src/main/assets/unpack/etc/fonts/fonts.conf
 
       - name: Verify ARM64 architecture
         run: bash native-engine/scripts/check-arm64-core.sh
@@ -75,8 +99,10 @@ jobs:
       - name: Build APK
         run: gradle --no-daemon assembleDebug
 
-      - name: Verify LibreOffice library inside APK
-        run: bash native-engine/scripts/check-apk-libreoffice.sh app/build/outputs/apk/debug/app-debug.apk
+      - name: Verify LibreOffice native library and runtime assets inside APK
+        run: |
+          bash native-engine/scripts/check-apk-libreoffice.sh app/build/outputs/apk/debug/app-debug.apk
+          bash native-engine/scripts/check-apk-lo-runtime.sh app/build/outputs/apk/debug/app-debug.apk
 
       - name: Upload ARM64 APK
         uses: actions/upload-artifact@v4
