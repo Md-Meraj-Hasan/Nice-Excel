@@ -36,7 +36,7 @@ object LibreOfficeServiceClient {
         }
 
         val appContext = context.applicationContext
-        Log.i("NiceExcel-LO-IPC", "Starting Calc request: sheets=${snapshot.size}, formulaCells=${snapshot.values.sumOf { cells -> cells.values.count { it.trimStart().startsWith(\"=\") } }}")
+        Log.i("NiceExcel-LO-IPC", "Starting Calc request: sheets=${snapshot.size}, formulaCells=${snapshot.values.sumOf { cells -> cells.values.count { it.trimStart().startsWith("=") } }}")
         // Prepare XLSX locally and pass only file paths over Binder. A 13-sheet workbook
         // can exceed Binder's 1 MB transaction limit when Java-serialized as a Bundle.
         val inputFile = LibreOfficeCalcEngine.createSnapshotWorkbook(appContext, snapshot)
