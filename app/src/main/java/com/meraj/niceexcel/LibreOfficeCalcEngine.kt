@@ -25,7 +25,7 @@ import java.util.concurrent.TimeUnit
  *
  * Call recalculateSnapshot() from a background worker, never from the Android UI thread.
  */
-internal object LibreOfficeCalcEngine {
+object LibreOfficeCalcEngine {
     private val loThread = Executors.newSingleThreadExecutor { task ->
         Thread(task, "NiceExcel-LibreOfficeKit").apply { isDaemon = true }
     }
