@@ -6,6 +6,12 @@ plugins {
 }
 
 android {
+    // LibreOffice's Android APK-backed virtual filesystem reads asset payloads directly from the APK and supports STORE entries only.
+    // Empty noCompress extension keeps every LibreOffice runtime asset uncompressed.
+    androidResources {
+        noCompress += ""
+    }
+
     // Package genuine, matching LibreOffice Android native outputs when supplied.
     sourceSets {
         main {
@@ -100,6 +106,9 @@ tasks.register("verifyLibreOfficeRuntimeAssets") {
             "program/unorc",
             "program/services.rdb",
             "unpack/program/sofficerc",
+            "unpack/program/udkapi.rdb",
+            "unpack/program/offapi.rdb",
+            "unpack/program/oovbaapi.rdb",
             "unpack/etc/fonts/fonts.conf",
             "share/registry/main.xcd",
             "share/registry/res/registry_en-US.xcd"
