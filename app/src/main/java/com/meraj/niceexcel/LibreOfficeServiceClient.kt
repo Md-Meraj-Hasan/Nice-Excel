@@ -10,6 +10,7 @@ import android.os.IBinder
 import android.os.Looper
 import android.os.Message
 import android.os.Messenger
+import android.util.Log
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
@@ -35,6 +36,7 @@ object LibreOfficeServiceClient {
         }
 
         val appContext = context.applicationContext
+        Log.i("NiceExcel-LO-IPC", "Starting Calc request: sheets=${snapshot.size}, formulaCells=${snapshot.values.sumOf { cells -> cells.values.count { it.trimStart().startsWith("=") } }}")
         // Prepare XLSX locally and pass only file paths over Binder. A 13-sheet workbook
         // can exceed Binder's 1 MB transaction limit when Java-serialized as a Bundle.
         val inputFile = LibreOfficeCalcEngine.createSnapshotWorkbook(appContext, snapshot)
@@ -124,7 +126,9 @@ object LibreOfficeServiceClient {
             check(outputFile.isFile && outputFile.length() > 0L) {
                 "LibreOffice returned success but did not create a calculated workbook"
             }
-            return LibreOfficeCalcEngine.readFormulaResults(outputFile)
+            val results = LibreOfficeCalcEngine.readFormulaResults(outputFile)
+            Log.i("NiceExcel-LO-IPC", "Calc response received: formulaResults=${results.size}, outputBytes=${outputFile.length()}")
+            return results
         } finally {
             if (bound) runCatching { appContext.unbindService(connection) }
             inputFile.delete()
