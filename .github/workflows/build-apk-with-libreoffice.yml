@@ -46,7 +46,7 @@ jobs:
         with:
           name: libreoffice-arm64-runtime-assets
           repository: ${{ github.repository }}
-          run-id: ${{ github.event.workflow_run.id || inputs.native_run_id }}
+          run-id: ${{ github.event.workflow_run.id || inputs.native_run_id || '41288955912' }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           path: /tmp/libreoffice-runtime
 
