@@ -1,54 +1,45 @@
-# NiceExcel — LibreOffice Calc Android integration (basic wiring)
+# NiceExcel — LibreOffice Calc Android integration
 
 ## Current status
-This ZIP contains the Android native-library packaging path, a safe native-load probe, CI checks, and an isolated integration plan. **It does not contain LibreOffice's native core, matching JNI bootstrap implementation, UNO runtime data, or a working workbook recalculation adapter.** Therefore this ZIP is not yet a LibreOffice-enabled APK.
 
-The provided build log showed a successful regular Android/Chaquopy APK build and Python tests, but no LibreOffice core compilation, JNI link, or `liblo-native-code.so` packaging. This ZIP implements the next groundwork; it does not turn that earlier build into an LO build.
+The integration branch contains:
+- the genuine ARM64 LibreOffice native-core build pipeline;
+- official LibreOffice Android Java bootstrap wrappers pinned to the same source revision;
+- a CI compile/test workflow;
+- a runtime-assets artifact and APK staging/verification pipeline.
 
-## 1. Native core output
-Build the official LibreOffice Android core from one pinned LibreOffice source revision using its supported Android SDK/NDK toolchain. Obtain the matching JNI/bootstrap sources and runtime data from the same revision. Do not mix outputs from different LibreOffice versions.
+The official native core was built for `arm64-v8a` from LibreOffice revision `6e0b39149b549bd05065d451006c4d060589891d`. Its diagnostics recorded 14 matching shared libraries and ELF64 AArch64 architecture. The Java bootstrap wrappers on this branch use the same revision.
 
-Copy genuine ARM64 `.so` outputs into:
+**Important:** the production NiceExcel grid and formula engine are not connected to LibreOffice yet. Build success and packaging verification do not prove JNI initialization or workbook recalculation. Do not advertise this as a fully LibreOffice-powered spreadsheet until the device acceptance tests below pass.
 
-```text
-native-engine/jniLibs/arm64-v8a/
-  liblo-native-code.so
-  <every required dependent .so from the same build>
-```
+## Build sequence
 
-This directory is wired into Android Gradle `main.jniLibs`. `.gitkeep` is only a placeholder, not a library.
+1. Run **Build official LibreOffice Android ARM64 core** with revision `6e0b39149b549bd05065d451006c4d060589891d`.
+2. Confirm the run uploads both `libreoffice-arm64-native-core` and `libreoffice-arm64-runtime-assets`.
+3. Run **Build NiceExcel APK with LibreOffice ARM64**, supplying that same native build run ID.
+4. The APK workflow stages native libraries and the matching official runtime data, adjusts the fontconfig cache path to `com.meraj.niceexcel`, and checks the APK for core, registry, type database, fonts, and license notices.
 
-## 2. Verify native packaging
+## Runtime architecture
 
-```bash
-bash native-engine/scripts/check-arm64-core.sh
-gradle --no-daemon :app:verifyLibreOfficeArm64Core
-gradle --no-daemon assembleDebug
-bash native-engine/scripts/check-apk-libreoffice.sh app/build/outputs/apk/debug/app-debug.apk
-```
+LibreOffice must be initialized and called on a dedicated LOK worker thread, never on the Android UI thread. The upstream Android application uses a LOKit thread that communicates with a separate native soffice thread. See the pinned upstream architecture notes:
 
-Use GitHub Actions workflow **Verify LibreOffice Calc Native APK** only after adding real native files. The ordinary **Build NiceExcel APK** workflow remains available for UI development and reports LO absence instead of falsely claiming LO integration.
+https://github.com/LibreOffice/core/blob/6e0b39149b549bd05065d451006c4d060589891d/android/README.md
 
-## 3. JNI bootstrap and runtime
-`LibreOfficeNativeProbe` is diagnostic only. It attempts `System.loadLibrary("lo-native-code")`; successful loading proves only that Android's linker loaded that library. It does not prove LibreOfficeKit initialized or that a workbook can be recalculated.
+## Workbook calculation acceptance tests
 
-The next code stage must add the matching official Android JNI/bootstrap classes and runtime data, initialize LibreOffice on a dedicated worker thread, and expose a narrow Kotlin adapter. Native dependencies, data files, fonts, profiles, and licensing notices must be packaged according to the exact LO build.
+Before switching any production formula path, implement an isolated adapter that:
+- opens an XLSX working copy through LibreOfficeKit;
+- performs a hard recalculation;
+- saves to a temporary XLSX;
+- reopens and validates the result;
+- returns validated values and formula errors to the existing workbook model.
 
-## 4. Workbook calculation adapter
-Keep the existing NiceExcel Kotlin grid/UI. The planned bridge should accept an XLSX file or private working copy, open it with the supported LibreOfficeKit/UNO document API, recalculate, save to a temporary XLSX, and return validated cell values/formula errors to the existing workbook model. This adapter is **not implemented yet**; LOK is not a simple `calculateCell()` API.
+Required tests:
+- `=1+2` returns `3`;
+- `SUM`, `IF`, `VLOOKUP`, and cross-sheet references return expected values;
+- `=1/0` remains a formula error and is never silently converted to zero;
+- formulas, cached values, sheet names, and formatting survive save/reopen;
+- the UI remains responsive while calculation runs;
+- tests pass on a physical ARM64 Android device.
 
-Acceptance tests before switching the app:
-- `=1+2` returns `3`
-- `SUM`, `IF`, `VLOOKUP` and cross-sheet references return expected values
-- `=1/0` remains an error, never silently becomes zero
-- formulas, cached values, sheets, and formatting survive save/reopen
-- test on physical ARM64 Android device and confirm no UI-thread blocking
-
-## Safety rule
-Do not remove the current formula/POI path or connect the probe to production cell editing until native initialization and workbook open/recalculate/save/reopen tests pass. This protects the working grid during migration.
-
-
-## Phase 2 — JNI dependency-load preparation (v1.2)
-The diagnostic probe now follows the dependency load order used by LibreOffice's official Android Bootstrap `NativeLibLoader`: NSPR/NSS libraries, `c++_shared`, then `lo-native-code`. A unit test checks this order. The Gradle `jniLibs` source-set declaration is consolidated to one block.
-
-This is still only a loader preparation. The libraries are not included in this ZIP, and the matching official `LibreOfficeKit.java` bootstrap/JNI classes, runtime assets, native initialization, and XLSX calculation adapter are not yet integrated. A successful probe load would not by itself prove workbook calculation.
+Keep the existing grid and formula path untouched until the complete acceptance suite passes.
