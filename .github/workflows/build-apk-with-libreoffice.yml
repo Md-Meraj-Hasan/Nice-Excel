@@ -53,6 +53,10 @@ jobs:
           test -s /tmp/libreoffice-runtime/assets/unpack/program/sofficerc
           cp -a /tmp/libreoffice-runtime/assets/. "$ROOT/"
           cp -a /tmp/libreoffice-runtime/assets_strippedUI/. "$ROOT/"
+          FONT_CONF="$ROOT/unpack/etc/fonts/fonts.conf"
+          test -s "$FONT_CONF"
+          sed -i -E 's#/data/data/[^/]+/fontconfig#/data/data/com.meraj.niceexcel/fontconfig#g' "$FONT_CONF"
+          grep -q '/data/data/com.meraj.niceexcel/fontconfig' "$FONT_CONF"
           for required in program/fundamentalrc program/bootstraprc program/unorc program/services.rdb unpack/program/sofficerc share/registry/main.xcd share/registry/res/registry_en-US.xcd; do
             test -s "$ROOT/$required" || { echo "Missing LibreOffice runtime asset: $required" >&2; exit 1; }
           done
