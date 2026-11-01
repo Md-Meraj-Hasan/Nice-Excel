@@ -15,6 +15,10 @@ import android.content.res.AssetManager;
 import android.util.Log;
 
 import java.nio.ByteBuffer;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
 
 // Native methods in this class are all implemented in
 // sal/android/lo-bootstrap.c as the lo-bootstrap library is loaded with
@@ -47,6 +51,67 @@ public final class LibreOfficeKit
 
     static boolean initializeDone = false;
 
+    /**
+     * Files under assets/unpack are runtime files which LibreOffice expects on
+     * the writable filesystem. In particular, unorc resolves UNO_TYPES under
+     * $APP_DATA_DIR/program, so extract this tree before native initialization.
+     */
+    private static void copyUnpackedAssetTree(AssetManager assets, String assetPath, File targetDir)
+            throws IOException {
+        if (!targetDir.exists() && !targetDir.mkdirs()) {
+            throw new IOException("Cannot create LibreOffice runtime directory: " + targetDir);
+        }
+        String[] children = assets.list(assetPath);
+        if (children != null && children.length > 0) {
+            for (String child : children) {
+                copyUnpackedAssetTree(assets, assetPath + "/" + child, new File(targetDir, child));
+            }
+            return;
+        }
+
+        File parent = targetDir.getParentFile();
+        if (parent != null && !parent.exists() && !parent.mkdirs()) {
+            throw new IOException("Cannot create LibreOffice runtime directory: " + parent);
+        }
+        File temporary = new File(parent, targetDir.getName() + ".lo-tmp");
+        try (InputStream input = assets.open(assetPath);
+             FileOutputStream output = new FileOutputStream(temporary, false)) {
+            byte[] buffer = new byte[64 * 1024];
+            int count;
+            while ((count = input.read(buffer)) != -1) output.write(buffer, 0, count);
+            output.getFD().sync();
+        } catch (IOException failure) {
+            temporary.delete();
+            throw failure;
+        }
+        if (targetDir.exists() && !targetDir.delete()) {
+            temporary.delete();
+            throw new IOException("Cannot replace LibreOffice runtime file: " + targetDir);
+        }
+        if (!temporary.renameTo(targetDir)) {
+            temporary.delete();
+            throw new IOException("Cannot install LibreOffice runtime file: " + targetDir);
+        }
+    }
+
+    private static void prepareUnpackedRuntime(AssetManager assets, String dataDir) {
+        File root = new File(dataDir);
+        try {
+            copyUnpackedAssetTree(assets, "unpack", root);
+            File programDir = new File(root, "program");
+            String[] required = {"udkapi.rdb", "offapi.rdb", "oovbaapi.rdb"};
+            for (String name : required) {
+                File registry = new File(programDir, name);
+                if (!registry.isFile() || registry.length() == 0L) {
+                    throw new IOException("UNO type registry was not extracted: " + registry);
+                }
+            }
+            Log.i(LOGTAG, "LibreOffice UNO registries extracted to " + programDir.getAbsolutePath());
+        } catch (IOException failure) {
+            throw new IllegalStateException("Unable to prepare LibreOffice UNO runtime files", failure);
+        }
+    }
+
     // This init() method should be called from the upper Java level of
     // LO-based apps.
     public static synchronized void init(Activity activity)
@@ -59,6 +124,7 @@ public final class LibreOfficeKit
 
         ApplicationInfo applicationInfo = activity.getApplicationInfo();
         String dataDir = applicationInfo.dataDir;
+        prepareUnpackedRuntime(mgr, dataDir);
         Log.i(LOGTAG, String.format("Initializing LibreOfficeKit, dataDir=%s\n", dataDir));
 
         redirectStdio(true);
