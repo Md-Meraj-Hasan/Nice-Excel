@@ -8,7 +8,7 @@ NiceExcel now contains an isolated LibreOffice Calc formula adapter at:
 
 The existing Kotlin spreadsheet grid and workbook model remain in place. During formula recalculation, NiceExcel snapshots all sheets to a temporary XLSX workbook, sends it to LibreOfficeKit on a dedicated single thread, issues a hard recalculation, saves as XLSX, reopens the result, and reads the cached formula values back for the existing grid.
 
-LibreOffice Calc is the preferred evaluator when its native runtime and assets are present. If initialization or recalculation fails, the current Apache POI/local evaluator remains the compatibility fallback. This avoids making the grid dependent on a successful native startup.
+LibreOffice Calc is the preferred evaluator when its native runtime and assets are present. The XLSX Save path also sends the actual OOXML workbook through Calc before copying it to the selected destination, so formula caches are stored in the saved file. If initialization or recalculation fails, the original OOXML export is saved with full-recalculation flags and the current Apache POI/local evaluator remains the compatibility fallback. This avoids making the grid dependent on a successful native startup.
 
 ## Matching build inputs
 
