@@ -1,6 +1,6 @@
 package com.meraj.niceexcel
 
-import android.app.Activity
+import android.content.Context
 import android.net.Uri
 import android.os.Looper
 import android.os.Build
@@ -37,7 +37,7 @@ internal object LibreOfficeCalcEngine {
     private var initializationFailure: Throwable? = null
 
     fun recalculateSnapshot(
-        activity: Activity,
+        context: Context,
         workbookSnapshot: Map<String, Map<String, String>>
     ): Map<String, String> {
         check(Looper.myLooper() != Looper.getMainLooper()) {
@@ -50,7 +50,7 @@ internal object LibreOfficeCalcEngine {
             return emptyMap()
         }
 
-        val workDir = File(activity.cacheDir, "niceexcel-libreoffice").apply { mkdirs() }
+        val workDir = File(context.cacheDir, "niceexcel-libreoffice").apply { mkdirs() }
         val input = File.createTempFile("workbook-in-", ".xlsx", workDir)
         val output = File.createTempFile("workbook-out-", ".xlsx", workDir)
         output.delete()
@@ -58,7 +58,7 @@ internal object LibreOfficeCalcEngine {
         try {
             writeSnapshot(input, workbookSnapshot)
             loThread.submit(Callable {
-                recalculateOnLibreOfficeThread(activity, input, output)
+                recalculateOnLibreOfficeThread(context, input, output)
             }).get(10, TimeUnit.MINUTES)
             return readCachedFormulaResults(output)
         } finally {
@@ -71,7 +71,7 @@ internal object LibreOfficeCalcEngine {
      * Recalculate an existing XLSX file in place-to-output form. Used by Save so
      * formula caches are written into the actual workbook the user receives.
      */
-    fun recalculateXlsxFile(activity: Activity, input: File, output: File) {
+    fun recalculateXlsxFile(context: Context, input: File, output: File) {
         check(Looper.myLooper() != Looper.getMainLooper()) {
             "LibreOffice recalculation must run off the Android UI thread"
         }
@@ -81,7 +81,7 @@ internal object LibreOfficeCalcEngine {
         require(input.isFile && input.length() > 0L) { "Input XLSX file is missing or empty" }
         output.delete()
         loThread.submit(Callable {
-            recalculateOnLibreOfficeThread(activity, input, output)
+            recalculateOnLibreOfficeThread(context, input, output)
         }).get(10, TimeUnit.MINUTES)
     }
 
@@ -109,7 +109,7 @@ internal object LibreOfficeCalcEngine {
         }
     }
 
-    private fun recalculateOnLibreOfficeThread(activity: Activity, input: File, output: File) {
+    private fun recalculateOnLibreOfficeThread(context: Context, input: File, output: File) {
         var activeOffice = office
         if (activeOffice == null) {
             initializationFailure?.let {
@@ -118,7 +118,7 @@ internal object LibreOfficeCalcEngine {
             try {
                 val kitClass = Class.forName("org.libreoffice.kit.LibreOfficeKit")
                 kitClass.getMethod("initializeLibrary").invoke(null)
-                kitClass.getMethod("init", Activity::class.java).invoke(null, activity)
+                kitClass.getMethod("init", Context::class.java).invoke(null, context.applicationContext)
                 val handle = kitClass.getMethod("getLibreOfficeKitHandle").invoke(null) as? ByteBuffer
                     ?: error("LibreOfficeKit returned a null native handle after initialization")
                 val officeClass = Class.forName("org.libreoffice.kit.Office")
