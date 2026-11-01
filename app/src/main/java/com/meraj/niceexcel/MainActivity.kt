@@ -1672,12 +1672,22 @@ class MainActivity : Activity() {
         try {
             backgroundExecutor.execute {
                 val results = linkedMapOf<String, Pair<String, String>>()
-                // Evaluate the complete workbook with one POI evaluator. Rebuilding an
-                // HSSFWorkbook for every formula made initial opening slow on large files.
-                val poiBatchResults = PoiFormulaBridge.evaluateAll(allSheetsSnapshot)
-                // LibreOfficeKit is intentionally disabled in the production calculation
-                // path until its native Android runtime passes initialization and device tests.
-                // Keep formula evaluation on the existing Apache POI + Kotlin compatibility path.
+                // Try the isolated LibreOffice Calc process first. Native failures are contained
+                // in that process; the existing POI + Kotlin path remains the safe fallback.
+                val libreOfficeBatchResults = runCatching {
+                    LibreOfficeServiceClient.recalculateSnapshot(this@MainActivity, allSheetsSnapshot)
+                }.onFailure { failure ->
+                    Log.w("NiceExcel-Formula", "LibreOffice Calc unavailable; using existing formula fallback", failure)
+                }.getOrNull().orEmpty()
+                val allFormulaKeys = allFormulas.map { (name, address, _) ->
+                    "$name!${address.uppercase(Locale.US)}"
+                }.toSet()
+                val libreOfficeComplete = allFormulaKeys.isNotEmpty() &&
+                    allFormulaKeys.all { it in libreOfficeBatchResults }
+                // Keep the established single-pass POI evaluator as fallback only when Calc
+                // is unavailable or returns an incomplete workbook result.
+                val poiBatchResults = if (libreOfficeComplete) emptyMap()
+                    else PoiFormulaBridge.evaluateAll(allSheetsSnapshot)
                 formulas.forEach { (formulaSheet, address, raw) ->
                     if (jobId != formulaRecalcJobId.get() || isFinishing || isDestroyed) return@forEach
                     val st = stylesSnapshot[formulaSheet]?.get(address)
@@ -1689,7 +1699,12 @@ class MainActivity : Activity() {
                         val preserveReferencedValue = shouldUseLocalReferenceResult(expression, formulaCells)
                         val localSpecial = if (preserveReferencedValue || Regex("(?i)^(XOR|VLOOKUP|MATCH|NA|INDEX)\\s*\\(").containsMatchIn(expression))
                             localEngine.evalText(expression)?.takeUnless { it == "#ERROR" } else null
-                        if (localSpecial != null) localSpecial else {
+                        val calcValue = libreOfficeBatchResults["$formulaSheet!${address.uppercase(Locale.US)}"]
+                        if (calcValue != null) {
+                            val calcNumber = calcValue.toDoubleOrNull()
+                            if (calcNumber != null) formatNumber(calcNumber, st?.numberFormat ?: "General", calcValue)
+                            else calcValue
+                        } else if (localSpecial != null) localSpecial else {
                             val imported = poiBatchResults["$formulaSheet!${address.uppercase(Locale.US)}"]
                             when {
                                 imported?.error != null -> imported.error
