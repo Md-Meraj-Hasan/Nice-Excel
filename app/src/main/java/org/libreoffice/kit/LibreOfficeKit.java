@@ -94,19 +94,58 @@ public final class LibreOfficeKit
         }
     }
 
+    private static void copyRequiredAsset(AssetManager assets, String assetPath, File destination)
+            throws IOException {
+        File parent = destination.getParentFile();
+        if (parent != null && !parent.exists() && !parent.mkdirs()) {
+            throw new IOException("Cannot create LibreOffice program directory: " + parent);
+        }
+        File temporary = new File(parent, destination.getName() + ".verified-tmp");
+        try (InputStream input = assets.open(assetPath);
+             FileOutputStream output = new FileOutputStream(temporary, false)) {
+            byte[] buffer = new byte[128 * 1024];
+            int count;
+            while ((count = input.read(buffer)) != -1) output.write(buffer, 0, count);
+            output.getFD().sync();
+        } catch (IOException failure) {
+            temporary.delete();
+            throw new IOException("Cannot read required APK runtime asset " + assetPath, failure);
+        }
+        if (!temporary.isFile() || temporary.length() == 0L) {
+            temporary.delete();
+            throw new IOException("Required APK runtime asset is empty: " + assetPath);
+        }
+        if (destination.exists() && !destination.delete()) {
+            temporary.delete();
+            throw new IOException("Cannot replace LibreOffice runtime file: " + destination);
+        }
+        if (!temporary.renameTo(destination)) {
+            temporary.delete();
+            throw new IOException("Cannot install LibreOffice runtime file: " + destination);
+        }
+    }
+
     private static void prepareUnpackedRuntime(AssetManager assets, String dataDir) {
         File root = new File(dataDir);
         try {
             copyUnpackedAssetTree(assets, "unpack", root);
             File programDir = new File(root, "program");
             String[] required = {"udkapi.rdb", "offapi.rdb", "oovbaapi.rdb"};
+            // Extract the three UNO registries explicitly as well. This avoids
+            // relying on recursive AssetManager directory enumeration for the
+            // files that the bootstrap loader must resolve from APP_DATA_DIR.
+            for (String name : required) {
+                copyRequiredAsset(assets, "unpack/program/" + name, new File(programDir, name));
+            }
             for (String name : required) {
                 File registry = new File(programDir, name);
-                if (!registry.isFile() || registry.length() == 0L) {
-                    throw new IOException("UNO type registry was not extracted: " + registry);
+                if (!registry.isFile() || registry.length() == 0L || !registry.canRead()) {
+                    throw new IOException("UNO type registry is unavailable after extraction: " + registry);
                 }
+                Log.i(LOGTAG, "UNO registry ready: " + registry.getAbsolutePath()
+                        + " (" + registry.length() + " bytes)");
             }
-            Log.i(LOGTAG, "LibreOffice UNO registries extracted to " + programDir.getAbsolutePath());
+            Log.i(LOGTAG, "LibreOffice UNO runtime prepared in " + root.getAbsolutePath());
         } catch (IOException failure) {
             throw new IllegalStateException("Unable to prepare LibreOffice UNO runtime files", failure);
         }
