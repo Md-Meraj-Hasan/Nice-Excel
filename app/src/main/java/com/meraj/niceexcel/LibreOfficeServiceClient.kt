@@ -35,11 +35,17 @@ object LibreOfficeServiceClient {
         }
 
         val appContext = context.applicationContext
+        // Prepare XLSX locally and pass only file paths over Binder. A 13-sheet workbook
+        // can exceed Binder's 1 MB transaction limit when Java-serialized as a Bundle.
+        val inputFile = LibreOfficeCalcEngine.createSnapshotWorkbook(appContext, snapshot)
+        val outputFile = java.io.File.createTempFile(
+            "calculated-", ".xlsx", inputFile.parentFile
+        ).apply { delete() }
+
         val connected = CountDownLatch(1)
         val replied = CountDownLatch(1)
         val remote = AtomicReference<Messenger?>()
         val failure = AtomicReference<Throwable?>()
-        val result = AtomicReference<Map<String, String>?>()
 
         val replyMessenger = Messenger(Handler(Looper.getMainLooper()) { message ->
             try {
@@ -49,16 +55,6 @@ object LibreOfficeServiceClient {
                         data.getString(LibreOfficeEngineService.KEY_DETAIL)
                             ?: "LibreOffice service returned an unknown error"
                     ))
-                } else {
-                    val keys = data.getStringArrayList(LibreOfficeEngineService.KEY_RESULT_KEYS)
-                        ?: arrayListOf()
-                    val values = data.getStringArrayList(LibreOfficeEngineService.KEY_RESULT_VALUES)
-                        ?: arrayListOf()
-                    if (keys.size != values.size) {
-                        failure.set(IllegalStateException("LibreOffice returned mismatched result arrays"))
-                    } else {
-                        result.set(keys.indices.associate { keys[it] to values[it] })
-                    }
                 }
             } catch (error: Throwable) {
                 failure.set(error)
@@ -97,12 +93,15 @@ object LibreOfficeServiceClient {
             }
         }
 
-        val intent = Intent(appContext, LibreOfficeEngineService::class.java)
-        check(appContext.bindService(intent, connection, Context.BIND_AUTO_CREATE)) {
-            "Unable to bind the isolated LibreOffice service"
-        }
-
+        var bound = false
         try {
+            bound = appContext.bindService(
+                Intent(appContext, LibreOfficeEngineService::class.java),
+                connection,
+                Context.BIND_AUTO_CREATE
+            )
+            check(bound) { "Unable to bind the isolated LibreOffice service" }
+
             check(connected.await(SERVICE_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
                 "Timed out waiting for the LibreOffice service to connect"
             }
@@ -110,14 +109,11 @@ object LibreOfficeServiceClient {
             val service = remote.get()
                 ?: throw IllegalStateException("LibreOffice service connection is unavailable")
 
-            val serializableSnapshot = HashMap<String, HashMap<String, String>>()
-            snapshot.forEach { (sheet, cells) ->
-                serializableSnapshot[sheet] = HashMap(cells)
-            }
-            val request = Message.obtain(null, LibreOfficeEngineService.MSG_RECALCULATE_SNAPSHOT)
+            val request = Message.obtain(null, LibreOfficeEngineService.MSG_RECALCULATE_XLSX)
             request.replyTo = replyMessenger
             request.data = Bundle().apply {
-                putSerializable(LibreOfficeEngineService.KEY_SNAPSHOT, serializableSnapshot)
+                putString(LibreOfficeEngineService.KEY_INPUT_PATH, inputFile.absolutePath)
+                putString(LibreOfficeEngineService.KEY_OUTPUT_PATH, outputFile.absolutePath)
             }
             service.send(request)
 
@@ -125,10 +121,14 @@ object LibreOfficeServiceClient {
                 "LibreOffice calculation timed out"
             }
             failure.get()?.let { throw it }
-            return result.get()
-                ?: throw IllegalStateException("LibreOffice returned no formula results")
+            check(outputFile.isFile && outputFile.length() > 0L) {
+                "LibreOffice returned success but did not create a calculated workbook"
+            }
+            return LibreOfficeCalcEngine.readFormulaResults(outputFile)
         } finally {
-            runCatching { appContext.unbindService(connection) }
+            if (bound) runCatching { appContext.unbindService(connection) }
+            inputFile.delete()
+            outputFile.delete()
         }
     }
 }
