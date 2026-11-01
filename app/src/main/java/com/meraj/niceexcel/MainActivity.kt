@@ -1672,11 +1672,28 @@ class MainActivity : Activity() {
         try {
             backgroundExecutor.execute {
                 val results = linkedMapOf<String, Pair<String, String>>()
+                // LibreOffice Calc is the primary evaluator. If the native runtime is
+                // unavailable on this device/build, retain the established POI/local path.
+                val libreOfficeResults = runCatching {
+                    LibreOfficeCalcEngine.recalculateSnapshot(this@MainActivity, allSheetsSnapshot)
+                }.onFailure { error ->
+                    Log.w("NiceExcelLO", "LibreOffice Calc unavailable; using compatibility evaluator", error)
+                }.getOrNull()
+
                 formulas.forEach { (formulaSheet, address, raw) ->
                     if (jobId != formulaRecalcJobId.get() || isFinishing || isDestroyed) return@forEach
                     val st = stylesSnapshot[formulaSheet]?.get(address)
                     val cacheKey = "$formulaSheet|$address|$raw|${st?.numberFormat ?: "General"}"
                     val rendered = runCatching {
+                        val libreOfficeValue = libreOfficeResults?.get("$formulaSheet!$address")
+                        if (libreOfficeValue != null) {
+                            val numericValue = libreOfficeValue.toDoubleOrNull()
+                            if (numericValue != null) {
+                                formatNumber(numericValue, st?.numberFormat ?: "General", libreOfficeValue)
+                            } else {
+                                libreOfficeValue
+                            }
+                        } else {
                         val expression = raw.drop(1)
                         val formulaCells = allSheetsSnapshot[formulaSheet].orEmpty()
                         val localEngine = FormulaEngine(formulaCells)
@@ -1696,6 +1713,7 @@ class MainActivity : Activity() {
                                 }
                             }
                         } ?: imported?.error ?: "#ERROR"
+                        }
                         }
                     }.getOrElse { error -> error.message?.takeIf { it.startsWith("#") } ?: "#ERROR" }
                     results["$formulaSheet!$address"] = cacheKey to rendered
