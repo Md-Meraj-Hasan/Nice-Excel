@@ -2833,6 +2833,74 @@ class MainActivity : Activity() {
                 startActivityForResult(i, if (xlsx) 13 else 11)
             }.setNegativeButton("Cancel", null).showProfessional()
     }
+    /**
+     * Save a stable workbook snapshot off the UI thread. LibreOffice Calc writes
+     * formula caches into the actual XLSX when available; the original OOXML
+     * remains a safe fallback and requests recalculation when opened in Excel.
+     */
+    private fun saveXlsxWithCalc(uri: android.net.Uri) {
+        val sheetSnapshot = sheets.mapValues { (_, cells) -> cells.toMap() }
+        val styleSnapshot = styles.mapValues { (_, cellStyles) ->
+            cellStyles.mapValues { (_, style) -> style.copy() }
+        }
+        val mergeSnapshot = mergedRangesBySheet.mapValues { (_, ranges) -> ranges.toList() }
+        val metadataSnapshot = reportingMetadata
+
+        try {
+            backgroundExecutor.execute {
+                val sourceFile = java.io.File.createTempFile("niceexcel-save-", ".xlsx", cacheDir)
+                val calculatedFile = java.io.File.createTempFile("niceexcel-calc-", ".xlsx", cacheDir)
+                calculatedFile.delete()
+                var usedLibreOffice = false
+                try {
+                    java.io.FileOutputStream(sourceFile).use { output ->
+                        XlsxCodec.write(output, sheetSnapshot, styleSnapshot, metadataSnapshot, mergeSnapshot)
+                    }
+                    val hasFormulas = sheetSnapshot.values.any { cells ->
+                        cells.values.any { it.trimStart().startsWith("=") }
+                    }
+                    val finalFile = if (hasFormulas) {
+                        runCatching {
+                            LibreOfficeCalcEngine.recalculateXlsxFile(this@MainActivity, sourceFile, calculatedFile)
+                            usedLibreOffice = true
+                            calculatedFile
+                        }.onFailure { error ->
+                            Log.w("NiceExcelLO", "Save-time Calc recalculation unavailable; saving original XLSX", error)
+                        }.getOrElse { sourceFile }
+                    } else {
+                        sourceFile
+                    }
+
+                    val destination = contentResolver.openOutputStream(uri)
+                        ?: error("Could not open the selected save destination")
+                    destination.use { output ->
+                        finalFile.inputStream().use { input -> input.copyTo(output) }
+                    }
+                    mainHandler.post {
+                        if (!isFinishing && !isDestroyed) {
+                            status.text = if (usedLibreOffice) {
+                                "Excel workbook saved • LibreOffice Calc recalculated formulas"
+                            } else {
+                                "Excel workbook saved • formulas recalculate when opened in Excel"
+                            }
+                        }
+                    }
+                } catch (error: Exception) {
+                    mainHandler.post {
+                        if (!isFinishing && !isDestroyed) {
+                            status.text = "Save failed: ${error.message ?: "unknown error"}"
+                        }
+                    }
+                } finally {
+                    sourceFile.delete()
+                    calculatedFile.delete()
+                }
+            }
+        } catch (error: RejectedExecutionException) {
+            status.text = "Save unavailable: background worker is closing"
+        }
+    }
+
     private fun saveCsv() {
         pendingCsv=(1..rowCount).joinToString("\n") { r ->
             (0 until colLimit).joinToString(",") { c ->
@@ -2852,8 +2920,7 @@ class MainActivity : Activity() {
                 contentResolver.openOutputStream(intent.data!!)?.use { it.write(pendingCsv.toByteArray(Charsets.UTF_8)) }
                 status.text="CSV saved"
             } else if(requestCode==13) {
-                contentResolver.openOutputStream(intent.data!!)?.use { XlsxCodec.write(it, sheets, styles, reportingMetadata, mergedRangesBySheet) }
-                status.text="Excel workbook (.xlsx) saved"
+                saveXlsxWithCalc(intent.data!!)
             } else if(requestCode==12) {
                 val text=contentResolver.openInputStream(intent.data!!)?.bufferedReader()?.use { it.readText() }.orEmpty()
                 data.clear(); sheetStyles.clear(); formulaDisplayCache.clear()
