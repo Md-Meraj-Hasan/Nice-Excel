@@ -51,5 +51,20 @@ for (let row = 0; row < formulas.length && row < 10000; row++) {
   }
 }
 assert.equal(spillCells['Sheet2!E7'], 'Pencil', 'native array spill extraction');
+// Reproduce the exact COUNTIF and MATCH formulas visible in the user's
+// Formula Tests workbook, including absolute references and helper columns J/M.
+const compatibilityRows = Array.from({ length: 14 }, () => Array(13).fill(null));
+[10, 20, 30, 40, 50, 60].forEach((value, index) => { compatibilityRows[index + 1][9] = value; });
+['P01', 'P02', 'P03', 'P04', 'P05'].forEach((value, index) => { compatibilityRows[index + 1][12] = value; });
+compatibilityRows[1][3] = '=COUNTIF($J$2:$J$7,">10")';
+compatibilityRows[13][3] = '=MATCH("P04",$M$2:$M$6,0)';
+const compatibility = HyperFormula.buildFromSheets(
+  { 'Formula Tests': compatibilityRows },
+  { licenseKey: 'gpl-v3' }
+);
+const testSheet = compatibility.getSheetId('Formula Tests');
+assert.equal(compatibility.getCellValue({ sheet: testSheet, row: 1, col: 3 }), 5, 'exact COUNTIF absolute-range test');
+assert.equal(compatibility.getCellValue({ sheet: testSheet, row: 13, col: 3 }), 4, 'exact MATCH absolute-range test');
+compatibility.destroy();
 hf.destroy();
-console.log('HyperFormula GPLv3 smoke tests passed: SUM, cross-sheet references, VLOOKUP, XLOOKUP, FILTER array cells, booleans, and #DIV/0!.');
+console.log('HyperFormula GPLv3 smoke tests passed: SUM, cross-sheet references, VLOOKUP, XLOOKUP, FILTER array cells, booleans, COUNTIF, MATCH, and #DIV/0!. SUM, cross-sheet references, VLOOKUP, XLOOKUP, FILTER array cells, booleans, and #DIV/0!.');
