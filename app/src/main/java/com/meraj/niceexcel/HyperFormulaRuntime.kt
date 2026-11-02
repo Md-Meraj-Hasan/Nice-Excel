@@ -97,7 +97,8 @@ internal object HyperFormulaRuntime {
         snapshot: Map<String, Map<String, String>>,
         activeSheet: String,
         visibleRows: Int,
-        visibleCols: Int
+        visibleCols: Int,
+        formulaKeys: List<String>
     ): Calculation {
         check(Looper.myLooper() != Looper.getMainLooper()) {
             "HyperFormula calculation must run off the Android UI thread"
@@ -132,6 +133,7 @@ internal object HyperFormulaRuntime {
         val chunks = encodedSnapshot.chunked(64 * 1024)
         val transferId = UUID.randomUUID().toString()
         val transferIdLiteral = JSONObject.quote(transferId)
+        val formulaKeysLiteral = JSONObject.quote(JSONArray(formulaKeys).toString())
 
         evaluateJavascriptBlocking(
             view,
@@ -147,7 +149,7 @@ internal object HyperFormulaRuntime {
         val activeSheetLiteral = JSONObject.quote(activeSheet)
         val encoded = evaluateJavascriptBlocking(
             view,
-            "window.NiceExcelHF.calculateSnapshot($transferIdLiteral, $activeSheetLiteral, $visibleRows, $visibleCols)"
+            "window.NiceExcelHF.calculateSnapshot($transferIdLiteral, $activeSheetLiteral, $visibleRows, $visibleCols, $formulaKeysLiteral)"
         )
         check(!encoded.isNullOrBlank() && encoded != "null") {
             "HyperFormula returned an empty calculation response"
