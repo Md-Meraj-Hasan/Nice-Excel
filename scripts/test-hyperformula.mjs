@@ -1,6 +1,21 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
 import { HyperFormula } from 'hyperformula';
 import { normalizeFormula } from '../app/src/main/assets/hyperformula-compat.js';
+
+const htmlFiles = [
+  'app/src/main/assets/hyperformula-runtime.html',
+  'app/src/main/assets/niceexcel_index.html',
+  'backend/niceexcel_api/static/index.html',
+];
+for (const file of htmlFiles) {
+  const html = await readFile(resolve(process.cwd(), file), 'utf8');
+  const inlineScripts = [...html.matchAll(/<script(?:\\s[^>]*)?>([\\s\\S]*?)<\\/script>/g)]
+    .map(match => match[1]).filter(script => script.trim().length > 0);
+  assert.ok(inlineScripts.length > 0, `No inline JavaScript found in ${file}`);
+  for (const script of inlineScripts) new Function(script);
+}
 
 const workbook = HyperFormula.buildFromSheets({
   Data: [
