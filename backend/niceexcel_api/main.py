@@ -347,6 +347,10 @@ def workbook_info(book_id: str):
 
 def _hyperformula_value(value: Any, epoch: Any) -> Any:
     """Convert workbook values into JSON-safe values understood by HyperFormula."""
+    # openpyxl represents some legacy/dynamic array formulas as ArrayFormula objects.
+    formula_text = getattr(value, "text", None)
+    if isinstance(formula_text, str):
+        return formula_text if formula_text.startswith("=") else "=" + formula_text
     if value is None or isinstance(value, (str, int, float, bool)):
         return value
     if isinstance(value, (datetime, date, time)):
