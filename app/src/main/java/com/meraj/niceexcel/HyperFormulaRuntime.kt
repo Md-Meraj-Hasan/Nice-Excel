@@ -162,6 +162,6 @@ internal object HyperFormulaRuntime {
             readyLatch.countDown()
         }
         if (Looper.myLooper() == Looper.getMainLooper()) closeAction()
-        else mainHandler.post(closeAction)
+        else mainHandler.post { closeAction() }
     }
 }
