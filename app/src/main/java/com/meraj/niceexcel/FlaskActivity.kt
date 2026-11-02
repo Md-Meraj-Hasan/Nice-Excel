@@ -165,6 +165,10 @@ class FlaskActivity : Activity() {
         assets.open("niceexcel_index.html").use { input ->
             FileOutputStream(target).use { output -> input.copyTo(output) }
         }
+        val formulaBundle = File(filesDir, "hyperformula.bundle.js")
+        assets.open("hyperformula.bundle.js").use { input ->
+            FileOutputStream(formulaBundle).use { output -> input.copyTo(output) }
+        }
     }
 
     @Suppress("DEPRECATION")
