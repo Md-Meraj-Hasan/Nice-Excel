@@ -1,0 +1,24 @@
+import assert from 'node:assert/strict';
+import { HyperFormula } from 'hyperformula';
+
+const hf = HyperFormula.buildFromSheets({
+  Sheet1: [
+    ['ID', 'Item', 'Price'],
+    [101, 'Pen', 2],
+    [105, 'Notebook', 5],
+    [108, 'Pencil', 3],
+  ],
+  Sheet2: [
+    ['=SUM(Sheet1!C2:C4)'],
+    ['=VLOOKUP(105,Sheet1!A2:C4,2,FALSE)'],
+    ['=XLOOKUP(108,Sheet1!A2:A4,Sheet1!B2:B4,"Not Found")'],
+    ['=1/0'],
+  ],
+}, { licenseKey: 'gpl-v3' });
+const value = (row) => hf.getCellValue({ sheet: hf.getSheetId('Sheet2'), row, col: 0 });
+assert.equal(value(0), 10, 'cross-sheet SUM');
+assert.equal(value(1), 'Notebook', 'VLOOKUP exact match');
+assert.equal(value(2), 'Pencil', 'XLOOKUP exact match');
+assert.equal(String(value(3)), '#DIV/0!', 'Excel error propagation');
+hf.destroy();
+console.log('HyperFormula GPLv3 smoke tests passed: SUM, cross-sheet references, VLOOKUP, XLOOKUP, #DIV/0!.');
