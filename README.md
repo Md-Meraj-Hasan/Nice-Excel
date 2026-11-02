@@ -35,7 +35,7 @@ The native grid retains its existing bounded background worker pool, formula-res
 - The APK does not load HyperFormula from a CDN and does not require internet access for formula calculations.
 - The project is licensed under GPL-3.0-only; see `LICENSE` and `THIRD_PARTY_NOTICES.md`.
 
-HyperFormula coverage is broad but is not identical to every Microsoft Excel version or feature. Formula support must be verified with the included tests and representative real workbooks.
+HyperFormula coverage is broad but is not identical to every Microsoft Excel version or feature. The native grid also renders non-anchor cells from HyperFormula array-formula ranges (including tested FILTER results). HyperFormula does not implement modern Excel dynamic-array behavior; array output dimensions have engine-specific constraints and must be tested with representative workbooks. Formula support must be verified with the included tests and representative real workbooks.
 
 
 ## v1.0.0 — text formula coverage
