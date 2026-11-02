@@ -82,7 +82,28 @@
           if (sheetId === undefined || !pos || pos.row >= 10000 || pos.col >= 512) continue;
           results[item.sheet + '!' + item.address] = normalize(engine.getCellValue({ sheet: sheetId, row: pos.row, col: pos.col }));
         }
-        return JSON.stringify({ ok: true, results });
+        // HyperFormula array formulas occupy fixed result ranges. Return non-anchor
+        // array cells separately so the native grid can render FILTER/array results
+        // without overwriting the workbook's original cell contents.
+        const spill = {};
+        const allValues = engine.getAllSheetsValues();
+        const allFormulas = engine.getAllSheetsFormulas();
+        for (const name of sheetNames) {
+          const sheetId = engine.getSheetId(name);
+          const dimensions = engine.getSheetDimensions(sheetId);
+          const values = allValues[name] || [];
+          const formulas = allFormulas[name] || [];
+          for (let row = 0; row < dimensions.height && row < 10000; row++) {
+            for (let col = 0; col < dimensions.width && col < 512; col++) {
+              const address = { sheet: sheetId, row, col };
+              if (!engine.isCellPartOfArray(address) || formulas[row]?.[col]) continue;
+              let n = col + 1, letters = '';
+              while (n > 0) { const rem = (n - 1) % 26; letters = String.fromCharCode(65 + rem) + letters; n = Math.floor((n - 1) / 26); }
+              spill[name + '!' + letters + (row + 1)] = normalize(values[row]?.[col]);
+            }
+          }
+        }
+        return JSON.stringify({ ok: true, results, spill });
       } catch (error) {
         return JSON.stringify({ ok: false, error: String(error && error.stack || error) });
       }
