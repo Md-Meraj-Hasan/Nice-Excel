@@ -70,6 +70,7 @@ class MainActivity : Activity() {
     private val mergedOriginalTextSizes = java.util.WeakHashMap<TextView, Float>()
     // Formula results are expensive (POI + fallback evaluator); reuse them across style-only renders.
     private val formulaDisplayCache = mutableMapOf<String, String>()
+    private val formulaSpillCache = mutableMapOf<String, String>()
     // CPU-heavy data operations run off the UI thread; Android views are updated only on main.
     // Bounded four-worker pool: independent CPU tasks may run in parallel without
     // allowing an unlimited backlog. Never use CallerRunsPolicy because it could
@@ -989,6 +990,7 @@ class MainActivity : Activity() {
         // Treat a full/in-place render as a workbook-state boundary. Any background
         // snapshot started before this boundary must revalidate before committing.
         workbookRevision.incrementAndGet()
+        formulaSpillCache.clear()
         val canReuseGrid = cellViews.size == rowCount * colLimit &&
             columnHeader.childCount == colLimit + 1 &&
             frozenFirstRow.childCount == colLimit + 1 &&
@@ -1679,7 +1681,7 @@ class MainActivity : Activity() {
                 // the worker waits for its asynchronous result and never evaluates formulas on
                 // the Android UI thread. The existing POI + Kotlin path remains a safe fallback.
                 val hyperFormulaCalculation = runCatching {
-                    HyperFormulaRuntime.recalculateSnapshot(allSheetsSnapshot)
+                    HyperFormulaRuntime.recalculateSnapshot(allSheetsSnapshot, activeSheet, rowCount, colLimit)
                 }.onFailure { failure ->
                     Log.e("NiceExcel-Formula", "HYPERFORMULA_RUNTIME_FAILURE: calculation failed; POI fallback will be used", failure)
                 }.getOrNull()
@@ -1739,6 +1741,20 @@ class MainActivity : Activity() {
                         val address = sheetAddress.substring(splitAt + 1)
                         formulaDisplayCache[result.first] = result.second
                         if (formulaSheet == sheetName) cellViews[address]?.text = result.second
+                    }
+                    // Dynamic-array formulas (FILTER, SORT, UNIQUE, SEQUENCE, etc.) can
+                    // populate cells whose stored workbook value is blank. Cache those spill
+                    // values separately so the grid can display them without mutating source data.
+                    formulaSpillCache.keys.removeAll { it.startsWith("$activeSheet|") }
+                    hyperFormulaCalculation?.spillValues.orEmpty().forEach { (sheetAddress, value) ->
+                        val splitAt = sheetAddress.lastIndexOf('!')
+                        if (splitAt <= 0) return@forEach
+                        val spillSheet = sheetAddress.substring(0, splitAt)
+                        val address = sheetAddress.substring(splitAt + 1)
+                        formulaSpillCache["$spillSheet|$address"] = value
+                        if (spillSheet == sheetName && data[address].isNullOrEmpty()) {
+                            cellViews[address]?.text = value
+                        }
                     }
                 }
             }
@@ -2782,7 +2798,7 @@ class MainActivity : Activity() {
      * lightweight placeholder is shown. Literal values remain immediately visible.
      */
     private fun displayForGrid(address: String): String {
-        val raw = data[address] ?: return ""
+        val raw = data[address] ?: return formulaSpillCache["$sheetName|$address"] ?: ""
         val st = sheetStyles[address]
         if (!raw.trimStart().startsWith("=")) {
             val number = raw.toDoubleOrNull()
