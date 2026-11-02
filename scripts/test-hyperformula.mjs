@@ -10,7 +10,7 @@ const workbook = HyperFormula.buildFromSheets({
   ],
   Calc: [[
     '=SUM(Data!C2:C4)',
-    '=VLOOKUP(105,Data!A2:C4,2,0)',
+    '=VLOOKUP(105,Data!A2:C4,2,FALSE)',
     '=XLOOKUP(108,Data!A2:A4,Data!B2:B4,"Not Found")',
     '=Data!B3',
     '=1/0',
