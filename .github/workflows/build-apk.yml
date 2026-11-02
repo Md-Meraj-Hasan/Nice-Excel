@@ -5,6 +5,10 @@ on:
   push:
     branches: [main, master, 'hyperformula/gplv3-integration']
 
+concurrency:
+  group: niceexcel-hyperformula-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
