@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body>
+<script src="hyperformula.bundle.js"></script>
+<script>
+(function () {
+  'use strict';
+  let engine = null;
+  let previous = null;
+  const addressPattern = /^([A-Z]{1,3})([1-9][0-9]*)$/i;
+
+  function addressParts(address) {
+    const match = addressPattern.exec(address);
+    if (!match) return null;
+    let col = 0;
+    for (const ch of match[1].toUpperCase()) col = col * 26 + ch.charCodeAt(0) - 64;
+    return { row: Number(match[2]) - 1, col: col - 1 };
+  }
+
+  function toSheets(snapshot) {
+    const output = {};
+    for (const [sheetName, cells] of Object.entries(snapshot)) {
+      let maxRow = -1, maxCol = -1;
+      for (const address of Object.keys(cells || {})) {
+        const point = addressParts(address);
+        if (!point) continue;
+        maxRow = Math.max(maxRow, point.row);
+        maxCol = Math.max(maxCol, point.col);
+      }
+      const rows = Array.from({ length: maxRow + 1 }, () => Array(maxCol + 1).fill(null));
+      for (const [address, raw] of Object.entries(cells || {})) {
+        const point = addressParts(address);
+        if (!point) continue;
+        rows[point.row][point.col] = raw === '' || raw === undefined ? null : raw;
+      }
+      output[sheetName] = rows;
+    }
+    return output;
+  }
+
+  function rebuild(snapshot) {
+    if (engine) {
+      try { engine.destroy(); } catch (_) {}
+    }
+    engine = HyperFormula.buildFromSheets(toSheets(snapshot), { licenseKey: 'gpl-v3' });
+    previous = JSON.parse(JSON.stringify(snapshot));
+  }
+
+  function applyChanges(snapshot) {
+    const oldNames = Object.keys(previous || {});
+    const newNames = Object.keys(snapshot || {});
+    if (!engine || oldNames.length !== newNames.length || oldNames.some((name, i) => name !== newNames[i])) {
+      rebuild(snapshot);
+      return;
+    }
+    const updates = [];
+    for (const sheetName of newNames) {
+      const before = previous[sheetName] || {};
+      const after = snapshot[sheetName] || {};
+      const addresses = new Set([...Object.keys(before), ...Object.keys(after)]);
+      const sheetId = engine.getSheetId(sheetName);
+      if (sheetId === undefined) {
+        rebuild(snapshot);
+        return;
+      }
+      for (const address of addresses) {
+        const oldValue = Object.prototype.hasOwnProperty.call(before, address) ? before[address] : null;
+        const newValue = Object.prototype.hasOwnProperty.call(after, address) ? after[address] : null;
+        if (oldValue === newValue) continue;
+        const point = addressParts(address);
+        if (!point) continue;
+        updates.push({ sheet: sheetId, row: point.row, col: point.col, value: newValue === '' ? null : newValue });
+      }
+    }
+    if (updates.length) {
+      engine.batch(() => {
+        for (const item of updates) {
+          engine.setCellContents({ sheet: item.sheet, row: item.row, col: item.col }, [[item.value]]);
+        }
+      });
+    }
+    previous = JSON.parse(JSON.stringify(snapshot));
+  }
+
+  function normalize(value) {
+    if (value === null || value === undefined) return '';
+    if (typeof value === 'object') {
+      if (Object.prototype.hasOwnProperty.call(value, 'value')) return String(value.value);
+      return JSON.stringify(value);
+    }
+    if (typeof value === 'number' && !Number.isFinite(value)) return '#NUM!';
+    return String(value);
+  }
+
+  window.NiceExcelHF = {
+    version: HyperFormula.version || '3.5.0',
+    calculate(snapshotJson) {
+      try {
+        const snapshot = JSON.parse(snapshotJson);
+        applyChanges(snapshot);
+        const results = {};
+        for (const [sheetName, cells] of Object.entries(snapshot)) {
+          const sheetId = engine.getSheetId(sheetName);
+          for (const [address, raw] of Object.entries(cells || {})) {
+            if (typeof raw !== 'string' || !raw.trimStart().startsWith('=')) continue;
+            const point = addressParts(address);
+            if (!point) continue;
+            results[sheetName + '!' + address.toUpperCase()] =
+              normalize(engine.getCellValue({ sheet: sheetId, row: point.row, col: point.col }));
+          }
+        }
+        return JSON.stringify({ version: this.version, results });
+      } catch (error) {
+        return JSON.stringify({ error: String(error && error.message || error) });
+      }
+    }
+  };
+})();
+</script>
+</body>
+</html>
