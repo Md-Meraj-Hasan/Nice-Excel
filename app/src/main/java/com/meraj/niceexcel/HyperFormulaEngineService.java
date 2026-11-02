@@ -192,10 +192,19 @@ public final class HyperFormulaEngineService extends Service {
     }
 
     private void failInitialization(String reason) {
-        if (ready || initializationFailure != null) return;
+        if (initializationFailure != null) return;
         initializationFailure = reason;
         initializing = false;
-        Log.e(TAG, "HYPERFORMULA_INIT_FAILED " + reason);
+        ready = false;
+        Log.e(TAG, "HYPERFORMULA_RUNTIME_FAILED " + reason);
+        if (activeTimeout != null) {
+            main.removeCallbacks(activeTimeout);
+            activeTimeout = null;
+        }
+        if (activeRequest != null) {
+            sendError(activeRequest, "HyperFormula runtime failed during calculation: " + reason);
+            activeRequest = null;
+        }
         while (!pending.isEmpty()) {
             sendError(pending.remove(), "HyperFormula runtime unavailable: " + reason);
         }
