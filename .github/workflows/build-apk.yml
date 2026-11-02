@@ -22,6 +22,7 @@ jobs:
         run: |
           npm install --no-audit --no-fund
           npm run build:hyperformula
+          npm run test:hyperformula
           test -s app/src/main/assets/hyperformula.bundle.js
           test -s backend/niceexcel_api/static/hyperformula.bundle.js
           test -s app/src/main/assets/THIRD_PARTY_LICENSES/HyperFormula-GPL-3.0.txt
