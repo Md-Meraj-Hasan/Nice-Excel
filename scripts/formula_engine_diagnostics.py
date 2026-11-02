@@ -5,7 +5,7 @@ Host Calc checks formula semantics. It does not claim Android JNI was executed;
 that requires the APK to run on an ARM64 Android device.
 """
 from __future__ import annotations
-import argparse, json, shutil, subprocess, sys, tempfile, zipfile
+import argparse, json, shutil, subprocess, tempfile, zipfile
 from pathlib import Path
 from openpyxl import Workbook, load_workbook
 
@@ -18,6 +18,8 @@ def main() -> int:
     parser.add_argument("--apk", required=True)
     parser.add_argument("--report", default="build/reports/formula-engine-diagnostics.json")
     parser.add_argument("--source-root", default=".")
+    parser.add_argument("--require-android-native-core", action="store_true",
+                        help="Fail unless the built APK contains the LibreOffice ARM64 JNI core and runtime wiring.")
     args = parser.parse_args()
     root, apk = Path(args.source_root).resolve(), Path(args.apk).resolve()
     report_path = Path(args.report).resolve()
@@ -26,7 +28,8 @@ def main() -> int:
         "schema": "niceexcel.formula-engine-diagnostics.v1",
         "ci_host_formula_engine": {"name": None, "connected": False, "version": None, "tests": [], "status": "NOT_RUN"},
         "android_apk": {"path": str(apk), "exists": apk.is_file(), "libreoffice_arm64_native_core": False},
-        "source_wiring": {"libreoffice_bridge": False, "poi_formula_reader": False},
+        "source_wiring": {"libreoffice_bridge": False, "poi_cached_formula_reader": False},
+        "warnings": [],
         "android_device_jni_calculation": "NOT_EXECUTED_BY_HOST_CI",
         "summary": "FAIL", "failures": []
     }
@@ -105,8 +108,10 @@ def main() -> int:
     main_text = main_activity.read_text(encoding="utf-8") if main_activity.is_file() else ""
     report["source_wiring"]["libreoffice_bridge"] = (
         "recalculateSnapshot" in engine_text and "LibreOfficeCalcEngine" in service_text)
-    report["source_wiring"]["poi_formula_reader"] = (
-        "WorkbookFactory" in engine_text and ("FormulaEvaluator" in main_text or "evaluateFormula" in main_text))
+    report["source_wiring"]["poi_cached_formula_reader"] = (
+        "WorkbookFactory" in engine_text and "readCachedFormulaResults" in engine_text)
+    if not report["source_wiring"]["poi_cached_formula_reader"]:
+        failures.append("POI cached-formula result reader source check failed")
     if not report["source_wiring"]["libreoffice_bridge"]:
         failures.append("LibreOffice service/engine bridge source check failed")
 
@@ -122,11 +127,32 @@ def main() -> int:
                     "ARM64_NATIVE_CORE_PACKAGED" if found else "BRIDGE_ONLY_NO_ARM64_NATIVE_CORE")
                 report["android_apk"]["arm64_native_libraries"] = [
                     n for n in names if n.startswith("lib/arm64-v8a/") and n.endswith(".so")]
+                runtime_required = [
+                    "assets/program/fundamentalrc", "assets/program/bootstraprc",
+                    "assets/program/unorc", "assets/program/services.rdb",
+                    "assets/unpack/program/sofficerc", "assets/share/registry/main.xcd"
+                ]
+                report["android_apk"]["required_runtime_assets"] = {
+                    item: item in names for item in runtime_required
+                }
+                runtime_missing = [item for item, present in report["android_apk"]["required_runtime_assets"].items() if not present]
+                report["android_apk"]["runtime_assets_complete"] = not runtime_missing
+                if args.require_android_native_core and not found:
+                    failures.append("LibreOffice ARM64 native core is missing from APK")
+                if args.require_android_native_core and runtime_missing:
+                    failures.append("LibreOffice runtime assets missing from APK: " + ", ".join(runtime_missing))
+                if not args.require_android_native_core and (not found or runtime_missing):
+                    report["warnings"].append("This APK is host-formula-test-only; LibreOffice Android native engine/runtime is incomplete.")
         except zipfile.BadZipFile:
             failures.append("APK is not a valid ZIP archive")
 
     report["failures"] = failures
-    report["summary"] = "PASS_HOST_FORMULAS_DEVICE_RUNTIME_PENDING" if not failures else "FAIL"
+    if failures:
+        report["summary"] = "FAIL"
+    elif report["android_apk"].get("libreoffice_arm64_native_core") and report["android_apk"].get("runtime_assets_complete"):
+        report["summary"] = "APK_NATIVE_COMPONENTS_PACKAGED_DEVICE_JNI_TEST_PENDING"
+    else:
+        report["summary"] = "HOST_FORMULAS_PASS_ANDROID_ENGINE_NOT_PACKAGED"
     report_path.write_text(json.dumps(report, indent=2, default=str) + "\n", encoding="utf-8")
     print(json.dumps(report, indent=2, default=str), flush=True)
     print("DIAGNOSTICS_REPORT=" + str(report_path), flush=True)
