@@ -29,4 +29,4 @@ assert.equal(hf.getCellValue(filterAnchor), 'Notebook', 'FILTER first result');
 assert.equal(hf.isCellPartOfArray(filterSpill), true, 'FILTER result cell belongs to array');
 assert.equal(hf.getCellValue(filterSpill), 'Pencil', 'FILTER second result');
 hf.destroy();
-console.log('HyperFormula GPLv3 smoke tests passed: SUM, cross-sheet references, VLOOKUP, XLOOKUP, #DIV/0!.');
+console.log('HyperFormula GPLv3 smoke tests passed: SUM, cross-sheet references, VLOOKUP, XLOOKUP, FILTER array cells, booleans, and #DIV/0!.');
