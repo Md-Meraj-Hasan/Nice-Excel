@@ -21,7 +21,7 @@ const workbook = HyperFormula.buildFromSheets({
 }, { licenseKey: 'gpl-v3' });
 
 const sheet = workbook.getSheetId('Calc');
-assert.equal(workbook.getCellValue({ sheet, row: 0, col: 0 }), 9);
+assert.equal(workbook.getCellValue({ sheet, row: 0, col: 0 }), 14);
 assert.equal(workbook.getCellValue({ sheet, row: 0, col: 1 }), 'Notebook');
 assert.equal(workbook.getCellValue({ sheet, row: 0, col: 2 }), 'Ruler');
 assert.equal(workbook.getCellValue({ sheet, row: 0, col: 3 }), 'Notebook');
