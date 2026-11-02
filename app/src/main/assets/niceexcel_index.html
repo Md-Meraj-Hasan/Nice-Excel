@@ -117,6 +117,7 @@
 <dialog id="smartTableDialog" aria-labelledby="smartTableTitle"><div class="st-head"><h2 id="smartTableTitle">Create Smart Table</h2><button type="button" id="stCloseBtn" aria-label="Close">✕</button></div><form id="smartTableForm"><div class="st-body"><div class="st-field"><label for="stRange">Source range (include column headers)</label><input id="stRange" value="A1:D10" required pattern="[A-Za-z]{1,3}[1-9][0-9]*:[A-Za-z]{1,3}[1-9][0-9]*" placeholder="A1:D100"></div><div class="st-field"><label for="stName">Table name</label><input id="stName" value="AnalysisTable" maxlength="120" required></div><div class="st-field"><label>Choose a table design</label><div class="st-styles" id="stStyles"><button type="button" class="st-style" data-style="blue" aria-pressed="true"><div class="st-swatch" style="background:#1F4E78"></div><span>Blue</span></button><button type="button" class="st-style" data-style="green" aria-pressed="false"><div class="st-swatch" style="background:#217346"></div><span>Green</span></button><button type="button" class="st-style" data-style="purple" aria-pressed="false"><div class="st-swatch" style="background:#7030A0"></div><span>Purple</span></button><button type="button" class="st-style" data-style="orange" aria-pressed="false"><div class="st-swatch" style="background:#C65911"></div><span>Orange</span></button><button type="button" class="st-style" data-style="teal" aria-pressed="false"><div class="st-swatch" style="background:#0F6B78"></div><span>Teal</span></button><button type="button" class="st-style" data-style="gray" aria-pressed="false"><div class="st-swatch" style="background:#595959"></div><span>Gray</span></button><button type="button" class="st-style" data-style="dark" aria-pressed="false"><div class="st-swatch" style="background:#263746"></div><span>Dark</span></button><button type="button" class="st-style" data-style="light" aria-pressed="false"><div class="st-swatch" style="background:#4472C4"></div><span>Light</span></button></div></div><div class="st-checks"><label><input type="checkbox" id="stHasHeader" checked disabled> First row contains headers</label><label><input type="checkbox" id="stFilters" checked> Enable filters</label><label><input type="checkbox" id="stTotals"> Add totals row</label></div><div id="stMessage" class="st-filter-status" role="status"></div></div><div class="st-foot"><button type="button" id="stCancelBtn">Cancel</button><button type="submit" class="primary" id="stCreateBtn">Create table</button></div></form></dialog>
 
 <footer class="foot"><span id="selectionInfo">A1 selected</span><span class="note" id="calcNote">Formula subset calculates locally; not full Excel compatibility.</span></footer>
+<script src="hyperformula.bundle.js"></script>
 <script>
 (() => {
  const $=id=>document.getElementById(id); let bookId=null, activeSheet='Sheet1', selected='A1', data=[], sheets=[], editing=false;
@@ -130,11 +131,63 @@
  function json(method,body){return {method,headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}}
  async function create(){const x=await api('/workbooks',json('POST',{sheet_name:'Sheet1'}));bookId=x.workbook_id;activeSheet=x.sheets[0];sheets=x.sheets;selected='A1';rememberBook();await refresh();setStatus('New workbook ready')}
  async function info(){const x=await api('/workbooks/'+bookId);sheets=x.sheets.map(s=>s.name);if(!sheets.includes(activeSheet))activeSheet=sheets[0]||'Sheet1';renderSheets();}
- async function refresh(){if(!bookId)return;const gridWrap=$('gridwrap');const savedTop=gridWrap?gridWrap.scrollTop:0;const savedLeft=gridWrap?gridWrap.scrollLeft:0;await info();const x=await api('/workbooks/'+bookId+'/range?sheet='+encodeURIComponent(activeSheet)+'&range=A1:T40');data=x.rows;try{const m=await api('/workbooks/'+bookId+'/reporting/metadata');reportingTables=(m.metadata?.tables||[]).filter(t=>t.sheet===activeSheet)}catch{reportingTables=[]}renderGrid();renderSmartTableFilters();syncFormula();if(gridWrap){gridWrap.scrollTop=savedTop;gridWrap.scrollLeft=savedLeft;}}
+ async function refresh(){if(!bookId)return;const gridWrap=$('gridwrap');const savedTop=gridWrap?gridWrap.scrollTop:0;const savedLeft=gridWrap?gridWrap.scrollLeft:0;await info();const x=await api('/workbooks/'+bookId+'/range?sheet='+encodeURIComponent(activeSheet)+'&range=A1:T40');data=x.rows;try{const m=await api('/workbooks/'+bookId+'/reporting/metadata');reportingTables=(m.metadata?.tables||[]).filter(t=>t.sheet===activeSheet)}catch{reportingTables=[]}try{await syncHyperFormula()}catch(e){console.error('HyperFormula sync failed',e);setStatus('Formula engine unavailable: '+e.message)}renderGrid();renderSmartTableFilters();syncFormula();if(gridWrap){gridWrap.scrollTop=savedTop;gridWrap.scrollLeft=savedLeft;}}
  function cellAt(a){const m=a.match(/^([A-Z]+)(\d+)$/);if(!m)return null;let c=0;for(const ch of m[1])c=c*26+ch.charCodeAt(0)-64;return {r:+m[2],c}}
  function cellData(a){const p=cellAt(a);return p&&data[p.r-1]&&data[p.r-1][p.c-1]}
+  let hfEngine=null,hfSnapshot=null;
+  function hfAddress(address){
+    const m=/^([A-Z]{1,3})([1-9][0-9]*)$/i.exec(address||'');if(!m)return null;
+    let c=0;for(const ch of m[1].toUpperCase())c=c*26+ch.charCodeAt(0)-64;
+    return {row:Number(m[2])-1,col:c-1};
+  }
+  function hfSheetArrays(snapshot){
+    const output={};
+    for(const [name,cells] of Object.entries(snapshot||{})){
+      let maxRow=-1,maxCol=-1;
+      for(const address of Object.keys(cells||{})){const p=hfAddress(address);if(p){maxRow=Math.max(maxRow,p.row);maxCol=Math.max(maxCol,p.col);}}
+      const rows=maxRow<0?[[]]:Array.from({length:maxRow+1},()=>Array(maxCol+1).fill(null));
+      for(const [address,value] of Object.entries(cells||{})){const p=hfAddress(address);if(p)rows[p.row][p.col]=value===''?null:value;}
+      output[name]=rows;
+    }
+    return output;
+  }
+  function hfNormalize(value){
+    if(value===null||value===undefined)return null;
+    if(Array.isArray(value))return value.length?(Array.isArray(value[0])?value[0][0]:value[0]):null;
+    if(typeof value==='object'&&Object.prototype.hasOwnProperty.call(value,'value'))return value.value;
+    return value;
+  }
+  function hyperFormulaCellValue(sheetName,address){
+    if(!hfEngine)return null;const p=hfAddress(address);if(!p)return null;
+    const id=hfEngine.getSheetId(sheetName);if(id===undefined)return null;
+    try{return hfNormalize(hfEngine.getCellValue({sheet:id,row:p.row,col:p.col}));}catch(_){return null;}
+  }
+  async function syncHyperFormula(){
+    if(!window.HyperFormula)throw new Error('Offline HyperFormula bundle is missing');
+    const response=await api('/workbooks/'+bookId+'/calculation-snapshot');
+    const next=response.sheets||{},names=Object.keys(next),oldNames=Object.keys(hfSnapshot||{});
+    const structureChanged=!hfEngine||names.length!==oldNames.length||names.some((name,i)=>name!==oldNames[i]);
+    if(structureChanged){
+      if(hfEngine)try{hfEngine.destroy()}catch(_){}
+      hfEngine=window.HyperFormula.buildFromSheets(hfSheetArrays(next),{licenseKey:'gpl-v3',useColumnIndex:true});
+    }else{
+      const updates=[];
+      for(const name of names){
+        const before=hfSnapshot[name]||{},after=next[name]||{},addresses=new Set([...Object.keys(before),...Object.keys(after)]);
+        const sheet=hfEngine.getSheetId(name);if(sheet===undefined)throw new Error('HyperFormula sheet mapping is missing: '+name);
+        for(const address of addresses){
+          const oldValue=Object.prototype.hasOwnProperty.call(before,address)?before[address]:null;
+          const newValue=Object.prototype.hasOwnProperty.call(after,address)?after[address]:null;
+          if(oldValue===newValue)continue;
+          const p=hfAddress(address);if(p)updates.push({sheet,row:p.row,col:p.col,value:newValue===''?null:newValue});
+        }
+      }
+      if(updates.length)hfEngine.batch(()=>updates.forEach(x=>hfEngine.setCellContents({sheet:x.sheet,row:x.row,col:x.col},[[x.value]])));
+    }
+    hfSnapshot=JSON.parse(JSON.stringify(next));
+  }
  let frozenRows=1;
- function renderGrid(){const t=$('grid');t.innerHTML='';const thead=document.createElement('thead'),hr=document.createElement('tr');const corner=document.createElement('th');corner.textContent='▦';hr.append(corner);for(let c=1;c<=COLS;c++){const th=document.createElement('th');th.textContent=colName(c);hr.append(th)}thead.append(hr);t.append(thead);const tb=document.createElement('tbody');for(let r=1;r<=ROWS;r++){const tr=document.createElement('tr'),rh=document.createElement('th');rh.className='rowhead';rh.textContent=r;tr.append(rh);for(let c=1;c<=COLS;c++){const a=addr(c,r),obj=data[r-1]?.[c-1]||{value:null,style:{}};const td=document.createElement('td');td.dataset.addr=a;td.tabIndex=0;const displayValue=(typeof obj.value==='string'&&obj.value.startsWith('='))?obj.calculated_value:obj.value;const shownValue=Array.isArray(displayValue)?(Array.isArray(displayValue[0])?displayValue[0][0]:displayValue[0]):displayValue;td.textContent=shownValue==null?'':String(shownValue);td.title=obj.value==null?'':String(obj.value);if(obj.style){if(obj.style.bold)td.style.fontWeight='700';if(obj.style.italic)td.style.fontStyle='italic';if(obj.style.font_size)td.style.fontSize=obj.style.font_size+'px';if(obj.style.font_color)td.style.color='#'+obj.style.font_color.slice(-6);if(obj.style.fill_color)td.style.background='#'+obj.style.fill_color.slice(-6);if(obj.style.horizontal)td.style.textAlign=obj.style.horizontal;if(obj.number_format&&obj.number_format!=='General')td.dataset.numberFormat=obj.number_format}if(a===selected)td.classList.add('selected');td.addEventListener('click',()=>select(a));td.addEventListener('dblclick',()=>editCell(td));td.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key==='F2'){e.preventDefault();editCell(td)}else if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)&&!editing){e.preventDefault();move(e.key)}});tr.append(td)}tb.append(tr)}t.append(tb);applyFrozenRows();applyQuickFilter()}
+ function renderGrid(){const t=$('grid');t.innerHTML='';const thead=document.createElement('thead'),hr=document.createElement('tr');const corner=document.createElement('th');corner.textContent='▦';hr.append(corner);for(let c=1;c<=COLS;c++){const th=document.createElement('th');th.textContent=colName(c);hr.append(th)}thead.append(hr);t.append(thead);const tb=document.createElement('tbody');for(let r=1;r<=ROWS;r++){const tr=document.createElement('tr'),rh=document.createElement('th');rh.className='rowhead';rh.textContent=r;tr.append(rh);for(let c=1;c<=COLS;c++){const a=addr(c,r),obj=data[r-1]?.[c-1]||{value:null,style:{}};const td=document.createElement('td');td.dataset.addr=a;td.tabIndex=0;const hfValue=hyperFormulaCellValue(activeSheet,a);const displayValue=(typeof obj.value==='string'&&obj.value.startsWith('='))?(hfValue??obj.calculated_value):(obj.value==null?hfValue:obj.value);const shownValue=Array.isArray(displayValue)?(Array.isArray(displayValue[0])?displayValue[0][0]:displayValue[0]):displayValue;td.textContent=shownValue==null?'':String(shownValue);td.title=obj.value==null?'':String(obj.value);if(obj.style){if(obj.style.bold)td.style.fontWeight='700';if(obj.style.italic)td.style.fontStyle='italic';if(obj.style.font_size)td.style.fontSize=obj.style.font_size+'px';if(obj.style.font_color)td.style.color='#'+obj.style.font_color.slice(-6);if(obj.style.fill_color)td.style.background='#'+obj.style.fill_color.slice(-6);if(obj.style.horizontal)td.style.textAlign=obj.style.horizontal;if(obj.number_format&&obj.number_format!=='General')td.dataset.numberFormat=obj.number_format}if(a===selected)td.classList.add('selected');td.addEventListener('click',()=>select(a));td.addEventListener('dblclick',()=>editCell(td));td.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key==='F2'){e.preventDefault();editCell(td)}else if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)&&!editing){e.preventDefault();move(e.key)}});tr.append(td)}tb.append(tr)}t.append(tb);applyFrozenRows();applyQuickFilter()}
  function applyFrozenRows(){const t=$('grid');const head=t.tHead?.getBoundingClientRect().height||30;const rows=[...t.tBodies[0]?.rows||[]];let top=head;rows.forEach((tr,i)=>{const freeze=(i+1)<=frozenRows;tr.classList.toggle('freeze-row',freeze);if(freeze){tr.style.top=top+'px';[...tr.cells].forEach((cell,j)=>{cell.style.top=top+'px';cell.style.zIndex=j===0?'5':'1';});top+=tr.getBoundingClientRect().height;}else{tr.style.top='';[...tr.cells].forEach(cell=>{cell.style.top='';cell.style.zIndex='';});}})}
  function select(a){selected=a.toUpperCase();$('address').value=selected;document.querySelectorAll('td.selected').forEach(x=>x.classList.remove('selected'));const el=document.querySelector('td[data-addr="'+selected+'"]');if(el)el.classList.add('selected');syncFormula();$('selectionInfo').textContent=activeSheet+' · '+selected}
  // Paste tab/newline-separated clipboard data into a rectangular range (desktop and mobile).
@@ -158,23 +211,31 @@
  function move(k){const p=cellAt(selected);if(!p)return;let {r,c}=p;if(k==='ArrowUp')r=Math.max(1,r-1);if(k==='ArrowDown')r=Math.min(ROWS,r+1);if(k==='ArrowLeft')c=Math.max(1,c-1);if(k==='ArrowRight')c=Math.min(COLS,c+1);select(addr(c,r));document.querySelector('td[data-addr="'+selected+'"]').focus()}
  function editCell(td){if(editing)return;editing=true;const a=td.dataset.addr,old=cellData(a)?.value??'';td.classList.add('editing');const inp=document.createElement('input');inp.value=old;td.textContent='';td.append(inp);inp.focus();inp.select();const done=async save=>{if(!editing)return;editing=false;const val=inp.value; if(save){try{await api('/workbooks/'+bookId+'/cells',json('PATCH',{sheet:activeSheet,cells:[{cell:a,value:val===''?null:val}]}));setStatus('Saved '+a)}catch(e){alert(e.message)}}await refresh();select(a)};inp.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();done(true)}if(e.key==='Escape')done(false)});inp.addEventListener('blur',()=>done(true))}
  async function applyCell(){const a=$('address').value.trim().toUpperCase();if(!/^[A-Z]{1,3}[1-9][0-9]*$/.test(a)){alert('Enter a valid cell address, e.g. A1');return}selected=a;try{await api('/workbooks/'+bookId+'/cells',json('PATCH',{sheet:activeSheet,cells:[{cell:a,value:$('formula').value===''?null:$('formula').value}]}));await refresh();select(a);setStatus('Saved '+a)}catch(e){alert(e.message)}}
- let previewTimer=null,previewRequest=0;
- function scheduleFormulaPreview(){
-   if(previewTimer)clearTimeout(previewTimer);
-   const formula=$('formula').value, cell=$('address').value.trim().toUpperCase(), out=$('formulaPreview');
-   const requestId=++previewRequest;
-   if(!formula.startsWith('=')){out.textContent=formula===''?'':('Value: '+formula);out.style.color='var(--muted)';return}
-   out.textContent='Calculating preview…';out.style.color='var(--muted)';
-   previewTimer=setTimeout(async()=>{
-     if(!bookId||requestId!==previewRequest)return;
-     try{const result=await api('/workbooks/'+bookId+'/formula-preview',json('POST',{sheet:activeSheet,cell,formula}));
-       if(requestId!==previewRequest)return;
-       const value=result.calculated_value;
-       if(result.formula_error){out.textContent='Formula error: '+result.formula_error;out.style.color='#ff8a8a'}
-       else{out.textContent='Preview result: '+(value===null||value===undefined?'':String(value));out.style.color='var(--green)'}
-     }catch(e){if(requestId===previewRequest){out.textContent='Preview unavailable: '+e.message;out.style.color='#ff8a8a'}}
-   },300);
- }
+  let previewTimer=null,previewRequest=0;
+  function scheduleFormulaPreview(){
+    if(previewTimer)clearTimeout(previewTimer);
+    const formulaText=$('formula').value,cell=$('address').value.trim().toUpperCase(),out=$('formulaPreview'),requestId=++previewRequest;
+    if(!formulaText.startsWith('=')){out.textContent=formulaText===''?'':('Value: '+formulaText);out.style.color='var(--muted)';return;}
+    out.textContent='Calculating preview…';out.style.color='var(--muted)';
+    previewTimer=setTimeout(()=>{
+      if(requestId!==previewRequest)return;
+      if(!hfEngine){out.textContent='Formula engine is loading…';return;}
+      const p=hfAddress(cell),sheet=hfEngine.getSheetId(activeSheet);
+      if(!p||sheet===undefined){out.textContent='Preview unavailable: invalid cell';return;}
+      const oldValue=hfSnapshot?.[activeSheet]?.[cell]??null,position={sheet,row:p.row,col:p.col};
+      try{
+        hfEngine.setCellContents(position,[[formulaText]]);
+        const value=hfNormalize(hfEngine.getCellValue(position));
+        hfEngine.setCellContents(position,[[oldValue]]);
+        if(requestId!==previewRequest)return;
+        if(typeof value==='string'&&value.startsWith('#')){out.textContent='Formula error: '+value;out.style.color='#ff8a8a';}
+        else{out.textContent='Preview result: '+(value===null||value===undefined?'':String(value));out.style.color='var(--green)';}
+      }catch(e){
+        try{hfEngine.setCellContents(position,[[oldValue]])}catch(_){}
+        if(requestId===previewRequest){out.textContent='Preview unavailable: '+(e.message||e);out.style.color='#ff8a8a';}
+      }
+    },250);
+  }
  function renderSheets(){const nav=$('sheets');nav.querySelectorAll('.sheet-tab').forEach(x=>x.remove());const add=$('addSheet');for(const name of sheets){const b=document.createElement('button');b.className='sheet-tab'+(name===activeSheet?' active':'');b.textContent=name;b.onclick=async()=>{activeSheet=name;await refresh()};nav.insertBefore(b,add)} }
  async function download(path,filename,method='GET',body=null){const opts={method};if(body instanceof FormData)opts.body=body;else if(body!==null)Object.assign(opts,json(method,body));const blob=await api(path,opts);const u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download=filename;a.click();setTimeout(()=>URL.revokeObjectURL(u),1500)}
  $('newBtn').onclick=()=>{if(bookId&&!confirm('Create a new workbook? The current workbook remains in Recovery.'))return;create().catch(e=>alert(e.message))};$('recoverBtn').onclick=async()=>{try{const result=await api('/recovery');const items=result.items||[];if(!items.length){setStatus('No recovery workbooks found');alert('No autosaved workbooks were found.');return}const listing=items.slice(0,30).map((x,i)=>(i+1)+'. '+x.sheets.join(', ')+' — '+new Date(x.modified*1000).toLocaleString()).join('\n');const answer=prompt('Choose workbook number to recover:\n\n'+listing,'1');if(answer===null)return;const n=Number(answer);if(!Number.isInteger(n)||n<1||n>Math.min(items.length,30)){alert('Invalid recovery number');return}const item=items[n-1];const restored=await api('/recovery/'+item.workbook_id+'/restore',{method:'POST'});bookId=restored.workbook_id;activeSheet=restored.sheets[0]||'Sheet1';sheets=restored.sheets;selected='A1';rememberBook();await refresh();setStatus('Recovered workbook successfully')}catch(e){alert(e.message)}};$('openBtn').onclick=()=>$('fileInput').click();$('fileInput').onchange=async e=>{const f=e.target.files[0];if(!f)return;try{if(f.name.toLowerCase().endsWith('.csv')){await create();const fd=new FormData();fd.append('file',f);await api('/workbooks/'+bookId+'/csv/'+encodeURIComponent(activeSheet)+'/import',{method:'POST',body:fd});await refresh()}else{const fd=new FormData();fd.append('file',f);const x=await api('/workbooks/open',{method:'POST',body:fd});bookId=x.workbook_id;activeSheet=x.sheets[0];sheets=x.sheets;rememberBook();await refresh()}setStatus('Opened '+f.name)}catch(err){alert(err.message)}finally{e.target.value=''}};
