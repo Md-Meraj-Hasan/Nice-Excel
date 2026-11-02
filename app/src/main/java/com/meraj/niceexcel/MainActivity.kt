@@ -1672,22 +1672,30 @@ class MainActivity : Activity() {
         try {
             backgroundExecutor.execute {
                 val results = linkedMapOf<String, Pair<String, String>>()
-                // Try the isolated LibreOffice Calc process first. Native failures are contained
-                // in that process; the existing POI + Kotlin path remains the safe fallback.
-                val libreOfficeBatchResults = runCatching {
-                    LibreOfficeServiceClient.recalculateSnapshot(this@MainActivity, allSheetsSnapshot)
+                // HyperFormula is the primary calculation engine. The isolated service
+                // keeps its workbook/dependency graph warm; this worker submits only the
+                // affected formula addresses, preserving the existing incremental UI path.
+                val hyperFormulaBatchResults = runCatching {
+                    HyperFormulaServiceClient.recalculateSnapshot(
+                        this@MainActivity,
+                        allSheetsSnapshot,
+                        formulas
+                    )
                 }.onFailure { failure ->
-                    Log.e("NiceExcel-Formula", "LIBREOFFICE_RUNTIME_FAILURE: Calc service/recalculation failed; POI fallback will be used", failure)
+                    Log.e("NiceExcel-Formula", "HYPERFORMULA_RUNTIME_FAILURE: isolated engine failed; POI fallback will be used", failure)
                 }.getOrNull().orEmpty()
-                Log.i("NiceExcel-Formula", "LIBREOFFICE_RUNTIME_RESULT: formulas=${allFormulas.size}, returned=${libreOfficeBatchResults.size}, sampleG2=${libreOfficeBatchResults.entries.firstOrNull { it.key.endsWith("!G2") }?.value ?: "<missing>"}")
-                val allFormulaKeys = allFormulas.map { (name, address, _) ->
+                val requestedFormulaKeys = formulas.map { (name, address, _) ->
                     "$name!${address.uppercase(Locale.US)}"
-                }.toSet()
-                val libreOfficeComplete = allFormulaKeys.isNotEmpty() &&
-                    allFormulaKeys.all { it in libreOfficeBatchResults }
-                // Keep the established single-pass POI evaluator as fallback only when Calc
-                // is unavailable or returns an incomplete workbook result.
-                val poiBatchResults = if (libreOfficeComplete) emptyMap()
+                }
+                val hyperFormulaComplete = requestedFormulaKeys.isNotEmpty() &&
+                    requestedFormulaKeys.all { it in hyperFormulaBatchResults }
+                Log.i(
+                    "NiceExcel-Formula",
+                    "HYPERFORMULA_RUNTIME_RESULT: requested=${requestedFormulaKeys.size}, returned=${hyperFormulaBatchResults.size}, complete=$hyperFormulaComplete"
+                )
+                // Retain the existing single-pass POI path only as a safety fallback
+                // if the offline HyperFormula process cannot answer a requested cell.
+                val poiBatchResults = if (hyperFormulaComplete) emptyMap()
                     else PoiFormulaBridge.evaluateAll(allSheetsSnapshot)
                 formulas.forEach { (formulaSheet, address, raw) ->
                     if (jobId != formulaRecalcJobId.get() || isFinishing || isDestroyed) return@forEach
@@ -1700,7 +1708,7 @@ class MainActivity : Activity() {
                         val preserveReferencedValue = shouldUseLocalReferenceResult(expression, formulaCells)
                         val localSpecial = if (preserveReferencedValue || Regex("(?i)^(XOR|VLOOKUP|MATCH|NA|INDEX)\\s*\\(").containsMatchIn(expression))
                             localEngine.evalText(expression)?.takeUnless { it == "#ERROR" } else null
-                        val calcValue = libreOfficeBatchResults["$formulaSheet!${address.uppercase(Locale.US)}"]
+                        val calcValue = hyperFormulaBatchResults["$formulaSheet!${address.uppercase(Locale.US)}"]
                         if (calcValue != null) {
                             val calcNumber = calcValue.toDoubleOrNull()
                             if (calcNumber != null) formatNumber(calcNumber, st?.numberFormat ?: "General", calcValue)
@@ -2841,9 +2849,8 @@ class MainActivity : Activity() {
             }.setNegativeButton("Cancel", null).showProfessional()
     }
     /**
-     * Save a stable workbook snapshot off the UI thread. LibreOfficeKit is disabled
-     * until its native Android runtime is proven stable; the OOXML writer preserves
-     * formulas and requests recalculation when opened in a spreadsheet application.
+     * Save a stable workbook snapshot off the UI thread. The OOXML writer preserves
+     * formula expressions; calculated display values are maintained by HyperFormula.
      */
     private fun saveXlsxWithCalc(uri: android.net.Uri) {
         val sheetSnapshot = sheets.mapValues { (_, cells) -> cells.toMap() }
@@ -2856,29 +2863,18 @@ class MainActivity : Activity() {
         try {
             backgroundExecutor.execute {
                 val sourceFile = java.io.File.createTempFile("niceexcel-save-", ".xlsx", cacheDir)
-                val calculatedFile = java.io.File.createTempFile("niceexcel-calc-", ".xlsx", cacheDir)
-                calculatedFile.delete()
-                var usedLibreOffice = false
                 try {
                     java.io.FileOutputStream(sourceFile).use { output ->
                         XlsxCodec.write(output, sheetSnapshot, styleSnapshot, metadataSnapshot, mergeSnapshot)
                     }
-                    // Do not initialize the LibreOffice native engine while saving.
-                    // XlsxCodec keeps the original formula expressions in the workbook.
-                    val finalFile = sourceFile
-
                     val destination = contentResolver.openOutputStream(uri)
                         ?: error("Could not open the selected save destination")
                     destination.use { output ->
-                        finalFile.inputStream().use { input -> input.copyTo(output) }
+                        sourceFile.inputStream().use { input -> input.copyTo(output) }
                     }
                     mainHandler.post {
                         if (!isFinishing && !isDestroyed) {
-                            status.text = if (usedLibreOffice) {
-                                "Excel workbook saved • LibreOffice Calc recalculated formulas"
-                            } else {
-                                "Excel workbook saved • formulas recalculate when opened in Excel"
-                            }
+                            status.text = "Excel workbook saved • formulas preserved"
                         }
                     }
                 } catch (error: Exception) {
@@ -2889,7 +2885,6 @@ class MainActivity : Activity() {
                     }
                 } finally {
                     sourceFile.delete()
-                    calculatedFile.delete()
                 }
             }
         } catch (error: RejectedExecutionException) {
