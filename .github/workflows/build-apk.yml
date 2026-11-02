@@ -4,6 +4,8 @@ on:
   workflow_dispatch:
   push:
     branches: [main, master]
+  pull_request:
+    branches: [main, master]
 
 permissions:
   contents: read
@@ -27,22 +29,37 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.11.1'
-      - name: Report LibreOffice native core availability
+      - name: Detect LibreOffice native core
+        id: libreoffice
         shell: bash
         run: |
           if [[ -s native-engine/jniLibs/arm64-v8a/liblo-native-code.so ]]; then
-            echo "LibreOffice core file is present. Full ELF and APK checks run in Verify LibreOffice APK workflow."
+            echo "status=with-libreoffice" >> "$GITHUB_OUTPUT"
+            echo "::notice::LibreOffice native core is present. The APK will include the staged Calc native library."
           else
-            echo "NOTICE: LibreOffice native core is NOT present. This APK will NOT have LibreOffice Calc linked."
+            echo "status=without-libreoffice" >> "$GITHUB_OUTPUT"
+            echo "::warning::This is a fallback-only APK. LibreOffice Calc is NOT linked; do not use this artifact to test full Excel formula support. Use the 'Build NiceExcel APK with LibreOffice ARM64' workflow artifact instead."
           fi
       - name: Run Android unit tests
         run: gradle --no-daemon testDebugUnitTest
       - name: Build debug APK
         run: gradle --no-daemon assembleDebug
-      - name: Upload debug APK (native status depends on supplied core)
+      - name: Verify LibreOffice APK when native core is present
+        if: steps.libreoffice.outputs.status == 'with-libreoffice'
+        run: bash native-engine/scripts/check-apk-libreoffice.sh app/build/outputs/apk/debug/app-debug.apk
+      - name: Upload APK without LibreOffice (fallback only)
+        if: steps.libreoffice.outputs.status == 'without-libreoffice'
         uses: actions/upload-artifact@v4
         with:
-          name: NiceExcel-debug-apk
+          name: NiceExcel-debug-apk-NO-LibreOffice-fallback-only
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload APK with LibreOffice ARM64
+        if: steps.libreoffice.outputs.status == 'with-libreoffice'
+        uses: actions/upload-artifact@v4
+        with:
+          name: NiceExcel-debug-apk-LibreOffice-ARM64
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
