@@ -148,6 +148,7 @@ internal object HyperFormulaServiceClient {
         } finally {
             if (bound) runCatching { appContext.unbindService(connection) }
             runCatching { payloadFile.delete() }
+            responsePath.get()?.let { path -> runCatching { File(path).delete() } }
         }
     }
 }
