@@ -38,7 +38,7 @@ internal object HyperFormulaServiceClient {
         check(Looper.myLooper() != Looper.getMainLooper()) {
             "HyperFormula service calls must run off the Android UI thread"
         }
-        if (formulas.isEmpty()) return emptyMap()
+        if (formulas.isEmpty()) return HyperFormulaCalculationResult(emptyMap(), emptyMap())
 
         val payload = JSONObject()
         val sheetsJson = JSONObject()
