@@ -5,6 +5,7 @@ import android.graphics.Color
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import android.util.Base64
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.WebView
@@ -14,6 +15,7 @@ import org.json.JSONObject
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
+import java.util.UUID
 
 /**
  * Offline HyperFormula adapter for the native grid.
@@ -115,53 +117,82 @@ internal object HyperFormulaRuntime {
             payload.put(sheetName, values)
         }
 
+        val viewReference = AtomicReference<WebView?>()
+        val viewReady = CountDownLatch(1)
+        mainHandler.post {
+            viewReference.set(webView)
+            viewReady.countDown()
+        }
+        check(viewReady.await(READY_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+            "Timed out preparing the offline HyperFormula renderer"
+        }
+        val view = viewReference.get() ?: error("HyperFormula WebView has been destroyed")
+        val snapshotBytes = payload.toString().toByteArray(Charsets.UTF_8)
+        val encodedSnapshot = Base64.encodeToString(snapshotBytes, Base64.NO_WRAP)
+        val chunks = encodedSnapshot.chunked(64 * 1024)
+        val transferId = UUID.randomUUID().toString()
+        val transferIdLiteral = JSONObject.quote(transferId)
+
+        evaluateJavascriptBlocking(
+            view,
+            "window.NiceExcelHF.beginSnapshot($transferIdLiteral, ${chunks.size})"
+        )
+        chunks.forEachIndexed { index, chunk ->
+            val chunkLiteral = JSONObject.quote(chunk)
+            evaluateJavascriptBlocking(
+                view,
+                "window.NiceExcelHF.appendSnapshotChunk($transferIdLiteral, $index, $chunkLiteral)"
+            )
+        }
+        val activeSheetLiteral = JSONObject.quote(activeSheet)
+        val encoded = evaluateJavascriptBlocking(
+            view,
+            "window.NiceExcelHF.calculateSnapshot($transferIdLiteral, $activeSheetLiteral, $visibleRows, $visibleCols)"
+        )
+        check(!encoded.isNullOrBlank() && encoded != "null") {
+            "HyperFormula returned an empty calculation response"
+        }
+        val decoded = JSONArray("[$encoded]").getString(0)
+        val response = JSONObject(decoded)
+        if (response.has("error")) {
+            error(response.optString("error", "Unknown HyperFormula error"))
+        }
+        val values = linkedMapOf<String, String>()
+        val results = response.getJSONObject("results")
+        val keys = results.keys()
+        while (keys.hasNext()) {
+            val key = keys.next()
+            values[key] = results.optString(key, "")
+        }
+        val numericArray = response.optJSONArray("numericKeys") ?: JSONArray()
+        val numericKeys = buildSet {
+            for (index in 0 until numericArray.length()) {
+                val key = numericArray.optString(index)
+                if (key.isNotBlank()) add(key)
+            }
+        }
+        val spillValues = linkedMapOf<String, String>()
+        val spills = response.optJSONObject("spillValues") ?: JSONObject()
+        val spillKeys = spills.keys()
+        while (spillKeys.hasNext()) {
+            val key = spillKeys.next()
+            spillValues[key] = spills.optString(key, "")
+        }
+        return Calculation(values, numericKeys, spillValues)
+    }
+
+    private fun evaluateJavascriptBlocking(view: WebView, script: String): String? {
+        check(Looper.myLooper() != Looper.getMainLooper()) {
+            "WebView JavaScript bridge waits must run off the Android UI thread"
+        }
         val completed = CountDownLatch(1)
-        val result = AtomicReference<Calculation>()
+        val result = AtomicReference<String?>()
         val failure = AtomicReference<Throwable?>()
-        val payloadLiteral = JSONObject.quote(payload.toString())
         mainHandler.post {
             try {
-                val view = webView ?: error("HyperFormula WebView has been destroyed")
-                val activeSheetLiteral = JSONObject.quote(activeSheet)
-                view.evaluateJavascript(
-                    "window.NiceExcelHF.calculate($payloadLiteral, $activeSheetLiteral, $visibleRows, $visibleCols)"
-                ) { encoded ->
-                    try {
-                        check(!encoded.isNullOrBlank() && encoded != "null") {
-                            "HyperFormula returned an empty calculation response"
-                        }
-                        val decoded = JSONArray("[$encoded]").getString(0)
-                        val response = JSONObject(decoded)
-                        if (response.has("error")) {
-                            error(response.optString("error", "Unknown HyperFormula error"))
-                        }
-                        val values = linkedMapOf<String, String>()
-                        val results = response.getJSONObject("results")
-                        val keys = results.keys()
-                        while (keys.hasNext()) {
-                            val key = keys.next()
-                            values[key] = results.optString(key, "")
-                        }
-                        val numericArray = response.optJSONArray("numericKeys") ?: JSONArray()
-                        val numericKeys = buildSet {
-                            for (index in 0 until numericArray.length()) {
-                                val key = numericArray.optString(index)
-                                if (key.isNotBlank()) add(key)
-                            }
-                        }
-                        val spillValues = linkedMapOf<String, String>()
-                        val spills = response.optJSONObject("spillValues") ?: JSONObject()
-                        val spillKeys = spills.keys()
-                        while (spillKeys.hasNext()) {
-                            val key = spillKeys.next()
-                            spillValues[key] = spills.optString(key, "")
-                        }
-                        result.set(Calculation(values, numericKeys, spillValues))
-                    } catch (error: Throwable) {
-                        failure.set(error)
-                    } finally {
-                        completed.countDown()
-                    }
+                view.evaluateJavascript(script) { value ->
+                    result.set(value)
+                    completed.countDown()
                 }
             } catch (error: Throwable) {
                 failure.set(error)
@@ -169,10 +200,10 @@ internal object HyperFormulaRuntime {
             }
         }
         check(completed.await(CALC_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
-            "HyperFormula calculation timed out"
+            "Timed out transferring workbook data to HyperFormula"
         }
-        failure.get()?.let { throw IllegalStateException("HyperFormula calculation failed", it) }
-        return result.get() ?: Calculation(emptyMap(), emptySet(), emptyMap())
+        failure.get()?.let { throw IllegalStateException("HyperFormula WebView call failed", it) }
+        return result.get()
     }
 
     fun close() {
