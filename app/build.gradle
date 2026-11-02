@@ -62,6 +62,3 @@ chaquopy {
     }
 }
 
-
-
-// This task verifies packaging prerequisites only. It does not build LibreOffice.
