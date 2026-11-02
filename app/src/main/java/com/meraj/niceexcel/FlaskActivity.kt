@@ -169,6 +169,10 @@ class FlaskActivity : Activity() {
         assets.open("hyperformula.bundle.js").use { input ->
             FileOutputStream(formulaBundle).use { output -> input.copyTo(output) }
         }
+        val licenseFile = File(filesDir, "hyperformula-license.txt")
+        assets.open("THIRD_PARTY_LICENSES/HyperFormula-GPL-3.0.txt").use { input ->
+            FileOutputStream(licenseFile).use { output -> input.copyTo(output) }
+        }
     }
 
     @Suppress("DEPRECATION")
