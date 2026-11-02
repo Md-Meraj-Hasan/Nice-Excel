@@ -34,5 +34,12 @@ assert.equal(workbook.getCellValue({ sheet, row: 1, col: 5 }), 105);
 workbook.setCellContents({ sheet: workbook.getSheetId('Data'), row: 1, col: 2 }, [[10]]);
 assert.equal(workbook.getCellValue({ sheet, row: 0, col: 0 }), 21);
 
+const sparse = HyperFormula.buildEmpty({ licenseKey: 'gpl-v3', useColumnIndex: true });
+const sparseName = sparse.addSheet('Sparse');
+const sparseSheet = sparse.getSheetId(sparseName);
+sparse.setCellContents({ sheet: sparseSheet, row: 999, col: 25 }, [[7]]);
+assert.equal(sparse.getCellValue({ sheet: sparseSheet, row: 999, col: 25 }), 7);
+sparse.destroy();
+
 workbook.destroy();
 process.stdout.write('HyperFormula regression checks passed.\n');
