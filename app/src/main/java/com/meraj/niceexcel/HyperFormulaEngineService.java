@@ -30,7 +30,7 @@ public final class HyperFormulaEngineService extends Service {
     public static final int MSG_RECALCULATE = 41;
     public static final int MSG_RESULT = 42;
     public static final String KEY_PAYLOAD_PATH = "payload_path";
-    public static final String KEY_RESULT = "result";
+    public static final String KEY_RESULT_PATH = "result_path";
     private static final String TAG = "NiceExcel-HyperFormula";
 
     private final Queue<Message> pending = new ArrayDeque<>();
@@ -107,15 +107,23 @@ public final class HyperFormulaEngineService extends Service {
 
     private void sendResult(Message request, String result) {
         if (request.replyTo == null) return;
+        File resultFile = null;
         try {
+            resultFile = File.createTempFile("niceexcel-hf-result-", ".json", getCacheDir());
+            Files.write(resultFile.toPath(), result.getBytes(StandardCharsets.UTF_8));
             Message response = Message.obtain(null, MSG_RESULT);
             Bundle bundle = new Bundle();
-            bundle.putString(KEY_RESULT, result);
+            bundle.putString(KEY_RESULT_PATH, resultFile.getAbsolutePath());
             response.setData(bundle);
             request.replyTo.send(response);
         } catch (Throwable error) {
+            if (resultFile != null) runCatchingDelete(resultFile);
             Log.w(TAG, "Unable to return formula results to client", error);
         }
+    }
+
+    private void runCatchingDelete(File file) {
+        try { Files.deleteIfExists(file.toPath()); } catch (Throwable ignored) { }
     }
 
     @Override public IBinder onBind(Intent intent) { return messenger.getBinder(); }
