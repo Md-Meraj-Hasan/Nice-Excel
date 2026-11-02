@@ -11,11 +11,8 @@ import android.os.Messenger;
 import android.os.RemoteException;
 import android.util.Log;
 
-import org.libreoffice.kit.LibreOfficeKit;
-
 import java.io.File;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -68,13 +65,6 @@ public final class LibreOfficeEngineService extends Service {
                         : MSG_RECALCULATE_SNAPSHOT_RESULT);
         Bundle result = new Bundle();
         try {
-            if (!LibreOfficeKit.isInitialized()) {
-                LibreOfficeKit.init(getApplicationContext());
-            }
-            if (!LibreOfficeKit.isInitialized()) {
-                throw new IllegalStateException("LibreOfficeKit native initialization returned false");
-            }
-
             if (request == MSG_RECALCULATE_SNAPSHOT) {
                 @SuppressWarnings("unchecked")
                 Map<String, Map<String, String>> snapshot =
@@ -115,7 +105,8 @@ public final class LibreOfficeEngineService extends Service {
                 Log.i(TAG, "Recalculated workbook: " + output.getAbsolutePath()
                         + " (" + output.length() + " bytes)");
             } else {
-                result.putString(KEY_DETAIL, "LibreOfficeKit native initialization completed");
+                LibreOfficeCalcEngine.INSTANCE.initializeRuntime(getApplicationContext());
+                result.putString(KEY_DETAIL, "LibreOfficeKit native initialization completed on the Calc worker thread");
                 Log.i(TAG, result.getString(KEY_DETAIL));
             }
             result.putBoolean(KEY_OK, true);
