@@ -7,6 +7,7 @@ import os
 import re
 import tempfile
 import uuid
+from datetime import date, datetime, time
 from copy import copy
 from typing import Any
 
@@ -21,6 +22,7 @@ from openpyxl.worksheet.table import Table, TableStyleInfo
 from .reporting_metadata import empty_metadata, validate_metadata
 from .reporting_store import (META_SHEET_NAME as _REPORTING_META_SHEET, get_reporting_metadata as _store_get_reporting_metadata, set_reporting_metadata as _store_set_reporting_metadata, visible_sheetnames as _store_visible_sheetnames, ensure_excel_tables as _ensure_excel_tables)
 from openpyxl.utils import get_column_letter, range_boundaries
+from openpyxl.utils.datetime import to_excel
 from pydantic import BaseModel, Field
 from .formula_engine import calculate_cell
 from .dependency_graph import build_dependency_graph
@@ -341,6 +343,35 @@ def workbook_info(book_id: str):
         "active_sheet": wb.active.title,
         "formula_calculation": "limited_nice_excel_subset_evaluator",
     }
+
+
+def _hyperformula_value(value: Any, epoch: Any) -> Any:
+    """Convert workbook values into JSON-safe values understood by HyperFormula."""
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, (datetime, date, time)):
+        return to_excel(value, epoch)
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return str(value)
+
+
+@app.get("/workbooks/{book_id}/calculation-snapshot")
+def calculation_snapshot(book_id: str):
+    """Return sparse raw cell contents for the shared HyperFormula browser engine."""
+    wb = _book(book_id)
+    sheets: dict[str, dict[str, Any]] = {}
+    for ws in wb.worksheets:
+        if ws.title == _REPORTING_META_SHEET:
+            continue
+        cells: dict[str, Any] = {}
+        # Sparse iteration avoids walking huge empty worksheet rectangles.
+        for cell in ws._cells.values():
+            if cell.value is not None:
+                cells[cell.coordinate] = _hyperformula_value(cell.value, wb.epoch)
+        sheets[ws.title] = cells
+    return {"sheets": sheets, "engine": "hyperformula", "license": "GPL-3.0-only"}
 
 
 @app.get("/workbooks/{book_id}/range")
