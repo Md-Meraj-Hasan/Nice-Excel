@@ -1678,11 +1678,12 @@ class MainActivity : Activity() {
                 // HyperFormula is the primary engine. It runs in a local-only WebView renderer;
                 // the worker waits for its asynchronous result and never evaluates formulas on
                 // the Android UI thread. The existing POI + Kotlin path remains a safe fallback.
-                val hyperFormulaBatchResults = runCatching {
+                val hyperFormulaCalculation = runCatching {
                     HyperFormulaRuntime.recalculateSnapshot(allSheetsSnapshot)
                 }.onFailure { failure ->
                     Log.e("NiceExcel-Formula", "HYPERFORMULA_RUNTIME_FAILURE: calculation failed; POI fallback will be used", failure)
-                }.getOrNull().orEmpty()
+                }.getOrNull()
+                val hyperFormulaBatchResults = hyperFormulaCalculation?.values.orEmpty()
                 Log.i("NiceExcel-Formula", "HYPERFORMULA_RUNTIME_RESULT: formulas=${allFormulas.size}, returned=${hyperFormulaBatchResults.size}")
                 val allFormulaKeys = allFormulas.map { (name, address, _) ->
                     "$name!${address.uppercase(Locale.US)}"
@@ -1704,11 +1705,13 @@ class MainActivity : Activity() {
                         val preserveReferencedValue = shouldUseLocalReferenceResult(expression, formulaCells)
                         val localSpecial = if (preserveReferencedValue || Regex("(?i)^(XOR|VLOOKUP|MATCH|NA|INDEX)\\s*\\(").containsMatchIn(expression))
                             localEngine.evalText(expression)?.takeUnless { it == "#ERROR" } else null
-                        val calcValue = hyperFormulaBatchResults["$formulaSheet!${address.uppercase(Locale.US)}"]
+                        val calcKey = "$formulaSheet!${address.uppercase(Locale.US)}"
+                        val calcValue = hyperFormulaBatchResults[calcKey]
                         if (calcValue != null) {
-                            val calcNumber = calcValue.toDoubleOrNull()
-                            if (calcNumber != null) formatNumber(calcNumber, st?.numberFormat ?: "General", calcValue)
-                            else calcValue
+                            if (calcKey in hyperFormulaCalculation?.numericKeys.orEmpty()) {
+                                val calcNumber = calcValue.toDoubleOrNull()
+                                if (calcNumber != null) formatNumber(calcNumber, st?.numberFormat ?: "General", calcValue) else calcValue
+                            } else calcValue
                         } else if (localSpecial != null) localSpecial else {
                             val imported = poiBatchResults["$formulaSheet!${address.uppercase(Locale.US)}"]
                             when {
