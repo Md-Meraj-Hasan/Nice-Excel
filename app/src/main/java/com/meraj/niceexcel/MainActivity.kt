@@ -1705,8 +1705,36 @@ class MainActivity : Activity() {
                 }.onFailure { failure ->
                     Log.e("NiceExcel-Formula", "HYPERFORMULA_RUNTIME_FAILURE: isolated engine failed; POI fallback will be used", failure)
                 }.getOrNull()
-                val hyperFormulaBatchResults = hyperFormulaCalculation?.formulaResults.orEmpty()
-                val hyperFormulaSpillResults = hyperFormulaCalculation?.spillResults.orEmpty()
+                // HyperFormula's JS bridge echoes the requested address exactly as it
+                // arrived in the payload. Workbook imports can contain lowercase cell
+                // addresses, while the native cache and dependency graph use uppercase
+                // A1 addresses. Canonicalize both result maps before completeness checks
+                // and lookups so a valid result is not discarded as "missing".
+                fun canonicalFormulaResultMap(source: Map<String, String>): Map<String, String> {
+                    val normalized = linkedMapOf<String, String>()
+                    source.forEach { (rawKey, value) ->
+                        val separator = rawKey.lastIndexOf('!')
+                        val key = if (separator > 0 && separator < rawKey.lastIndex) {
+                            rawKey.substring(0, separator + 1) +
+                                rawKey.substring(separator + 1).uppercase(Locale.US)
+                        } else rawKey
+                        if (normalized.put(key, value) != null) {
+                            Log.w(
+                                "NiceExcel-Formula",
+                                "HYPERFORMULA_DUPLICATE_NORMALIZED_KEY raw=$rawKey normalized=$key"
+                            )
+                        }
+                    }
+                    return normalized
+                }
+                val rawHyperFormulaBatchResults = hyperFormulaCalculation?.formulaResults.orEmpty()
+                val rawHyperFormulaSpillResults = hyperFormulaCalculation?.spillResults.orEmpty()
+                val hyperFormulaBatchResults = canonicalFormulaResultMap(rawHyperFormulaBatchResults)
+                val hyperFormulaSpillResults = canonicalFormulaResultMap(rawHyperFormulaSpillResults)
+                Log.i(
+                    "NiceExcel-Formula",
+                    "HYPERFORMULA_KEY_NORMALIZATION rawResults=${rawHyperFormulaBatchResults.size}, normalizedResults=${hyperFormulaBatchResults.size}, rawSpills=${rawHyperFormulaSpillResults.size}, normalizedSpills=${hyperFormulaSpillResults.size}"
+                )
                 val requestedFormulaKeys = formulas.map { (name, address, _) ->
                     "$name!${address.uppercase(Locale.US)}"
                 }
