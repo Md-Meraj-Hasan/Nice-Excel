@@ -23,6 +23,11 @@ import java.util.concurrent.atomic.AtomicReference
  * for the renderer callback, while the Android UI thread is never blocked.
  */
 internal object HyperFormulaRuntime {
+    data class Calculation(
+        val values: Map<String, String>,
+        val numericKeys: Set<String>
+    )
+
     private const val TAG = "NiceExcel-HyperFormula"
     private const val READY_TIMEOUT_SECONDS = 45L
     private const val CALC_TIMEOUT_SECONDS = 120L
@@ -85,12 +90,12 @@ internal object HyperFormulaRuntime {
         view.loadUrl("file:///android_asset/hyperformula-runtime.html")
     }
 
-    fun recalculateSnapshot(snapshot: Map<String, Map<String, String>>): Map<String, String> {
+    fun recalculateSnapshot(snapshot: Map<String, Map<String, String>>): Calculation {
         check(Looper.myLooper() != Looper.getMainLooper()) {
             "HyperFormula calculation must run off the Android UI thread"
         }
         if (snapshot.values.none { cells -> cells.values.any { it.trimStart().startsWith("=") } }) {
-            return emptyMap()
+            return Calculation(emptyMap(), emptySet())
         }
         check(readyLatch.await(READY_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
             "Timed out waiting for the offline HyperFormula runtime"
@@ -105,7 +110,7 @@ internal object HyperFormulaRuntime {
         }
 
         val completed = CountDownLatch(1)
-        val result = AtomicReference<Map<String, String>>()
+        val result = AtomicReference<Calculation>()
         val failure = AtomicReference<Throwable?>()
         val payloadLiteral = JSONObject.quote(payload.toString())
         mainHandler.post {
@@ -128,7 +133,13 @@ internal object HyperFormulaRuntime {
                             val key = keys.next()
                             values[key] = results.optString(key, "")
                         }
-                        result.set(values)
+                        val numericArray = response.optJSONArray("numericKeys") ?: JSONArray()
+                        val numericKeys = buildSet {
+                            for (index in 0 until numericArray.length()) {
+                                numericArray.optString(index).takeIf { it.isNotBlank() }?.let(::add)
+                            }
+                        }
+                        result.set(Calculation(values, numericKeys))
                     } catch (error: Throwable) {
                         failure.set(error)
                     } finally {
@@ -144,7 +155,7 @@ internal object HyperFormulaRuntime {
             "HyperFormula calculation timed out"
         }
         failure.get()?.let { throw IllegalStateException("HyperFormula calculation failed", it) }
-        return result.get() ?: emptyMap()
+        return result.get() ?: Calculation(emptyMap(), emptySet())
     }
 
     fun close() {
