@@ -2845,9 +2845,8 @@ class MainActivity : Activity() {
             }.setNegativeButton("Cancel", null).showProfessional()
     }
     /**
-     * Save a stable workbook snapshot off the UI thread. LibreOfficeKit is disabled
-     * until its native Android runtime is proven stable; the OOXML writer preserves
-     * formulas and requests recalculation when opened in a spreadsheet application.
+     * Save a stable workbook snapshot off the UI thread. Formula results are calculated
+     * by the shared HyperFormula runtime; the OOXML writer preserves formulas for Excel.
      */
     private fun saveXlsxWithCalc(uri: android.net.Uri) {
         val sheetSnapshot = sheets.mapValues { (_, cells) -> cells.toMap() }
@@ -2860,15 +2859,11 @@ class MainActivity : Activity() {
         try {
             backgroundExecutor.execute {
                 val sourceFile = java.io.File.createTempFile("niceexcel-save-", ".xlsx", cacheDir)
-                val calculatedFile = java.io.File.createTempFile("niceexcel-calc-", ".xlsx", cacheDir)
-                calculatedFile.delete()
-                var usedLibreOffice = false
                 try {
                     java.io.FileOutputStream(sourceFile).use { output ->
                         XlsxCodec.write(output, sheetSnapshot, styleSnapshot, metadataSnapshot, mergeSnapshot)
                     }
-                    // Do not initialize the LibreOffice native engine while saving.
-                    // XlsxCodec keeps the original formula expressions in the workbook.
+                    // Keep formula expressions in the XLSX; Excel recalculates them on open.
                     val finalFile = sourceFile
 
                     val destination = contentResolver.openOutputStream(uri)
@@ -2878,11 +2873,7 @@ class MainActivity : Activity() {
                     }
                     mainHandler.post {
                         if (!isFinishing && !isDestroyed) {
-                            status.text = if (usedLibreOffice) {
-                                "Excel workbook saved • LibreOffice Calc recalculated formulas"
-                            } else {
-                                "Excel workbook saved • formulas recalculate when opened in Excel"
-                            }
+                            status.text = "Excel workbook saved • formulas recalculate when opened in Excel"
                         }
                     }
                 } catch (error: Exception) {
@@ -2893,7 +2884,6 @@ class MainActivity : Activity() {
                     }
                 } finally {
                     sourceFile.delete()
-                    calculatedFile.delete()
                 }
             }
         } catch (error: RejectedExecutionException) {
