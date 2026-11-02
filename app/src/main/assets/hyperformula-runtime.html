@@ -24,32 +24,26 @@
       ? window.NiceExcelFormulaCompat.normalizeFormula(value) : value;
   }
 
-  function toSheets(snapshot) {
-    const output = {};
-    for (const [sheetName, cells] of Object.entries(snapshot)) {
-      let maxRow = -1, maxCol = -1;
-      for (const address of Object.keys(cells || {})) {
-        const point = addressParts(address);
-        if (!point) continue;
-        maxRow = Math.max(maxRow, point.row);
-        maxCol = Math.max(maxCol, point.col);
-      }
-      const rows = Array.from({ length: maxRow + 1 }, () => Array(maxCol + 1).fill(null));
-      for (const [address, raw] of Object.entries(cells || {})) {
-        const point = addressParts(address);
-        if (!point) continue;
-        rows[point.row][point.col] = raw === '' || raw === undefined ? null : engineValue(raw);
-      }
-      output[sheetName] = rows;
-    }
-    return output;
-  }
 
   function rebuild(snapshot) {
     if (engine) {
       try { engine.destroy(); } catch (_) {}
     }
-    engine = HyperFormula.buildFromSheets(toSheets(snapshot), { licenseKey: 'gpl-v3' });
+    engine = HyperFormula.buildEmpty({ licenseKey: 'gpl-v3', useColumnIndex: true });
+    for (const sheetName of Object.keys(snapshot)) engine.addSheet(sheetName);
+    engine.batch(() => {
+      for (const [sheetName, cells] of Object.entries(snapshot)) {
+        const sheetId = engine.getSheetId(sheetName);
+        for (const [address, raw] of Object.entries(cells || {})) {
+          const point = addressParts(address);
+          if (!point) continue;
+          engine.setCellContents(
+            { sheet: sheetId, row: point.row, col: point.col },
+            [[engineValue(raw)]]
+          );
+        }
+      }
+    });
     previous = JSON.parse(JSON.stringify(snapshot));
   }
 
