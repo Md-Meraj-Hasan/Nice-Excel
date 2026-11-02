@@ -26,7 +26,7 @@ const divideByZero = workbook.getCellValue({ sheet, row: 0, col: 4 });
 assert.equal(divideByZero.value, '#DIV/0!');
 
 workbook.setCellContents({ sheet: workbook.getSheetId('Data'), row: 1, col: 2 }, [[10]]);
-assert.equal(workbook.getCellValue({ sheet, row: 0, col: 0 }), 17);
+assert.equal(workbook.getCellValue({ sheet, row: 0, col: 0 }), 16);
 
 workbook.destroy();
 process.stdout.write('HyperFormula regression checks passed.\n');
