@@ -70,6 +70,8 @@ class MainActivity : Activity() {
     private val mergedOriginalTextSizes = java.util.WeakHashMap<TextView, Float>()
     // Formula results are expensive (POI + fallback evaluator); reuse them across style-only renders.
     private val formulaDisplayCache = mutableMapOf<String, String>()
+    // Array-formula result cells are cached separately; the workbook stores only the anchor formula.
+    private val formulaSpillCache = mutableMapOf<String, String>()
     // CPU-heavy data operations run off the UI thread; Android views are updated only on main.
     // Bounded four-worker pool: independent CPU tasks may run in parallel without
     // allowing an unlimited backlog. Never use CallerRunsPolicy because it could
@@ -647,7 +649,7 @@ class MainActivity : Activity() {
             .setMessage("Create a blank workbook? Current unsaved changes will be cleared.")
             .setNegativeButton("Cancel", null)
             .setPositiveButton("Create") { _, _ ->
-                sheets.clear(); styles.clear(); formulaDisplayCache.clear(); columnWidthsBySheet.clear()
+                sheets.clear(); styles.clear(); formulaDisplayCache.clear(); clearFormulaSpillCache(); columnWidthsBySheet.clear()
                 sheetName = "Sheet1"; selected = "A1"; rowCount = 50
                 sheets["Sheet1"] = mutableMapOf(); styles["Sheet1"] = mutableMapOf()
                 sheets["Sheet2"] = mutableMapOf(); styles["Sheet2"] = mutableMapOf()
@@ -1675,7 +1677,7 @@ class MainActivity : Activity() {
                 // HyperFormula is the primary calculation engine. The isolated service
                 // keeps its workbook/dependency graph warm; this worker submits only the
                 // affected formula addresses, preserving the existing incremental UI path.
-                val hyperFormulaBatchResults = runCatching {
+                val hyperFormulaCalculation = runCatching {
                     HyperFormulaServiceClient.recalculateSnapshot(
                         this@MainActivity,
                         allSheetsSnapshot,
@@ -1683,7 +1685,9 @@ class MainActivity : Activity() {
                     )
                 }.onFailure { failure ->
                     Log.e("NiceExcel-Formula", "HYPERFORMULA_RUNTIME_FAILURE: isolated engine failed; POI fallback will be used", failure)
-                }.getOrNull().orEmpty()
+                }.getOrNull()
+                val hyperFormulaBatchResults = hyperFormulaCalculation?.formulaResults.orEmpty()
+                val hyperFormulaSpillResults = hyperFormulaCalculation?.spillResults.orEmpty()
                 val requestedFormulaKeys = formulas.map { (name, address, _) ->
                     "$name!${address.uppercase(Locale.US)}"
                 }
@@ -1691,7 +1695,7 @@ class MainActivity : Activity() {
                     requestedFormulaKeys.all { it in hyperFormulaBatchResults }
                 Log.i(
                     "NiceExcel-Formula",
-                    "HYPERFORMULA_RUNTIME_RESULT: requested=${requestedFormulaKeys.size}, returned=${hyperFormulaBatchResults.size}, complete=$hyperFormulaComplete"
+                    "HYPERFORMULA_RUNTIME_RESULT: requested=${requestedFormulaKeys.size}, returned=${hyperFormulaBatchResults.size}, arraySpills=${hyperFormulaSpillResults.size}, complete=$hyperFormulaComplete"
                 )
                 // Retain the existing single-pass POI path only as a safety fallback
                 // if the offline HyperFormula process cannot answer a requested cell.
@@ -1741,6 +1745,18 @@ class MainActivity : Activity() {
                         formulaDisplayCache[result.first] = result.second
                         if (formulaSheet == sheetName) cellViews[address]?.text = result.second
                     }
+                    val oldSpillKeys = formulaSpillCache.keys.toList()
+                    formulaSpillCache.clear()
+                    if (hyperFormulaComplete) formulaSpillCache.putAll(hyperFormulaSpillResults)
+                    (oldSpillKeys + formulaSpillCache.keys).toSet().forEach { spillKey ->
+                        val splitAt = spillKey.lastIndexOf('!')
+                        if (splitAt <= 0) return@forEach
+                        val spillSheet = spillKey.substring(0, splitAt)
+                        val spillAddress = spillKey.substring(splitAt + 1)
+                        if (spillSheet == sheetName && data[spillAddress].isNullOrEmpty()) {
+                            cellViews[spillAddress]?.text = formulaSpillCache[spillKey].orEmpty()
+                        }
+                    }
                 }
             }
         } catch (_: RejectedExecutionException) {
@@ -1748,8 +1764,23 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun clearFormulaSpillCache() {
+        val oldKeys = formulaSpillCache.keys.toList()
+        formulaSpillCache.clear()
+        oldKeys.forEach { spillKey ->
+            val splitAt = spillKey.lastIndexOf('!')
+            if (splitAt <= 0) return@forEach
+            val spillSheet = spillKey.substring(0, splitAt)
+            val spillAddress = spillKey.substring(splitAt + 1)
+            if (spillSheet == sheetName && data[spillAddress].isNullOrEmpty()) {
+                cellViews[spillAddress]?.text = ""
+            }
+        }
+    }
+
     private fun putCell(address:String,value:String) {
         cachedExplicitLineCountsByRow = null
+        clearFormulaSpillCache()
         workbookRevision.incrementAndGet()
         // Do not clear the whole formula cache here. The edit handler immediately
         // schedules dependency-based recalculation, which invalidates only the
@@ -2756,7 +2787,11 @@ class MainActivity : Activity() {
      * lightweight placeholder is shown. Literal values remain immediately visible.
      */
     private fun displayForGrid(address: String): String {
-        val raw = data[address] ?: return ""
+        val raw = data[address]
+        if (raw.isNullOrEmpty()) {
+            formulaSpillCache["$sheetName!$address"]?.let { return it }
+        }
+        if (raw == null) return ""
         val st = sheetStyles[address]
         if (!raw.trimStart().startsWith("=")) {
             val number = raw.toDoubleOrNull()
