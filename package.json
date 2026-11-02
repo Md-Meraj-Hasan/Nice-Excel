@@ -1,0 +1,16 @@
+{
+  "name": "nice-excel-hyperformula-runtime",
+  "version": "1.0.0",
+  "private": true,
+  "license": "GPL-3.0-only",
+  "description": "Offline HyperFormula bundle build for Nice Excel",
+  "scripts": {
+    "build:hyperformula": "node scripts/build-hyperformula.mjs"
+  },
+  "dependencies": {
+    "hyperformula": "3.5.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.0"
+  }
+}
