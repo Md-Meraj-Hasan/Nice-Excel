@@ -111,7 +111,7 @@
       parts[index] = chunk;
       return true;
     },
-    calculateSnapshot(id, activeSheet, visibleRows, visibleCols) {
+    calculateSnapshot(id, activeSheet, visibleRows, visibleCols, formulaKeysJson) {
       const parts = snapshotParts.get(id);
       snapshotParts.delete(id);
       if (!parts || parts.some(part => typeof part !== 'string')) {
@@ -120,30 +120,37 @@
       const binary = atob(parts.join(''));
       const bytes = Uint8Array.from(binary, character => character.charCodeAt(0));
       const snapshotJson = new TextDecoder('utf-8').decode(bytes);
-      return this.calculate(snapshotJson, activeSheet, visibleRows, visibleCols);
+      return this.calculate(snapshotJson, activeSheet, visibleRows, visibleCols, formulaKeysJson);
     },
     version: HyperFormula.version || '3.5.0',
-    calculate(snapshotJson, activeSheet, visibleRows, visibleCols) {
+    calculate(snapshotJson, activeSheet, visibleRows, visibleCols, formulaKeysJson) {
       try {
         const snapshot = JSON.parse(snapshotJson);
         applyChanges(snapshot);
         const results = {};
         const numericKeys = [];
         const spillValues = {};
-        for (const [sheetName, cells] of Object.entries(snapshot)) {
+        const requestedKeys = JSON.parse(formulaKeysJson || '[]');
+        for (const key of requestedKeys) {
+          const splitAt = key.lastIndexOf('!');
+          if (splitAt <= 0) continue;
+          const sheetName = key.slice(0, splitAt);
+          const address = key.slice(splitAt + 1).toUpperCase();
+          const raw = snapshot[sheetName] && snapshot[sheetName][address];
+          if (typeof raw !== 'string' || !raw.trimStart().startsWith('=')) continue;
           const sheetId = engine.getSheetId(sheetName);
-          for (const [address, raw] of Object.entries(cells || {})) {
-            if (typeof raw !== 'string' || !raw.trimStart().startsWith('=')) continue;
-            const point = addressParts(address);
-            if (!point) continue;
-            const key = sheetName + '!' + address.toUpperCase();
-            results[key] = normalize(engine.getCellValue({ sheet: sheetId, row: point.row, col: point.col }), numericKeys, key);
-          }
+          const point = addressParts(address);
+          if (sheetId === undefined || !point) continue;
+          results[key] = normalize(engine.getCellValue({ sheet: sheetId, row: point.row, col: point.col }), numericKeys, key);
         }
         const activeCells = snapshot[activeSheet] || {};
-        const hasArrayFormula = Object.values(activeCells).some(raw =>
-          typeof raw === 'string' && /^=\s*(FILTER|SORT|UNIQUE|SEQUENCE|TRANSPOSE|HSTACK|VSTACK|ARRAYFORMULA)\s*\(/i.test(raw)
-        );
+        const hasArrayFormula = requestedKeys.some(key => {
+          const splitAt = key.lastIndexOf('!');
+          if (splitAt <= 0 || key.slice(0, splitAt) !== activeSheet) return false;
+          const address = key.slice(splitAt + 1).toUpperCase();
+          const raw = activeCells[address];
+          return typeof raw === 'string' && /^=\s*(FILTER|SORT|UNIQUE|SEQUENCE|TRANSPOSE|HSTACK|VSTACK|ARRAYFORMULA)\s*\(/i.test(raw);
+        });
         const activeSheetId = engine.getSheetId(activeSheet);
         if (hasArrayFormula && activeSheetId !== undefined) {
           const rows = Math.max(1, Math.min(Number(visibleRows) || 50, 1000));
