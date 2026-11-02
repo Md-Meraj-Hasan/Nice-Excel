@@ -27,8 +27,8 @@ ZIP integrity is checked. Android Gradle compilation and on-device testing have 
 - The project is released under **GNU GPLv3**. The complete license is in `LICENSE`; HyperFormula's third-party license notice is bundled in the APK.
 - The engine is bundled locally during the APK workflow. Runtime calculation does not download scripts, call a CDN, or require an internet connection.
 - The native grid keeps its background worker, revision checks, dependency-based refresh selection, formula display cache, and asynchronous UI updates. HyperFormula performs calculation in a local-only hidden WebView renderer; calculation is never intentionally run on the Android UI thread.
-- The web spreadsheet uses the same HyperFormula bundle and synchronizes a sparse workbook snapshot. The Python formula evaluator remains available for compatibility/API paths, but it is no longer the primary UI calculation engine.
-- HyperFormula 3.5.0 includes 423 built-in functions. This does not mean 100% compatibility with every Excel function, file feature, or formula behavior; verify important workbooks in Excel or LibreOffice.
+- The web spreadsheet uses the same HyperFormula bundle and synchronizes a sparse workbook snapshot. The existing POI/Kotlin and Python evaluators remain as guarded fallbacks/compatibility paths, but neither is the primary UI calculation engine.
+- HyperFormula 3.5.0 includes 423 built-in functions. This does not mean 100% compatibility with every Excel function, file feature, or formula behavior; verify important workbooks in another full spreadsheet application.
 - Build the offline assets with `npm install` and `npm run build:hyperformula`; run formula regression tests with `npm run test:hyperformula`. The GitHub Actions APK workflow performs these steps before Gradle tests and APK packaging.
 
 
@@ -66,7 +66,7 @@ Added an Android instrumentation round-trip test for multiple worksheets, plain 
 - Table menu now applies thick borders to the used data rectangle from A1 through the last non-empty/formula cell. Blank cells inside that rectangle receive borders too.
 - Thick borders are stored as medium OOXML cell borders in XLSX styles, and the reader restores the thick-border flag.
 - This is cell formatting, not an Excel-native structured Table object.
-- Android build/runtime tests have not been run in this workspace; use GitHub Actions to verify the APK build.
+- GitHub Actions is the authoritative check for Node formula tests, Android unit tests, and APK packaging; device-level runtime and workbook compatibility still require testing on an Android phone.
 
 ### v1.5.0 — imported formula evaluator (Priority 1–4 foundation)
 - Added Apache POI's formula evaluator as an imported calculation engine and wired it to run before the previous lightweight evaluator.
