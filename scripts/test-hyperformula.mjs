@@ -28,5 +28,28 @@ const filterSpill = { sheet: hf.getSheetId('Sheet2'), row: 6, col: 4 };
 assert.equal(hf.getCellValue(filterAnchor), 'Notebook', 'FILTER first result');
 assert.equal(hf.isCellPartOfArray(filterSpill), true, 'FILTER result cell belongs to array');
 assert.equal(hf.getCellValue(filterSpill), 'Pencil', 'FILTER second result');
+const dimensions = hf.getSheetDimensions(filterAnchor.sheet);
+const values = hf.getAllSheetsValues().Sheet2;
+const formulas = hf.getAllSheetsFormulas().Sheet2;
+const spillCells = {};
+for (let row = 0; row < formulas.length && row < 10000; row++) {
+  for (let col = 0; col < (formulas[row] || []).length && col < 512; col++) {
+    if (!formulas[row][col]) continue;
+    const anchor = { sheet: filterAnchor.sheet, row, col };
+    if (!hf.isCellPartOfArray(anchor)) continue;
+    let height = 1, width = 1;
+    while (row + height < dimensions.height && hf.isCellPartOfArray({ sheet: filterAnchor.sheet, row: row + height, col })) height++;
+    while (col + width < dimensions.width && hf.isCellPartOfArray({ sheet: filterAnchor.sheet, row, col: col + width })) width++;
+    for (let spillRow = row; spillRow < row + height; spillRow++) {
+      for (let spillCol = col; spillCol < col + width; spillCol++) {
+        if (spillRow === row && spillCol === col) continue;
+        let n = spillCol + 1, letters = '';
+        while (n > 0) { const rem = (n - 1) % 26; letters = String.fromCharCode(65 + rem) + letters; n = Math.floor((n - 1) / 26); }
+        spillCells['Sheet2!' + letters + (spillRow + 1)] = values[spillRow]?.[spillCol];
+      }
+    }
+  }
+}
+assert.equal(spillCells['Sheet2!E7'], 'Pencil', 'native array spill extraction');
 hf.destroy();
 console.log('HyperFormula GPLv3 smoke tests passed: SUM, cross-sheet references, VLOOKUP, XLOOKUP, FILTER array cells, booleans, and #DIV/0!.');
