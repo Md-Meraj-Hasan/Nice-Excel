@@ -140,16 +140,23 @@
     let c=0;for(const ch of m[1].toUpperCase())c=c*26+ch.charCodeAt(0)-64;
     return {row:Number(m[2])-1,col:c-1};
   }
-  function hfSheetArrays(snapshot){
-    const output={};
-    for(const [name,cells] of Object.entries(snapshot||{})){
-      let maxRow=-1,maxCol=-1;
-      for(const address of Object.keys(cells||{})){const p=hfAddress(address);if(p){maxRow=Math.max(maxRow,p.row);maxCol=Math.max(maxCol,p.col);}}
-      const rows=maxRow<0?[[]]:Array.from({length:maxRow+1},()=>Array(maxCol+1).fill(null));
-      for(const [address,value] of Object.entries(cells||{})){const p=hfAddress(address);if(p)rows[p.row][p.col]=value===''?null:value;}
-      output[name]=rows;
-    }
-    return output;
+  function hfEngineValue(value){
+    return typeof value==='string'&&value.trimStart().startsWith('=')
+      ?window.NiceExcelFormulaCompat.normalizeFormula(value):value;
+  }
+  function hfBuildEngine(snapshot){
+    const engine=window.HyperFormula.buildEmpty({licenseKey:'gpl-v3',useColumnIndex:true});
+    for(const name of Object.keys(snapshot||{}))engine.addSheet(name);
+    engine.batch(()=>{
+      for(const [name,cells] of Object.entries(snapshot||{})){
+        const sheet=engine.getSheetId(name);
+        for(const [address,value] of Object.entries(cells||{})){
+          const p=hfAddress(address);if(!p)continue;
+          engine.setCellContents({sheet,row:p.row,col:p.col},[[hfEngineValue(value)]]);
+        }
+      }
+    });
+    return engine;
   }
   function hfNormalize(value){
     if(value===null||value===undefined)return null;
@@ -169,7 +176,7 @@
     const structureChanged=!hfEngine||names.length!==oldNames.length||names.some((name,i)=>name!==oldNames[i]);
     if(structureChanged){
       if(hfEngine)try{hfEngine.destroy()}catch(_){}
-      hfEngine=window.HyperFormula.buildFromSheets(hfSheetArrays(next),{licenseKey:'gpl-v3',useColumnIndex:true});
+      hfEngine=hfBuildEngine(next);
     }else{
       const updates=[];
       for(const name of names){
@@ -179,7 +186,7 @@
           const oldValue=Object.prototype.hasOwnProperty.call(before,address)?before[address]:null;
           const newValue=Object.prototype.hasOwnProperty.call(after,address)?after[address]:null;
           if(oldValue===newValue)continue;
-          const p=hfAddress(address);if(p)updates.push({sheet,row:p.row,col:p.col,value:newValue===''?null:newValue});
+          const p=hfAddress(address);if(p)updates.push({sheet,row:p.row,col:p.col,value:newValue===''?null:hfEngineValue(newValue)});
         }
       }
       if(updates.length)hfEngine.batch(()=>updates.forEach(x=>hfEngine.setCellContents({sheet:x.sheet,row:x.row,col:x.col},[[x.value]])));
