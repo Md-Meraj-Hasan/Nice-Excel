@@ -136,6 +136,26 @@ jobs:
       - name: Verify LibreOffice library inside APK
         run: bash native-engine/scripts/check-apk-libreoffice.sh app/build/outputs/apk/debug/app-debug.apk
 
+      - name: Install host Calc for formula diagnostics
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libreoffice-calc python3-openpyxl
+
+      - name: Verify formula engine diagnostics (strict ARM64 package check)
+        run: |
+          python3 scripts/formula_engine_diagnostics.py \
+            --apk app/build/outputs/apk/debug/app-debug.apk \
+            --report build/reports/formula-engine-diagnostics.json \
+            --require-android-native-core
+
+      - name: Upload ARM64 formula diagnostics
+        uses: actions/upload-artifact@v4
+        with:
+          name: NiceExcel-LibreOffice-ARM64-diagnostics
+          path: build/reports/formula-engine-diagnostics.json
+          if-no-files-found: error
+          retention-days: 30
+
       - name: Upload ARM64 APK
         uses: actions/upload-artifact@v4
         with:
