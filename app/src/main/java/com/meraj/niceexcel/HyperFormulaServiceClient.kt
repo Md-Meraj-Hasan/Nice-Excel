@@ -28,7 +28,7 @@ internal data class HyperFormulaCalculationResult(
 
 internal object HyperFormulaServiceClient {
     private const val TAG = "NiceExcel-HyperFormula"
-    private const val TIMEOUT_SECONDS = 45L
+    private const val TIMEOUT_SECONDS = 60L
 
     fun recalculateSnapshot(
         context: Context,
@@ -103,13 +103,16 @@ internal object HyperFormulaServiceClient {
 
         try {
             // Keep the calculation process and its dependency graph warm between edits.
+            Log.i(TAG, "CLIENT_BIND_BEGIN sheets=" + allSheets.size + " formulas=" + formulas.size + " payloadBytes=" + payloadFile.length())
             appContext.startService(intent)
             bound = appContext.bindService(intent, connection, Context.BIND_AUTO_CREATE)
             check(bound) { "Unable to bind the HyperFormula calculation process" }
+            Log.i(TAG, "CLIENT_BIND_OK waitingForServiceResponse=true")
             check(latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
                 "HyperFormula calculation timed out after $TIMEOUT_SECONDS seconds"
             }
             failure.get()?.let { throw it }
+            Log.i(TAG, "CLIENT_RESPONSE_RECEIVED pathPresent=" + (responsePath.get() != null))
             val resultPath = responsePath.get()
                 ?: throw IllegalStateException("HyperFormula returned an empty response path")
             val resultFile = File(resultPath).canonicalFile
@@ -123,6 +126,7 @@ internal object HyperFormulaServiceClient {
             check(response.optBoolean("ok", false)) {
                 response.optString("error", "HyperFormula calculation failed")
             }
+            Log.i(TAG, "CLIENT_RESULT_OK formulaResults=" + (response.optJSONObject("results")?.length() ?: 0) + " spillResults=" + (response.optJSONObject("spill")?.length() ?: 0))
             fun parseValues(values: JSONObject?): Map<String, String> {
                 val output = linkedMapOf<String, String>()
                 val source = values ?: JSONObject()
