@@ -41,6 +41,8 @@ jobs:
         run: gradle --no-daemon verifyHyperFormulaBundle
       - name: Run Android unit tests
         run: gradle --no-daemon testDebugUnitTest
+      - name: Compile on-device HyperFormula smoke test
+        run: gradle --no-daemon assembleDebugAndroidTest
       - name: Build debug APK
         run: gradle --no-daemon assembleDebug
       - name: Upload debug APK
