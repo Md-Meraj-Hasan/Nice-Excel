@@ -10,7 +10,7 @@ const hf = HyperFormula.buildFromSheets({
   ],
   Sheet2: [
     ['=SUM(Sheet1!C2:C4)'],
-    ['=VLOOKUP(105,Sheet1!A2:C4,2,FALSE)'],
+    ['=VLOOKUP(105,Sheet1!A2:C4,2,FALSE())'],
     ['=XLOOKUP(108,Sheet1!A2:A4,Sheet1!B2:B4,"Not Found")'],
     ['=1/0'],
   ],
@@ -19,6 +19,6 @@ const value = (row) => hf.getCellValue({ sheet: hf.getSheetId('Sheet2'), row, co
 assert.equal(value(0), 10, 'cross-sheet SUM');
 assert.equal(value(1), 'Notebook', 'VLOOKUP exact match');
 assert.equal(value(2), 'Pencil', 'XLOOKUP exact match');
-assert.equal(String(value(3)), '#DIV/0!', 'Excel error propagation');
+assert.equal(value(3)?.value, '#DIV/0!', 'Excel error propagation');
 hf.destroy();
 console.log('HyperFormula GPLv3 smoke tests passed: SUM, cross-sheet references, VLOOKUP, XLOOKUP, #DIV/0!.');
