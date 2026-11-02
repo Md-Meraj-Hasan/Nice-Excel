@@ -1,6 +1,8 @@
 name: Build NiceExcel APK with LibreOffice ARM64
 
 on:
+  pull_request:
+    branches: [main]
   push:
     branches: [main]
     paths:
