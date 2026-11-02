@@ -493,7 +493,8 @@ class MainActivity : Activity() {
             "Formula" -> listOf("Insert function…" to { formulaPickerMenu() }, "Formula help" to { formulaHelp() }, "Formula examples" to { formulaHelp() })
             else -> listOf(
                 "Web Engine" to { startActivity(Intent(this, FlaskActivity::class.java)) },
-                "Workbook info" to { status.text = "${sheets.size} sheet(s) • $rowCount rows • Offline workbook" }
+                "Workbook info" to { status.text = "${sheets.size} sheet(s) • $rowCount rows • Offline workbook" },
+                "License & warranty" to { showOpenSourceLicense() }
             )
         }
         ribbonTools.removeAllViews()
@@ -2039,6 +2040,32 @@ class MainActivity : Activity() {
                 }
             }.setNegativeButton("Cancel",null).showProfessional()
     }
+    private fun showOpenSourceLicense() {
+        val licenseText = runCatching {
+            assets.open("THIRD_PARTY_LICENSES/HyperFormula-GPL-3.0.txt")
+                .bufferedReader(Charsets.UTF_8).use { it.readText() }
+        }.getOrElse {
+            "Nice Excel uses HyperFormula 3.5.0 under GNU GPLv3.\n\n" +
+                "This software is provided without warranty. The complete GPLv3 text is available in the repository LICENSE file."
+        }
+        val content = ScrollView(this).apply {
+            isFillViewport = true
+            addView(TextView(this@MainActivity).apply {
+                text = "Nice Excel includes HyperFormula 3.5.0 under the GNU General Public License version 3.\n" +
+                    "This software is provided WITHOUT ANY WARRANTY. You may redistribute and modify it under GPLv3.\n\n" +
+                    licenseText
+                textSize = 11f
+                setTextColor(Color.rgb(35, 45, 55))
+                setPadding(dp(14), dp(10), dp(14), dp(10))
+            })
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Open-source license & warranty")
+            .setView(content)
+            .setPositiveButton("Close", null)
+            .showProfessional()
+    }
+
     private fun formulaHelp() {
         AlertDialog.Builder(this).setTitle("Formula examples")
             .setMessage("Arithmetic: =A1+B1, =B2*C2\nRanges: =SUM(A1:A10)\nFunctions: SUM, AVERAGE, MIN, MAX, COUNT, COUNTA, COUNTIF, COUNTBLANK, SUMIF, IF, AND, OR, PRODUCT, ABS, SQRT, INT, ROUND, ROUNDUP, ROUNDDOWN, MOD, POWER, CEILING, FLOOR")
