@@ -83,13 +83,20 @@
     previous = JSON.parse(JSON.stringify(snapshot));
   }
 
-  function normalize(value) {
+  function normalize(value, numericKeys, key) {
     if (value === null || value === undefined) return '';
+    if (Array.isArray(value)) {
+      const first = value.length ? (Array.isArray(value[0]) ? value[0][0] : value[0]) : null;
+      return normalize(first, numericKeys, key);
+    }
     if (typeof value === 'object') {
       if (Object.prototype.hasOwnProperty.call(value, 'value')) return String(value.value);
       return JSON.stringify(value);
     }
-    if (typeof value === 'number' && !Number.isFinite(value)) return '#NUM!';
+    if (typeof value === 'number') {
+      if (!Number.isFinite(value)) return '#NUM!';
+      numericKeys.push(key);
+    }
     return String(value);
   }
 
@@ -100,17 +107,18 @@
         const snapshot = JSON.parse(snapshotJson);
         applyChanges(snapshot);
         const results = {};
+        const numericKeys = [];
         for (const [sheetName, cells] of Object.entries(snapshot)) {
           const sheetId = engine.getSheetId(sheetName);
           for (const [address, raw] of Object.entries(cells || {})) {
             if (typeof raw !== 'string' || !raw.trimStart().startsWith('=')) continue;
             const point = addressParts(address);
             if (!point) continue;
-            results[sheetName + '!' + address.toUpperCase()] =
-              normalize(engine.getCellValue({ sheet: sheetId, row: point.row, col: point.col }));
+            const key = sheetName + '!' + address.toUpperCase();
+            results[key] = normalize(engine.getCellValue({ sheet: sheetId, row: point.row, col: point.col }), numericKeys, key);
           }
         }
-        return JSON.stringify({ version: this.version, results });
+        return JSON.stringify({ version: this.version, results, numericKeys });
       } catch (error) {
         return JSON.stringify({ error: String(error && error.message || error) });
       }
