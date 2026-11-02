@@ -15,6 +15,10 @@ import android.webkit.WebViewClient;
 
 import org.json.JSONTokener;
 
+import java.io.File;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+
 import java.util.ArrayDeque;
 import java.util.Queue;
 
@@ -25,7 +29,7 @@ import java.util.Queue;
 public final class HyperFormulaEngineService extends Service {
     public static final int MSG_RECALCULATE = 41;
     public static final int MSG_RESULT = 42;
-    public static final String KEY_PAYLOAD = "payload";
+    public static final String KEY_PAYLOAD_PATH = "payload_path";
     public static final String KEY_RESULT = "result";
     private static final String TAG = "NiceExcel-HyperFormula";
 
@@ -68,9 +72,22 @@ public final class HyperFormulaEngineService extends Service {
 
     private void evaluate(Message request) {
         Bundle data = request.getData();
-        String payload = data == null ? null : data.getString(KEY_PAYLOAD);
-        if (payload == null || webView == null) {
-            sendResult(request, "{\"ok\":false,\"error\":\"Missing payload or runtime\"}");
+        String payloadPath = data == null ? null : data.getString(KEY_PAYLOAD_PATH);
+        if (payloadPath == null || webView == null) {
+            sendResult(request, "{\"ok\":false,\"error\":\"Missing payload path or runtime\"}");
+            return;
+        }
+        final String payload;
+        try {
+            File payloadFile = new File(payloadPath).getCanonicalFile();
+            File cacheRoot = getCacheDir().getCanonicalFile();
+            if (!payloadFile.getPath().startsWith(cacheRoot.getPath() + File.separator)) {
+                throw new SecurityException("Formula payload must be inside the app cache directory");
+            }
+            payload = new String(Files.readAllBytes(payloadFile.toPath()), StandardCharsets.UTF_8);
+        } catch (Throwable error) {
+            sendResult(request, "{\"ok\":false,\"error\":" +
+                    org.json.JSONObject.quote("Unable to read formula payload: " + error) + "}");
             return;
         }
         String javascript = "window.NiceExcelHF ? window.NiceExcelHF.calculate(" +
