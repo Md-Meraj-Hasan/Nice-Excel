@@ -5,7 +5,8 @@
   "license": "GPL-3.0-only",
   "description": "Offline HyperFormula bundle build for Nice Excel",
   "scripts": {
-    "build:hyperformula": "node scripts/build-hyperformula.mjs"
+    "build:hyperformula": "node scripts/build-hyperformula.mjs",
+    "test:hyperformula": "node scripts/test-hyperformula.mjs"
   },
   "dependencies": {
     "hyperformula": "3.5.0"
