@@ -14,6 +14,7 @@ const workbook = HyperFormula.buildFromSheets({
     '=XLOOKUP(108,Data!A2:A4,Data!B2:B4,"Not Found")',
     '=Data!B3',
     '=1/0',
+    '=FILTER(Data!A2:C4,Data!A2:A4=105)',
   ]],
 }, { licenseKey: 'gpl-v3' });
 
@@ -24,6 +25,9 @@ assert.equal(workbook.getCellValue({ sheet, row: 0, col: 2 }), 'Ruler');
 assert.equal(workbook.getCellValue({ sheet, row: 0, col: 3 }), 'Notebook');
 const divideByZero = workbook.getCellValue({ sheet, row: 0, col: 4 });
 assert.equal(divideByZero.value, '#DIV/0!');
+assert.equal(workbook.getCellValue({ sheet, row: 0, col: 5 }), 105);
+assert.equal(workbook.getCellValue({ sheet, row: 0, col: 6 }), 'Notebook');
+assert.equal(workbook.getCellValue({ sheet, row: 0, col: 7 }), 2);
 
 workbook.setCellContents({ sheet: workbook.getSheetId('Data'), row: 1, col: 2 }, [[10]]);
 assert.equal(workbook.getCellValue({ sheet, row: 0, col: 0 }), 16);
