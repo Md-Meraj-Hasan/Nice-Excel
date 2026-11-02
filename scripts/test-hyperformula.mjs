@@ -13,6 +13,7 @@ const hf = HyperFormula.buildFromSheets({
     ['=VLOOKUP(105,Sheet1!A2:C4,2,FALSE())'],
     ['=XLOOKUP(108,Sheet1!A2:A4,Sheet1!B2:B4,"Not Found")'],
     ['=1/0'],
+    ['=TRUE()'],
   ],
 }, { licenseKey: 'gpl-v3' });
 const value = (row) => hf.getCellValue({ sheet: hf.getSheetId('Sheet2'), row, col: 0 });
@@ -20,5 +21,6 @@ assert.equal(value(0), 10, 'cross-sheet SUM');
 assert.equal(value(1), 'Notebook', 'VLOOKUP exact match');
 assert.equal(value(2), 'Pencil', 'XLOOKUP exact match');
 assert.equal(value(3)?.value, '#DIV/0!', 'Excel error propagation');
+assert.equal(value(4), true, 'boolean function value');
 hf.destroy();
 console.log('HyperFormula GPLv3 smoke tests passed: SUM, cross-sheet references, VLOOKUP, XLOOKUP, #DIV/0!.');
