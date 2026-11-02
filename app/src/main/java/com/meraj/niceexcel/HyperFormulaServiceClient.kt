@@ -59,11 +59,11 @@ internal object HyperFormulaServiceClient {
         payloadFile.writeText(payload.toString(), Charsets.UTF_8)
         val intent = Intent(appContext, HyperFormulaEngineService::class.java)
         val latch = CountDownLatch(1)
-        val responseJson = AtomicReference<String?>()
+        val responsePath = AtomicReference<String?>()
         val failure = AtomicReference<Throwable?>()
         val responseMessenger = Messenger(Handler(Looper.getMainLooper()) { message ->
             if (message.what == HyperFormulaEngineService.MSG_RESULT) {
-                responseJson.set(message.data?.getString(HyperFormulaEngineService.KEY_RESULT))
+                responsePath.set(message.data?.getString(HyperFormulaEngineService.KEY_RESULT_PATH))
                 latch.countDown()
                 true
             } else false
@@ -110,8 +110,15 @@ internal object HyperFormulaServiceClient {
                 "HyperFormula calculation timed out after $TIMEOUT_SECONDS seconds"
             }
             failure.get()?.let { throw it }
-            val responseText = responseJson.get()
-                ?: throw IllegalStateException("HyperFormula returned an empty response")
+            val resultPath = responsePath.get()
+                ?: throw IllegalStateException("HyperFormula returned an empty response path")
+            val resultFile = File(resultPath).canonicalFile
+            val cacheRoot = appContext.cacheDir.canonicalFile
+            check(resultFile.path.startsWith(cacheRoot.path + File.separator)) {
+                "HyperFormula response must be inside the app cache directory"
+            }
+            val responseText = resultFile.readText(Charsets.UTF_8)
+            runCatching { resultFile.delete() }
             val response = JSONObject(responseText)
             check(response.optBoolean("ok", false)) {
                 response.optString("error", "HyperFormula calculation failed")
