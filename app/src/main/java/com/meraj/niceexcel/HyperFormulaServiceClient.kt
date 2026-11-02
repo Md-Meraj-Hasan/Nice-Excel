@@ -16,6 +16,7 @@ import org.json.JSONObject
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
+import java.io.File
 
 /**
  * Synchronous worker-thread adapter for the isolated HyperFormula WebView process.
@@ -50,6 +51,8 @@ internal object HyperFormulaServiceClient {
         payload.put("formulas", formulasJson)
 
         val appContext = context.applicationContext
+        val payloadFile = File.createTempFile("niceexcel-hf-", ".json", appContext.cacheDir)
+        payloadFile.writeText(payload.toString(), Charsets.UTF_8)
         val intent = Intent(appContext, HyperFormulaEngineService::class.java)
         val latch = CountDownLatch(1)
         val responseJson = AtomicReference<String?>()
@@ -68,7 +71,7 @@ internal object HyperFormulaServiceClient {
                     val service = Messenger(binder)
                     val request = Message.obtain(null, HyperFormulaEngineService.MSG_RECALCULATE)
                     request.data = Bundle().apply {
-                        putString(HyperFormulaEngineService.KEY_PAYLOAD, payload.toString())
+                        putString(HyperFormulaEngineService.KEY_PAYLOAD_PATH, payloadFile.absolutePath)
                     }
                     request.replyTo = responseMessenger
                     service.send(request)
@@ -127,6 +130,7 @@ internal object HyperFormulaServiceClient {
             throw error
         } finally {
             if (bound) runCatching { appContext.unbindService(connection) }
+            runCatching { payloadFile.delete() }
         }
     }
 }
