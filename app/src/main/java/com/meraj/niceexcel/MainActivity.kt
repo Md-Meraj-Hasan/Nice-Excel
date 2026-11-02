@@ -1236,7 +1236,27 @@ class MainActivity : Activity() {
                 text=name; textSize=13f; gravity=Gravity.CENTER; setPadding(dp(15),dp(9),dp(15),dp(9))
                 setTextColor(if(name==sheetName) Color.WHITE else Color.rgb(35,70,50))
                 setBackgroundColor(if(name==sheetName) Color.rgb(17,94,57) else Color.rgb(213,229,218))
-                setOnClickListener { sheetName=name; selected="A1"; cellName.text=selected; formula.setText(data[selected].orEmpty()); render() }
+                setOnClickListener {
+                    if (sheetName == name) return@setOnClickListener
+
+                    // A sheet switch is a new calculation context. Cancel any in-flight
+                    // result from the previous sheet before rendering the newly selected one.
+                    formulaRecalcJobId.incrementAndGet()
+                    sheetName = name
+                    selected = "A1"
+                    cellName.text = selected
+                    formula.setText(data[selected].orEmpty())
+
+                    // Clear only this sheet cached formula/spill values. render() below
+                    // schedules a fresh full-workbook calculation, including cross-sheet refs.
+                    val formulaPrefix = name + "|"
+                    formulaDisplayCache.keys.removeAll { it.startsWith(formulaPrefix) }
+                    val spillPrefix = name + "!"
+                    formulaSpillCache.keys.filter { it.startsWith(spillPrefix) }.forEach {
+                        formulaSpillCache.remove(it)
+                    }
+                    render()
+                }
                 setOnLongClickListener { renameSheet(name); true }
             }
             sheetTabs.addView(t)
