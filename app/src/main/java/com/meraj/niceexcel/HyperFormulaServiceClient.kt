@@ -21,6 +21,11 @@ import java.io.File
  * Synchronous worker-thread adapter for the isolated HyperFormula WebView process.
  * Call only from NiceExcel's bounded backgroundExecutor, never from the UI thread.
  */
+internal data class HyperFormulaCalculationResult(
+    val formulaResults: Map<String, String>,
+    val spillResults: Map<String, String>
+)
+
 internal object HyperFormulaServiceClient {
     private const val TAG = "NiceExcel-HyperFormula"
     private const val TIMEOUT_SECONDS = 45L
@@ -29,7 +34,7 @@ internal object HyperFormulaServiceClient {
         context: Context,
         allSheets: Map<String, Map<String, String>>,
         formulas: List<Triple<String, String, String>>
-    ): Map<String, String> {
+    ): HyperFormulaCalculationResult {
         check(Looper.myLooper() != Looper.getMainLooper()) {
             "HyperFormula service calls must run off the Android UI thread"
         }
@@ -111,19 +116,25 @@ internal object HyperFormulaServiceClient {
             check(response.optBoolean("ok", false)) {
                 response.optString("error", "HyperFormula calculation failed")
             }
-            val values = response.optJSONObject("results") ?: JSONObject()
-            val output = linkedMapOf<String, String>()
-            val keys = values.keys()
-            while (keys.hasNext()) {
-                val key = keys.next()
-                val value = values.opt(key)
-                output[key] = when (value) {
-                    null, JSONObject.NULL -> ""
-                    is String -> value
-                    else -> value.toString()
+            fun parseValues(values: JSONObject?): Map<String, String> {
+                val output = linkedMapOf<String, String>()
+                val source = values ?: JSONObject()
+                val keys = source.keys()
+                while (keys.hasNext()) {
+                    val key = keys.next()
+                    val value = source.opt(key)
+                    output[key] = when (value) {
+                        null, JSONObject.NULL -> ""
+                        is String -> value
+                        else -> value.toString()
+                    }
                 }
+                return output
             }
-            return output
+            return HyperFormulaCalculationResult(
+                formulaResults = parseValues(response.optJSONObject("results")),
+                spillResults = parseValues(response.optJSONObject("spill"))
+            )
         } catch (error: Throwable) {
             Log.e(TAG, "HyperFormula calculation request failed", error)
             throw error
