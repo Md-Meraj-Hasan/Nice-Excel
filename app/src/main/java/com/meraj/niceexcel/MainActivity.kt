@@ -492,7 +492,6 @@ class MainActivity : Activity() {
             )
             "Formula" -> listOf("Insert function…" to { formulaPickerMenu() }, "Formula help" to { formulaHelp() }, "Formula examples" to { formulaHelp() })
             else -> listOf(
-                "Web Engine" to { startActivity(Intent(this, FlaskActivity::class.java)) },
                 "Workbook info" to { status.text = "${sheets.size} sheet(s) • $rowCount rows • Offline workbook" }
             )
         }
@@ -508,7 +507,7 @@ class MainActivity : Activity() {
             "Number format…" to "Number", "Selected row: Single / Double line…" to "↵ Wrap", "Table styles…" to "Styles",
             "Sort column A → Z" to "Sort A→Z", "Filter column…" to "Filter", "Clear filter" to "Clear filter", "Find / Replace…" to "Find",
             "Workbook data range info" to "Range info", "Insert function…" to "ƒx Insert", "Formula help" to "ƒx Help",
-            "Web Engine" to "Web Excel", "Workbook info" to "Info"
+            "Workbook info" to "Info"
         )
         items.forEach { item ->
             val label = compactLabels[item.first] ?: item.first
