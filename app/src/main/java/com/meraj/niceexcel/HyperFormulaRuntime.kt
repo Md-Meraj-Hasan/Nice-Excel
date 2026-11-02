@@ -25,7 +25,8 @@ import java.util.concurrent.atomic.AtomicReference
 internal object HyperFormulaRuntime {
     data class Calculation(
         val values: Map<String, String>,
-        val numericKeys: Set<String>
+        val numericKeys: Set<String>,
+        val spillValues: Map<String, String>
     )
 
     private const val TAG = "NiceExcel-HyperFormula"
@@ -90,12 +91,17 @@ internal object HyperFormulaRuntime {
         view.loadUrl("file:///android_asset/hyperformula-runtime.html")
     }
 
-    fun recalculateSnapshot(snapshot: Map<String, Map<String, String>>): Calculation {
+    fun recalculateSnapshot(
+        snapshot: Map<String, Map<String, String>>,
+        activeSheet: String,
+        visibleRows: Int,
+        visibleCols: Int
+    ): Calculation {
         check(Looper.myLooper() != Looper.getMainLooper()) {
             "HyperFormula calculation must run off the Android UI thread"
         }
         if (snapshot.values.none { cells -> cells.values.any { it.trimStart().startsWith("=") } }) {
-            return Calculation(emptyMap(), emptySet())
+            return Calculation(emptyMap(), emptySet(), emptyMap())
         }
         check(readyLatch.await(READY_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
             "Timed out waiting for the offline HyperFormula runtime"
@@ -116,7 +122,10 @@ internal object HyperFormulaRuntime {
         mainHandler.post {
             try {
                 val view = webView ?: error("HyperFormula WebView has been destroyed")
-                view.evaluateJavascript("window.NiceExcelHF.calculate($payloadLiteral)") { encoded ->
+                val activeSheetLiteral = JSONObject.quote(activeSheet)
+                view.evaluateJavascript(
+                    "window.NiceExcelHF.calculate($payloadLiteral, $activeSheetLiteral, $visibleRows, $visibleCols)"
+                ) { encoded ->
                     try {
                         check(!encoded.isNullOrBlank() && encoded != "null") {
                             "HyperFormula returned an empty calculation response"
@@ -140,7 +149,14 @@ internal object HyperFormulaRuntime {
                                 if (key.isNotBlank()) add(key)
                             }
                         }
-                        result.set(Calculation(values, numericKeys))
+                        val spillValues = linkedMapOf<String, String>()
+                        val spills = response.optJSONObject("spillValues") ?: JSONObject()
+                        val spillKeys = spills.keys()
+                        while (spillKeys.hasNext()) {
+                            val key = spillKeys.next()
+                            spillValues[key] = spills.optString(key, "")
+                        }
+                        result.set(Calculation(values, numericKeys, spillValues))
                     } catch (error: Throwable) {
                         failure.set(error)
                     } finally {
@@ -156,7 +172,7 @@ internal object HyperFormulaRuntime {
             "HyperFormula calculation timed out"
         }
         failure.get()?.let { throw IllegalStateException("HyperFormula calculation failed", it) }
-        return result.get() ?: Calculation(emptyMap(), emptySet())
+        return result.get() ?: Calculation(emptyMap(), emptySet(), emptyMap())
     }
 
     fun close() {
