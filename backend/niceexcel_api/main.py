@@ -341,7 +341,7 @@ def workbook_info(book_id: str):
             for ws in wb.worksheets if ws.title != _REPORTING_META_SHEET
         ],
         "active_sheet": wb.active.title,
-        "formula_calculation": "limited_nice_excel_subset_evaluator",
+        "formula_calculation": "hyperformula_gpl_v3",
     }
 
 
