@@ -6,18 +6,6 @@ plugins {
 }
 
 android {
-    // LibreOffice's Android APK-backed virtual filesystem reads asset payloads directly from the APK and supports STORE entries only.
-    // Empty noCompress extension keeps every LibreOffice runtime asset uncompressed.
-    androidResources {
-        noCompress += ""
-    }
-
-    // Package genuine, matching LibreOffice Android native outputs when supplied.
-    sourceSets {
-        main {
-            jniLibs.srcDirs = ["${rootProject.projectDir}/native-engine/jniLibs"]
-        }
-    }
     namespace 'com.meraj.niceexcel'
     compileSdk 35
 
@@ -77,49 +65,3 @@ chaquopy {
 
 
 // This task verifies packaging prerequisites only. It does not build LibreOffice.
-tasks.register("verifyLibreOfficeArm64Core") {
-    group = "verification"
-    description = "Verify a genuine LibreOffice Android ARM64 core is present for APK packaging."
-    doLast {
-        def core = file("${rootProject.projectDir}/native-engine/jniLibs/arm64-v8a/liblo-native-code.so")
-        if (!core.isFile() || core.length() < 1_000_000L) {
-            throw new GradleException("Missing genuine LibreOffice ARM64 core: ${core}. Build LibreOffice Android core separately and copy its real output here.")
-        }
-        def bootstrap = file("${rootProject.projectDir}/app/src/main/java/org/libreoffice/kit/LibreOfficeKit.java")
-        if (!bootstrap.isFile() || bootstrap.length() < 500) {
-            throw new GradleException("Missing official LibreOffice Android Java bootstrap: ${bootstrap}. Fetch Bootstrap/src from the pinned LibreOffice revision before building.")
-        }
-        logger.lifecycle("LibreOffice ARM64 core and official Java bootstrap found. JNI initialization and workbook calculation still require runtime integration tests.")
-    }
-}
-
-
-
-tasks.register("verifyLibreOfficeRuntimeAssets") {
-    group = "verification"
-    description = "Verify the official LibreOffice Android runtime assets required by LibreOfficeKit.init()."
-    doLast {
-        def assetRoot = file("${projectDir}/src/main/assets")
-        def required = [
-            "program/fundamentalrc",
-            "program/bootstraprc",
-            "program/unorc",
-            "program/services.rdb",
-            "unpack/program/sofficerc",
-            "unpack/program/udkapi.rdb",
-            "unpack/program/offapi.rdb",
-            "unpack/program/oovbaapi.rdb",
-            "unpack/etc/fonts/fonts.conf",
-            "share/registry/main.xcd",
-            "share/registry/res/registry_en-US.xcd"
-        ]
-        def missing = required.findAll { path ->
-            def candidate = new File(assetRoot, path)
-            !candidate.isFile() || candidate.length() == 0
-        }
-        if (!missing.isEmpty()) {
-            throw new GradleException("Missing LibreOffice runtime assets: ${missing.join(', ')}. These must come from the same LibreOffice ARM64 build as the native libraries.")
-        }
-        logger.lifecycle("LibreOffice runtime assets verified: ${required.size()} required files present.")
-    }
-}
