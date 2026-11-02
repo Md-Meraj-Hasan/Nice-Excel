@@ -93,13 +93,29 @@
           const dimensions = engine.getSheetDimensions(sheetId);
           const values = allValues[name] || [];
           const formulas = allFormulas[name] || [];
-          for (let row = 0; row < dimensions.height && row < 10000; row++) {
-            for (let col = 0; col < dimensions.width && col < 512; col++) {
-              const address = { sheet: sheetId, row, col };
-              if (!engine.isCellPartOfArray(address) || formulas[row]?.[col]) continue;
-              let n = col + 1, letters = '';
-              while (n > 0) { const rem = (n - 1) % 26; letters = String.fromCharCode(65 + rem) + letters; n = Math.floor((n - 1) / 26); }
-              spill[name + '!' + letters + (row + 1)] = normalize(values[row]?.[col]);
+          // Inspect only formula cells first. Sheets without array formulas avoid a
+          // full used-range scan, which keeps normal workbook recalculation fast.
+          for (let row = 0; row < formulas.length && row < 10000; row++) {
+            const formulaRow = formulas[row] || [];
+            for (let col = 0; col < formulaRow.length && col < 512; col++) {
+              if (!formulaRow[col]) continue;
+              const anchor = { sheet: sheetId, row, col };
+              if (!engine.isCellPartOfArray(anchor)) continue;
+              let height = 1, width = 1;
+              while (row + height < dimensions.height && row + height < 10000 &&
+                     engine.isCellPartOfArray({ sheet: sheetId, row: row + height, col })) height++;
+              while (col + width < dimensions.width && col + width < 512 &&
+                     engine.isCellPartOfArray({ sheet: sheetId, row, col: col + width })) width++;
+              for (let spillRow = row; spillRow < row + height; spillRow++) {
+                for (let spillCol = col; spillCol < col + width; spillCol++) {
+                  if (spillRow === row && spillCol === col) continue;
+                  const address = { sheet: sheetId, row: spillRow, col: spillCol };
+                  if (!engine.isCellPartOfArray(address)) continue;
+                  let n = spillCol + 1, letters = '';
+                  while (n > 0) { const rem = (n - 1) % 26; letters = String.fromCharCode(65 + rem) + letters; n = Math.floor(n / 26); }
+                  spill[name + '!' + letters + (spillRow + 1)] = normalize(values[spillRow]?.[spillCol]);
+                }
+              }
             }
           }
         }
