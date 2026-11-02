@@ -20,7 +20,13 @@ for (const target of targets) {
     legalComments: 'eof',
   });
 }
-const licenseTarget = resolve(root, 'app/src/main/assets/THIRD_PARTY_LICENSES/HyperFormula-GPL-3.0.txt');
-await mkdir(resolve(licenseTarget, '..'), { recursive: true });
-await copyFile(resolve(root, 'node_modules/hyperformula/LICENSE'), licenseTarget);
-console.log('HyperFormula offline bundles and GPL-3.0 license notice generated.');
+const sourceLicense = resolve(root, 'node_modules/hyperformula/LICENSE');
+const licenseTargets = [
+  resolve(root, 'app/src/main/assets/THIRD_PARTY_LICENSES/HyperFormula-GPL-3.0.txt'),
+  resolve(root, 'backend/niceexcel_api/static/hyperformula-license.txt'),
+];
+for (const licenseTarget of licenseTargets) {
+  await mkdir(resolve(licenseTarget, '..'), { recursive: true });
+  await copyFile(sourceLicense, licenseTarget);
+}
+console.log('HyperFormula offline bundles and GPL-3.0 license notices generated.');
