@@ -121,7 +121,7 @@
         }
         const activeCells = snapshot[activeSheet] || {};
         const hasArrayFormula = Object.values(activeCells).some(raw =>
-          typeof raw === 'string' && /^=\\s*(FILTER|SORT|UNIQUE|SEQUENCE|TRANSPOSE|HSTACK|VSTACK|ARRAYFORMULA)\\s*\\(/i.test(raw)
+          typeof raw === 'string' && /^=\s*(FILTER|SORT|UNIQUE|SEQUENCE|TRANSPOSE|HSTACK|VSTACK|ARRAYFORMULA)\s*\(/i.test(raw)
         );
         const activeSheetId = engine.getSheetId(activeSheet);
         if (hasArrayFormula && activeSheetId !== undefined) {
