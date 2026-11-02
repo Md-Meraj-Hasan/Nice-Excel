@@ -1,0 +1,92 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body><script src="hyperformula.bundle.js"></script><script>
+(function () {
+  'use strict';
+  let engine = null;
+  let previous = null;
+  let sheetNames = [];
+  const parseAddress = (address) => {
+    const match = /^([A-Z]+)([1-9][0-9]*)$/i.exec(String(address));
+    if (!match) return null;
+    let col = 0;
+    for (const ch of match[1].toUpperCase()) col = col * 26 + ch.charCodeAt(0) - 64;
+    return { row: Number(match[2]) - 1, col: col - 1 };
+  };
+  const normalize = (value) => {
+    if (value === null || value === undefined) return '';
+    if (Array.isArray(value)) return value.map(normalize);
+    if (typeof value === 'object') {
+      if (typeof value.value === 'string') return value.value;
+      return String(value);
+    }
+    return value;
+  };
+  function build(sheets) {
+    const source = {};
+    for (const [name, cells] of Object.entries(sheets)) {
+      let maxRow = 0, maxCol = 0;
+      for (const address of Object.keys(cells || {})) {
+        const pos = parseAddress(address);
+        if (!pos || pos.row >= 10000 || pos.col >= 512) continue;
+        maxRow = Math.max(maxRow, pos.row + 1);
+        maxCol = Math.max(maxCol, pos.col + 1);
+      }
+      const matrix = Array.from({ length: maxRow }, () => Array(maxCol).fill(null));
+      for (const [address, raw] of Object.entries(cells || {})) {
+        const pos = parseAddress(address);
+        if (pos && pos.row < maxRow && pos.col < maxCol) matrix[pos.row][pos.col] = raw === '' ? null : raw;
+      }
+      source[name] = matrix;
+    }
+    engine = window.HyperFormula.buildFromSheets(source, {
+      licenseKey: 'gpl-v3', maxRows: 10000, maxColumns: 512,
+      useArrayArithmetic: true,
+    });
+    previous = JSON.parse(JSON.stringify(sheets));
+    sheetNames = Object.keys(sheets);
+  }
+  function synchronize(sheets) {
+    const names = Object.keys(sheets);
+    if (!engine || names.length !== sheetNames.length || names.some((name, i) => name !== sheetNames[i])) {
+      build(sheets);
+      return;
+    }
+    const allNames = new Set([...Object.keys(previous || {}), ...names]);
+    for (const name of allNames) {
+      const before = previous[name] || {};
+      const after = sheets[name] || {};
+      const addresses = new Set([...Object.keys(before), ...Object.keys(after)]);
+      const sheetId = engine.getSheetId(name);
+      if (sheetId === undefined) { build(sheets); return; }
+      for (const address of addresses) {
+        if (before[address] === after[address]) continue;
+        const pos = parseAddress(address);
+        if (!pos || pos.row >= 10000 || pos.col >= 512) continue;
+        engine.setCellContents({ sheet: sheetId, row: pos.row, col: pos.col }, [[after[address] === undefined || after[address] === '' ? null : after[address]]]);
+      }
+    }
+    previous = JSON.parse(JSON.stringify(sheets));
+  }
+  window.NiceExcelHF = {
+    ready: true,
+    calculate(payloadText) {
+      try {
+        const payload = JSON.parse(payloadText);
+        synchronize(payload.sheets || {});
+        const results = {};
+        for (const item of payload.formulas || []) {
+          const sheetId = engine.getSheetId(item.sheet);
+          const pos = parseAddress(item.address);
+          if (sheetId === undefined || !pos || pos.row >= 10000 || pos.col >= 512) continue;
+          results[item.sheet + '!' + item.address] = normalize(engine.getCellValue({ sheet: sheetId, row: pos.row, col: pos.col }));
+        }
+        return JSON.stringify({ ok: true, results });
+      } catch (error) {
+        return JSON.stringify({ ok: false, error: String(error && error.stack || error) });
+      }
+    }
+  };
+  if (window.NiceExcelHFReady) window.NiceExcelHFReady();
+})();
+</script></body></html>
