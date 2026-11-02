@@ -21,8 +21,15 @@ ZIP integrity is checked. Android Gradle compilation and on-device testing have 
 - Existing workbook data can extend beyond the default grid based on imported content.
 - No new runtime dependency added.
 
-## Spreadsheet engine investigation
-LibreOfficeKit is being evaluated as a possible future calculation/rendering engine. It is not bundled in this version: the official Android implementation requires native LibreOffice libraries, JNI integration, threaded rendering/input handling, and significant build/packaging work. This needs a separate proof-of-concept before replacing the current engine.
+## Formula engine — HyperFormula 3.5.0 (GPLv3)
+
+- HyperFormula is the primary formula calculation engine for the native Android grid and the Flask/WebView spreadsheet.
+- The project is released under **GNU GPLv3**. The complete license is in `LICENSE`; HyperFormula's third-party license notice is bundled in the APK.
+- The engine is bundled locally during the APK workflow. Runtime calculation does not download scripts, call a CDN, or require an internet connection.
+- The native grid keeps its background worker, revision checks, dependency-based refresh selection, formula display cache, and asynchronous UI updates. HyperFormula performs calculation in a local-only hidden WebView renderer; calculation is never intentionally run on the Android UI thread.
+- The web spreadsheet uses the same HyperFormula bundle and synchronizes a sparse workbook snapshot. The Python formula evaluator remains available for compatibility/API paths, but it is no longer the primary UI calculation engine.
+- HyperFormula 3.5.0 includes 423 built-in functions. This does not mean 100% compatibility with every Excel function, file feature, or formula behavior; verify important workbooks in Excel or LibreOffice.
+- Build the offline assets with `npm install` and `npm run build:hyperformula`; run formula regression tests with `npm run test:hyperformula`. The GitHub Actions APK workflow performs these steps before Gradle tests and APK packaging.
 
 
 ## v1.0.0 — text formula coverage
