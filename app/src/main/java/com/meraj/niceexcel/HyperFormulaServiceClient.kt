@@ -9,7 +9,6 @@ import android.os.Handler
 import android.os.Looper
 import android.os.Message
 import android.os.Messenger
-import android.os.RemoteException
 import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
@@ -68,7 +67,7 @@ internal object HyperFormulaServiceClient {
         val connection = object : ServiceConnection {
             override fun onServiceConnected(name: ComponentName?, binder: android.os.IBinder?) {
                 try {
-                    val service = Messenger(binder)
+                    val service = Messenger(requireNotNull(binder) { "HyperFormula service returned a null binder" })
                     val request = Message.obtain(null, HyperFormulaEngineService.MSG_RECALCULATE)
                     request.data = Bundle().apply {
                         putString(HyperFormulaEngineService.KEY_PAYLOAD_PATH, payloadFile.absolutePath)
