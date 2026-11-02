@@ -1766,6 +1766,18 @@ class MainActivity : Activity() {
                             } ?: "#ERROR"
                         }
                     }.getOrElse { error -> error.message?.takeIf { it.startsWith("#") } ?: "#ERROR" }
+                    val formulaKey = "$formulaSheet!${address.uppercase(Locale.US)}"
+                    val hyperFormulaValue = hyperFormulaBatchResults[formulaKey]
+                    val resultSource = when {
+                        hyperFormulaValue != null -> "HYPERFORMULA"
+                        poiBatchResults[formulaKey] != null -> "POI_FALLBACK"
+                        else -> "LOCAL_FALLBACK"
+                    }
+                    Log.i(
+                        "NiceExcel-Formula",
+                        "FORMULA_VALUE sheet=$formulaSheet cell=$address source=$resultSource " +
+                            "formula=${raw.take(180)} result=${rendered.take(180)}"
+                    )
                     results["$formulaSheet!$address"] = cacheKey to rendered
                 }
                 mainHandler.post {
