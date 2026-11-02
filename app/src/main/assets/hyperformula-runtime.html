@@ -37,7 +37,7 @@
         while (end < formula.length && /[A-Za-z0-9_.]/.test(formula[end])) end++;
         const token = formula.slice(i, end);
         const upper = token.toUpperCase();
-        if ((upper === 'TRUE' || upper === 'FALSE') && !/^\\s*\\(/.test(formula.slice(end))) {
+        if ((upper === 'TRUE' || upper === 'FALSE') && !/^\s*\\(/.test(formula.slice(end))) {
           output += upper + '()';
         } else output += token;
         i = end; continue;
