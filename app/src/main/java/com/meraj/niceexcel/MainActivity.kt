@@ -1680,18 +1680,20 @@ class MainActivity : Activity() {
                 // HyperFormula is the primary engine. It runs in a local-only WebView renderer;
                 // the worker waits for its asynchronous result and never evaluates formulas on
                 // the Android UI thread. The existing POI + Kotlin path remains a safe fallback.
+                val requestedFormulaKeys = formulas.map { (name, address, _) ->
+                    "$name!${address.uppercase(Locale.US)}"
+                }
                 val hyperFormulaCalculation = runCatching {
-                    HyperFormulaRuntime.recalculateSnapshot(allSheetsSnapshot, activeSheet, rowCount, colLimit)
+                    HyperFormulaRuntime.recalculateSnapshot(
+                        allSheetsSnapshot, activeSheet, rowCount, colLimit, requestedFormulaKeys
+                    )
                 }.onFailure { failure ->
                     Log.e("NiceExcel-Formula", "HYPERFORMULA_RUNTIME_FAILURE: calculation failed; POI fallback will be used", failure)
                 }.getOrNull()
                 val hyperFormulaBatchResults = hyperFormulaCalculation?.values.orEmpty()
                 Log.i("NiceExcel-Formula", "HYPERFORMULA_RUNTIME_RESULT: formulas=${allFormulas.size}, returned=${hyperFormulaBatchResults.size}")
-                val allFormulaKeys = allFormulas.map { (name, address, _) ->
-                    "$name!${address.uppercase(Locale.US)}"
-                }.toSet()
-                val hyperFormulaComplete = allFormulaKeys.isNotEmpty() &&
-                    allFormulaKeys.all { it in hyperFormulaBatchResults }
+                val hyperFormulaComplete = requestedFormulaKeys.isNotEmpty() &&
+                    requestedFormulaKeys.all { it in hyperFormulaBatchResults }
                 // Keep the established single-pass POI evaluator as fallback only when the
                 // HyperFormula runtime is unavailable or returns an incomplete workbook result.
                 val poiBatchResults = if (hyperFormulaComplete) emptyMap()
