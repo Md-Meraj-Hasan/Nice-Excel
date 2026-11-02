@@ -20,7 +20,8 @@ for (const target of targets) {
     legalComments: 'eof',
   });
 }
-const sourceLicense = resolve(root, 'node_modules/hyperformula/LICENSE');
+// HyperFormula is GPL-3.0-only; the repository's LICENSE is the complete matching GPLv3 text.
+const sourceLicense = resolve(root, 'LICENSE');
 const licenseTargets = [
   resolve(root, 'app/src/main/assets/THIRD_PARTY_LICENSES/HyperFormula-GPL-3.0.txt'),
   resolve(root, 'backend/niceexcel_api/static/hyperformula-license.txt'),
