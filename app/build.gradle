@@ -1,4 +1,3 @@
-
 plugins {
     id 'com.android.application'
     id 'org.jetbrains.kotlin.android'
@@ -6,18 +5,6 @@ plugins {
 }
 
 android {
-    // LibreOffice's Android APK-backed virtual filesystem reads asset payloads directly from the APK and supports STORE entries only.
-    // Empty noCompress extension keeps every LibreOffice runtime asset uncompressed.
-    androidResources {
-        noCompress += ""
-    }
-
-    // Package genuine, matching LibreOffice Android native outputs when supplied.
-    sourceSets {
-        main {
-            jniLibs.srcDirs = ["${rootProject.projectDir}/native-engine/jniLibs"]
-        }
-    }
     namespace 'com.meraj.niceexcel'
     compileSdk 35
 
@@ -25,46 +12,31 @@ android {
         applicationId 'com.meraj.niceexcel'
         minSdk 26
         targetSdk 35
-
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
-
-        versionCode 17
-        versionName '1.6.1'
-
-        // Chaquopy: supported CPU architectures
-        ndk {
-            abiFilters 'arm64-v8a', 'armeabi-v7a', 'x86_64'
-        }
+        versionCode 18
+        versionName '1.7.0'
+        ndk { abiFilters 'arm64-v8a', 'armeabi-v7a', 'x86_64' }
     }
 
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
-
-    kotlinOptions {
-        jvmTarget = '17'
-    }
+    kotlinOptions { jvmTarget = '17' }
 }
 
 dependencies {
-    // Apache POI formula and spreadsheet support
+    // Guarded fallback when the isolated HyperFormula runtime is unavailable.
     implementation 'org.apache.poi:poi:5.4.1'
     implementation 'org.apache.poi:poi-ooxml:5.4.1'
-
-    // Unit tests
     testImplementation 'junit:junit:4.13.2'
-
-    // Android instrumentation tests
     androidTestImplementation 'androidx.test.ext:junit:1.2.1'
     androidTestImplementation 'androidx.test:runner:1.6.2'
 }
 
-// Bundle Python + Flask for the optional offline Web Excel screen.
 chaquopy {
     defaultConfig {
         version = "3.11"
-
         pip {
             install "pydantic==1.10.21"
             install "flask==3.0.3"
@@ -74,52 +46,17 @@ chaquopy {
     }
 }
 
-
-
-// This task verifies packaging prerequisites only. It does not build LibreOffice.
-tasks.register("verifyLibreOfficeArm64Core") {
+// The generated bundle is packaged in the APK; no CDN or runtime download is used.
+tasks.register("verifyHyperFormulaBundle") {
     group = "verification"
-    description = "Verify a genuine LibreOffice Android ARM64 core is present for APK packaging."
+    description = "Verify the locally bundled HyperFormula GPLv3 runtime is present."
     doLast {
-        def core = file("${rootProject.projectDir}/native-engine/jniLibs/arm64-v8a/liblo-native-code.so")
-        if (!core.isFile() || core.length() < 1_000_000L) {
-            throw new GradleException("Missing genuine LibreOffice ARM64 core: ${core}. Build LibreOffice Android core separately and copy its real output here.")
+        def bundle = file("${projectDir}/src/main/assets/hyperformula.bundle.js")
+        if (!bundle.isFile() || bundle.length() < 100_000L) {
+            throw new GradleException("Missing HyperFormula bundle: ${bundle}. Run 'npm install' and 'npm run build:hyperformula' before building the APK.")
         }
-        def bootstrap = file("${rootProject.projectDir}/app/src/main/java/org/libreoffice/kit/LibreOfficeKit.java")
-        if (!bootstrap.isFile() || bootstrap.length() < 500) {
-            throw new GradleException("Missing official LibreOffice Android Java bootstrap: ${bootstrap}. Fetch Bootstrap/src from the pinned LibreOffice revision before building.")
-        }
-        logger.lifecycle("LibreOffice ARM64 core and official Java bootstrap found. JNI initialization and workbook calculation still require runtime integration tests.")
+        logger.lifecycle("Offline HyperFormula bundle verified (${bundle.length()} bytes).")
     }
 }
 
-
-
-tasks.register("verifyLibreOfficeRuntimeAssets") {
-    group = "verification"
-    description = "Verify the official LibreOffice Android runtime assets required by LibreOfficeKit.init()."
-    doLast {
-        def assetRoot = file("${projectDir}/src/main/assets")
-        def required = [
-            "program/fundamentalrc",
-            "program/bootstraprc",
-            "program/unorc",
-            "program/services.rdb",
-            "unpack/program/sofficerc",
-            "unpack/program/udkapi.rdb",
-            "unpack/program/offapi.rdb",
-            "unpack/program/oovbaapi.rdb",
-            "unpack/etc/fonts/fonts.conf",
-            "share/registry/main.xcd",
-            "share/registry/res/registry_en-US.xcd"
-        ]
-        def missing = required.findAll { path ->
-            def candidate = new File(assetRoot, path)
-            !candidate.isFile() || candidate.length() == 0
-        }
-        if (!missing.isEmpty()) {
-            throw new GradleException("Missing LibreOffice runtime assets: ${missing.join(', ')}. These must come from the same LibreOffice ARM64 build as the native libraries.")
-        }
-        logger.lifecycle("LibreOffice runtime assets verified: ${required.size()} required files present.")
-    }
-}
+tasks.named("preBuild").configure { dependsOn("verifyHyperFormulaBundle") }
