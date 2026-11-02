@@ -3,6 +3,7 @@ package com.meraj.niceexcel;
 import android.app.Service;
 import android.content.Intent;
 import android.os.Bundle;
+import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
@@ -45,6 +46,9 @@ public final class HyperFormulaEngineService extends Service {
     @Override public void onCreate() {
         super.onCreate();
         try {
+            // FlaskActivity also owns a WebView in the main app process. Android P+
+            // requires a distinct WebView data directory for this secondary process.
+            if (Build.VERSION.SDK_INT >= 28) WebView.setDataDirectorySuffix("hyperformula");
             webView = new WebView(getApplicationContext());
             webView.getSettings().setJavaScriptEnabled(true);
             webView.getSettings().setDomStorageEnabled(false);
