@@ -1712,10 +1712,24 @@ class MainActivity : Activity() {
                 }
                 val hyperFormulaComplete = requestedFormulaKeys.isNotEmpty() &&
                     requestedFormulaKeys.all { it in hyperFormulaBatchResults }
+                val missingFormulaKeys = requestedFormulaKeys.filterNot { hyperFormulaBatchResults.containsKey(it) }
+                val blankFormulaKeys = requestedFormulaKeys.filter { hyperFormulaBatchResults[it].isNullOrBlank() }
+                val errorFormulaKeys = requestedFormulaKeys.filter {
+                    hyperFormulaBatchResults[it]?.startsWith("#") == true
+                }
                 Log.i(
                     "NiceExcel-Formula",
-                    "HYPERFORMULA_RUNTIME_RESULT: requested=${requestedFormulaKeys.size}, returned=${hyperFormulaBatchResults.size}, arraySpills=${hyperFormulaSpillResults.size}, complete=$hyperFormulaComplete"
+                    "HYPERFORMULA_RUNTIME_RESULT: requested=${requestedFormulaKeys.size}, returned=${hyperFormulaBatchResults.size}, arraySpills=${hyperFormulaSpillResults.size}, complete=$hyperFormulaComplete, blank=${blankFormulaKeys.size}, errors=${errorFormulaKeys.size}, missing=${missingFormulaKeys.size}"
                 )
+                if (blankFormulaKeys.isNotEmpty()) {
+                    Log.w("NiceExcel-Formula", "HYPERFORMULA_BLANK_RESULTS cells=${blankFormulaKeys.take(30).joinToString(",")}")
+                }
+                if (errorFormulaKeys.isNotEmpty()) {
+                    Log.w("NiceExcel-Formula", "HYPERFORMULA_ERROR_RESULTS cells=${errorFormulaKeys.take(30).joinToString(",")}")
+                }
+                if (missingFormulaKeys.isNotEmpty()) {
+                    Log.e("NiceExcel-Formula", "HYPERFORMULA_MISSING_RESULTS cells=${missingFormulaKeys.take(30).joinToString(",")}")
+                }
                 // Retain the existing single-pass POI path only as a safety fallback
                 // if the offline HyperFormula process cannot answer a requested cell.
                 val poiBatchResults = if (hyperFormulaComplete) emptyMap()
@@ -1755,7 +1769,14 @@ class MainActivity : Activity() {
                     results["$formulaSheet!$address"] = cacheKey to rendered
                 }
                 mainHandler.post {
-                    if (isFinishing || isDestroyed || jobId != formulaRecalcJobId.get() || revision != workbookRevision.get()) return@post
+                    if (isFinishing || isDestroyed) return@post
+                    if (jobId != formulaRecalcJobId.get() || revision != workbookRevision.get()) {
+                        Log.i(
+                            "NiceExcel-Formula",
+                            "HYPERFORMULA_STALE_RESULT_IGNORED: job=$jobId currentJob=${formulaRecalcJobId.get()}, revision=$revision currentRevision=${workbookRevision.get()}, sheet=$activeSheet"
+                        )
+                        return@post
+                    }
                     results.forEach { (sheetAddress, result) ->
                         val splitAt = sheetAddress.lastIndexOf('!')
                         if (splitAt <= 0) return@forEach
