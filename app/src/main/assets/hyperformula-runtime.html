@@ -102,12 +102,13 @@
 
   window.NiceExcelHF = {
     version: HyperFormula.version || '3.5.0',
-    calculate(snapshotJson) {
+    calculate(snapshotJson, activeSheet, visibleRows, visibleCols) {
       try {
         const snapshot = JSON.parse(snapshotJson);
         applyChanges(snapshot);
         const results = {};
         const numericKeys = [];
+        const spillValues = {};
         for (const [sheetName, cells] of Object.entries(snapshot)) {
           const sheetId = engine.getSheetId(sheetName);
           for (const [address, raw] of Object.entries(cells || {})) {
@@ -118,7 +119,31 @@
             results[key] = normalize(engine.getCellValue({ sheet: sheetId, row: point.row, col: point.col }), numericKeys, key);
           }
         }
-        return JSON.stringify({ version: this.version, results, numericKeys });
+        const activeCells = snapshot[activeSheet] || {};
+        const hasArrayFormula = Object.values(activeCells).some(raw =>
+          typeof raw === 'string' && /^=\\s*(FILTER|SORT|UNIQUE|SEQUENCE|TRANSPOSE|HSTACK|VSTACK|ARRAYFORMULA)\\s*\\(/i.test(raw)
+        );
+        const activeSheetId = engine.getSheetId(activeSheet);
+        if (hasArrayFormula && activeSheetId !== undefined) {
+          const rows = Math.max(1, Math.min(Number(visibleRows) || 50, 1000));
+          const cols = Math.max(1, Math.min(Number(visibleCols) || 26, 26));
+          for (let row = 0; row < rows; row++) {
+            for (let col = 0; col < cols; col++) {
+              const address = (function columnName(index) {
+                let n = index + 1, out = '';
+                while (n > 0) { const r = (n - 1) % 26; out = String.fromCharCode(65 + r) + out; n = Math.floor((n - 1) / 26); }
+                return out;
+              })(col) + String(row + 1);
+              if (Object.prototype.hasOwnProperty.call(activeCells, address) && activeCells[address] !== null && activeCells[address] !== '') continue;
+              const value = engine.getCellValue({ sheet: activeSheetId, row, col });
+              if (value !== null && value !== undefined) {
+                const key = activeSheet + '!' + address;
+                spillValues[key] = normalize(value, [], key);
+              }
+            }
+          }
+        }
+        return JSON.stringify({ version: this.version, results, numericKeys, spillValues });
       } catch (error) {
         return JSON.stringify({ error: String(error && error.message || error) });
       }
