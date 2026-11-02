@@ -11,7 +11,7 @@ const htmlFiles = [
 ];
 for (const file of htmlFiles) {
   const html = await readFile(resolve(process.cwd(), file), 'utf8');
-  const inlineScripts = [...html.matchAll(/<script(?:\\s[^>]*)?>([\\s\\S]*?)<\\/script>/g)]
+  const inlineScripts = [...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g)]
     .map(match => match[1]).filter(script => script.trim().length > 0);
   assert.ok(inlineScripts.length > 0, `No inline JavaScript found in ${file}`);
   for (const script of inlineScripts) new Function(script);
