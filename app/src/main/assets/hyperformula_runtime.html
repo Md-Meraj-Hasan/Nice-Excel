@@ -16,6 +16,7 @@
   const normalize = (value) => {
     if (value === null || value === undefined) return '';
     if (Array.isArray(value)) return value.map(normalize);
+    if (typeof value === 'boolean') return value ? 'TRUE' : 'FALSE';
     if (typeof value === 'object') {
       if (typeof value.value === 'string') return value.value;
       return String(value);
