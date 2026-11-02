@@ -64,7 +64,7 @@ internal object HyperFormulaRuntime {
         view.webViewClient = object : WebViewClient() {
             override fun onPageFinished(view: WebView?, url: String?) {
                 view?.evaluateJavascript(
-                    "!!(window.NiceExcelHF && typeof window.NiceExcelHF.calculate === 'function')"
+                    "!!(window.HyperFormula && window.NiceExcelFormulaCompat && typeof window.NiceExcelFormulaCompat.normalizeFormula === 'function' && window.NiceExcelHF && typeof window.NiceExcelHF.calculate === 'function')"
                 ) { result ->
                     if (result == "true") {
                         ready = true
