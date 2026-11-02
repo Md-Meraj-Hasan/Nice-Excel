@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import android.os.Looper
 import android.os.Build
+import android.util.Log
 import java.nio.ByteBuffer
 import org.apache.poi.ss.usermodel.CellType
 import org.apache.poi.ss.usermodel.FormulaError
@@ -35,6 +36,13 @@ object LibreOfficeCalcEngine {
 
     @Volatile
     private var initializationFailure: Throwable? = null
+
+    /** Initialize LibreOffice on the exact worker thread used for every JNI call. */
+    fun initializeRuntime(context: Context) {
+        loThread.submit(Callable {
+            ensureOfficeOnLibreOfficeThread(context)
+        }).get(10, TimeUnit.MINUTES)
+    }
 
     fun recalculateSnapshot(
         context: Context,
@@ -125,28 +133,40 @@ object LibreOfficeCalcEngine {
         }
     }
 
-    private fun recalculateOnLibreOfficeThread(context: Context, input: File, output: File) {
-        var activeOffice = office
-        if (activeOffice == null) {
-            initializationFailure?.let {
-                throw IllegalStateException("LibreOfficeKit initialization previously failed", it)
-            }
-            try {
-                val kitClass = Class.forName("org.libreoffice.kit.LibreOfficeKit")
-                kitClass.getMethod("initializeLibrary").invoke(null)
-                kitClass.getMethod("init", Context::class.java).invoke(null, context.applicationContext)
-                val handle = kitClass.getMethod("getLibreOfficeKitHandle").invoke(null) as? ByteBuffer
-                    ?: error("LibreOfficeKit returned a null native handle after initialization")
-                val officeClass = Class.forName("org.libreoffice.kit.Office")
-                activeOffice = officeClass.getConstructor(ByteBuffer::class.java).newInstance(handle)
-                office = activeOffice
-            } catch (failure: Throwable) {
-                initializationFailure = failure
-                throw IllegalStateException("Unable to initialize the bundled LibreOffice Calc runtime", failure)
-            }
+    private fun ensureOfficeOnLibreOfficeThread(context: Context): Any {
+        check(Thread.currentThread().name == "NiceExcel-LibreOfficeKit") {
+            "LibreOfficeKit initialization/JNI must stay on the dedicated Calc worker thread"
         }
+        office?.let { return it }
+        initializationFailure?.let {
+            throw IllegalStateException("LibreOfficeKit initialization previously failed", it)
+        }
+        try {
+            Log.i("NiceExcel-LO-Engine", "LO_INIT_BEGIN thread=${Thread.currentThread().name} pid=${android.os.Process.myPid()}")
+            val kitClass = Class.forName("org.libreoffice.kit.LibreOfficeKit")
+            kitClass.getMethod("initializeLibrary").invoke(null)
+            kitClass.getMethod("init", Context::class.java).invoke(null, context.applicationContext)
+            val initialized = kitClass.getMethod("isInitialized").invoke(null) as Boolean
+            check(initialized) { "LibreOfficeKit native initialization returned false" }
+            Log.i("NiceExcel-LO-Engine", "LO_INIT_NATIVE_OK")
+            val handle = kitClass.getMethod("getLibreOfficeKitHandle").invoke(null) as? ByteBuffer
+                ?: error("LibreOfficeKit returned a null native handle after initialization")
+            val officeClass = Class.forName("org.libreoffice.kit.Office")
+            val created = officeClass.getConstructor(ByteBuffer::class.java).newInstance(handle)
+                ?: error("LibreOfficeKit Office constructor returned null")
+            office = created
+            Log.i("NiceExcel-LO-Engine", "LO_OFFICE_HANDLE_READY")
+            return created
+        } catch (failure: Throwable) {
+            initializationFailure = failure
+            Log.e("NiceExcel-LO-Engine", "LO_INIT_FAILED", failure)
+            throw IllegalStateException("Unable to initialize the bundled LibreOffice Calc runtime", failure)
+        }
+    }
 
-        val officeClass = activeOffice!!.javaClass
+    private fun recalculateOnLibreOfficeThread(context: Context, input: File, output: File) {
+        val activeOffice = ensureOfficeOnLibreOfficeThread(context)
+        val officeClass = activeOffice.javaClass
         fun loadDocument(url: String): Any? =
             officeClass.getMethod("documentLoad", String::class.java).invoke(activeOffice, url)
         fun officeError(): String =
@@ -155,6 +175,7 @@ object LibreOfficeCalcEngine {
 
         val inputUrl = Uri.fromFile(input).toString()
         val outputUrl = Uri.fromFile(output).toString()
+        Log.i("NiceExcel-LO-Engine", "LO_OPEN_INPUT path=${input.absolutePath} bytes=${input.length()}")
         // Resolve spreadsheet metadata before opening a document, so a metadata
         // lookup failure cannot leave a loaded native document undisposed.
         val expectedType = Class.forName("org.libreoffice.kit.Document")
@@ -166,18 +187,22 @@ object LibreOfficeCalcEngine {
 
         val document = loadDocument(inputUrl)
             ?: error("LibreOffice could not open the generated XLSX workbook: ${officeError()}")
+        Log.i("NiceExcel-LO-Engine", "LO_INPUT_OPENED")
 
         // Once documentLoad succeeds, every subsequent operation must be covered by
         // destroy(), including reflection/type checks that can themselves fail.
         try {
             val documentClass = document.javaClass
             checkSpreadsheet(document)
+            Log.i("NiceExcel-LO-Engine", "LO_INPUT_TYPE_OK")
             documentClass.getMethod(
                 "postUnoCommand", String::class.java, String::class.java, java.lang.Boolean.TYPE
             ).invoke(document, ".uno:CalculateHard", "{}", false)
+            Log.i("NiceExcel-LO-Engine", "LO_CALCULATE_HARD_SENT")
             documentClass.getMethod(
                 "saveAs", String::class.java, String::class.java, String::class.java
             ).invoke(document, outputUrl, "Calc MS Excel 2007 XML", "")
+            Log.i("NiceExcel-LO-Engine", "LO_SAVEAS_RETURNED outputExists=${output.isFile} outputBytes=${output.length()}")
         } finally {
             runCatching { document.javaClass.getMethod("destroy").invoke(document) }
         }
@@ -186,10 +211,12 @@ object LibreOfficeCalcEngine {
             "LibreOffice did not create a recalculated XLSX file"
         }
 
+        Log.i("NiceExcel-LO-Engine", "LO_REOPEN_OUTPUT")
         val reopened = loadDocument(outputUrl)
             ?: error("LibreOffice could not reopen its recalculated XLSX output: ${officeError()}")
         try {
             checkSpreadsheet(reopened)
+            Log.i("NiceExcel-LO-Engine", "LO_OUTPUT_REOPENED_TYPE_OK")
         } finally {
             runCatching { reopened.javaClass.getMethod("destroy").invoke(reopened) }
         }
