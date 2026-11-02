@@ -55,6 +55,10 @@ def start_server(app_data_dir: str) -> None:
         if not asset_formula_bundle.is_file() or asset_formula_bundle.stat().st_size == 0:
             raise FileNotFoundError(f"Offline HyperFormula bundle is missing: {asset_formula_bundle}")
         shutil.copyfile(asset_formula_bundle, static_dir / "hyperformula.bundle.js")
+        asset_license = app_dir / "hyperformula-license.txt"
+        if not asset_license.is_file() or asset_license.stat().st_size == 0:
+            raise FileNotFoundError(f"HyperFormula GPL-3.0 license notice is missing: {asset_license}")
+        shutil.copyfile(asset_license, static_dir / "hyperformula-license.txt")
 
         os.environ["NICEEXCEL_DATA_DIR"] = str(data_dir)
         os.environ["NICEEXCEL_RECOVERY_DIR"] = str(recovery_dir)
