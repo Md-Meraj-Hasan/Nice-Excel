@@ -1684,8 +1684,7 @@ class MainActivity : Activity() {
             allFormulas.filter { (name, address, _) -> "$name!$address" in affected }
         }
         if (formulas.isEmpty()) return
-        // Invalidate only results that will actually be recalculated. Cached values for
-        // unrelated formulas remain visible and are not needlessly refreshed.
+
         formulas.forEach { (formulaSheet, address, _) ->
             val prefix = "$formulaSheet|$address|"
             formulaDisplayCache.keys.removeAll { it.startsWith(prefix) }
@@ -1693,23 +1692,14 @@ class MainActivity : Activity() {
         try {
             backgroundExecutor.execute {
                 val results = linkedMapOf<String, Pair<String, String>>()
-                // HyperFormula is the primary calculation engine. The isolated service
-                // keeps its workbook/dependency graph warm; this worker submits only the
-                // affected formula addresses, preserving the existing incremental UI path.
                 val hyperFormulaCalculation = runCatching {
                     HyperFormulaServiceClient.recalculateSnapshot(
-                        this@MainActivity,
-                        allSheetsSnapshot,
-                        formulas
+                        this@MainActivity, allSheetsSnapshot, formulas
                     )
                 }.onFailure { failure ->
-                    Log.e("NiceExcel-Formula", "HYPERFORMULA_RUNTIME_FAILURE: isolated engine failed; POI fallback will be used", failure)
+                    Log.e("NiceExcel-Formula", "HYPERFORMULA_RUNTIME_FAILURE: no alternate formula engine will be used", failure)
                 }.getOrNull()
-                // HyperFormula's JS bridge echoes the requested address exactly as it
-                // arrived in the payload. Workbook imports can contain lowercase cell
-                // addresses, while the native cache and dependency graph use uppercase
-                // A1 addresses. Canonicalize both result maps before completeness checks
-                // and lookups so a valid result is not discarded as "missing".
+
                 fun canonicalFormulaResultMap(source: Map<String, String>): Map<String, String> {
                     val normalized = linkedMapOf<String, String>()
                     source.forEach { (rawKey, value) ->
@@ -1719,95 +1709,46 @@ class MainActivity : Activity() {
                                 rawKey.substring(separator + 1).uppercase(Locale.US)
                         } else rawKey
                         if (normalized.put(key, value) != null) {
-                            Log.w(
-                                "NiceExcel-Formula",
-                                "HYPERFORMULA_DUPLICATE_NORMALIZED_KEY raw=$rawKey normalized=$key"
-                            )
+                            Log.w("NiceExcel-Formula", "HYPERFORMULA_DUPLICATE_NORMALIZED_KEY raw=$rawKey normalized=$key")
                         }
                     }
                     return normalized
                 }
-                val rawHyperFormulaBatchResults = hyperFormulaCalculation?.formulaResults.orEmpty()
-                val rawHyperFormulaSpillResults = hyperFormulaCalculation?.spillResults.orEmpty()
-                val hyperFormulaBatchResults = canonicalFormulaResultMap(rawHyperFormulaBatchResults)
-                val hyperFormulaSpillResults = canonicalFormulaResultMap(rawHyperFormulaSpillResults)
+
+                val rawResults = hyperFormulaCalculation?.formulaResults.orEmpty()
+                val spillResults = canonicalFormulaResultMap(hyperFormulaCalculation?.spillResults.orEmpty())
+                val formulaResults = canonicalFormulaResultMap(rawResults)
+                val requestedKeys = formulas.map { (name, address, _) -> "$name!${address.uppercase(Locale.US)}" }
+                val missingKeys = requestedKeys.filterNot { formulaResults.containsKey(it) }
                 Log.i(
                     "NiceExcel-Formula",
-                    "HYPERFORMULA_KEY_NORMALIZATION rawResults=${rawHyperFormulaBatchResults.size}, normalizedResults=${hyperFormulaBatchResults.size}, rawSpills=${rawHyperFormulaSpillResults.size}, normalizedSpills=${hyperFormulaSpillResults.size}"
+                    "HYPERFORMULA_ONLY_RESULT requested=${requestedKeys.size}, returned=${formulaResults.size}, missing=${missingKeys.size}, errors=${requestedKeys.count { formulaResults[it]?.startsWith("#") == true }}"
                 )
-                val requestedFormulaKeys = formulas.map { (name, address, _) ->
-                    "$name!${address.uppercase(Locale.US)}"
+                if (missingKeys.isNotEmpty()) {
+                    Log.e("NiceExcel-Formula", "HYPERFORMULA_ONLY_MISSING cells=${missingKeys.take(40).joinToString(",")}")
                 }
-                val hyperFormulaComplete = requestedFormulaKeys.isNotEmpty() &&
-                    requestedFormulaKeys.all { it in hyperFormulaBatchResults }
-                val missingFormulaKeys = requestedFormulaKeys.filterNot { hyperFormulaBatchResults.containsKey(it) }
-                val blankFormulaKeys = requestedFormulaKeys.filter { hyperFormulaBatchResults[it].isNullOrBlank() }
-                val errorFormulaKeys = requestedFormulaKeys.filter {
-                    hyperFormulaBatchResults[it]?.startsWith("#") == true
-                }
-                Log.i(
-                    "NiceExcel-Formula",
-                    "HYPERFORMULA_RUNTIME_RESULT: requested=${requestedFormulaKeys.size}, returned=${hyperFormulaBatchResults.size}, arraySpills=${hyperFormulaSpillResults.size}, complete=$hyperFormulaComplete, blank=${blankFormulaKeys.size}, errors=${errorFormulaKeys.size}, missing=${missingFormulaKeys.size}"
-                )
-                if (blankFormulaKeys.isNotEmpty()) {
-                    Log.w("NiceExcel-Formula", "HYPERFORMULA_BLANK_RESULTS cells=${blankFormulaKeys.take(30).joinToString(",")}")
-                }
-                if (errorFormulaKeys.isNotEmpty()) {
-                    Log.w("NiceExcel-Formula", "HYPERFORMULA_ERROR_RESULTS cells=${errorFormulaKeys.take(30).joinToString(",")}")
-                }
-                if (missingFormulaKeys.isNotEmpty()) {
-                    Log.e("NiceExcel-Formula", "HYPERFORMULA_MISSING_RESULTS cells=${missingFormulaKeys.take(30).joinToString(",")}")
-                }
-                // Retain the existing single-pass POI path only as a safety fallback
-                // if the offline HyperFormula process cannot answer a requested cell.
-                val poiBatchResults = if (hyperFormulaComplete) emptyMap()
-                    else PoiFormulaBridge.evaluateAll(allSheetsSnapshot)
+
                 formulas.forEach { (formulaSheet, address, raw) ->
                     if (jobId != formulaRecalcJobId.get() || isFinishing || isDestroyed) return@forEach
                     val st = stylesSnapshot[formulaSheet]?.get(address)
                     val cacheKey = "$formulaSheet|$address|$raw|${st?.numberFormat ?: "General"}"
-                    val rendered = runCatching {
-                        val expression = raw.drop(1)
-                        val formulaCells = allSheetsSnapshot[formulaSheet].orEmpty()
-                        val localEngine = FormulaEngine(formulaCells)
-                        val preserveReferencedValue = shouldUseLocalReferenceResult(expression, formulaCells)
-                        val localSpecial = if (preserveReferencedValue || Regex("(?i)^(XOR|VLOOKUP|MATCH|NA|INDEX)\\s*\\(").containsMatchIn(expression))
-                            localEngine.evalText(expression)?.takeUnless { it == "#ERROR" } else null
-                        val calcValue = hyperFormulaBatchResults["$formulaSheet!${address.uppercase(Locale.US)}"]
-                        if (calcValue != null) {
-                            val calcNumber = calcValue.toDoubleOrNull()
-                            if (calcNumber != null) formatNumber(calcNumber, st?.numberFormat ?: "General", calcValue)
-                            else calcValue
-                        } else if (localSpecial != null) localSpecial else {
-                            val imported = poiBatchResults["$formulaSheet!${address.uppercase(Locale.US)}"]
-                            when {
-                                imported?.error != null -> imported.error
-                                imported?.text != null -> imported.text
-                                imported?.number != null -> formatNumber(imported.number, st?.numberFormat ?: "General", imported.number.toString())
-                                else -> {
-                                    val engine = FormulaEngine(allSheetsSnapshot[formulaSheet].orEmpty())
-                                    val textResult = engine.evalText(raw.drop(1))
-                                    textResult ?: engine.eval(raw.drop(1)).let { value ->
-                                        if (value.isNaN() || value.isInfinite()) "#NUM!" else formatNumber(value, st?.numberFormat ?: "General", value.toString())
-                                    }
-                                }
-                            } ?: "#ERROR"
-                        }
-                    }.getOrElse { error -> error.message?.takeIf { it.startsWith("#") } ?: "#ERROR" }
                     val formulaKey = "$formulaSheet!${address.uppercase(Locale.US)}"
-                    val hyperFormulaValue = hyperFormulaBatchResults[formulaKey]
-                    val resultSource = when {
-                        hyperFormulaValue != null -> "HYPERFORMULA"
-                        poiBatchResults[formulaKey] != null -> "POI_FALLBACK"
-                        else -> "LOCAL_FALLBACK"
+                    val hyperFormulaValue = formulaResults[formulaKey]
+                    val rendered = if (hyperFormulaValue == null) {
+                        "#ENGINE!"
+                    } else {
+                        val number = hyperFormulaValue.toDoubleOrNull()
+                        if (number != null) formatNumber(number, st?.numberFormat ?: "General", hyperFormulaValue)
+                        else hyperFormulaValue
                     }
+                    val resultSource = if (hyperFormulaValue == null) "HYPERFORMULA_MISSING" else "HYPERFORMULA"
                     Log.i(
                         "NiceExcel-Formula",
-                        "FORMULA_VALUE sheet=$formulaSheet cell=$address source=$resultSource " +
-                            "formula=${raw.take(180)} result=${rendered.take(180)}"
+                        "FORMULA_VALUE sheet=$formulaSheet cell=$address source=$resultSource formula=${raw.take(180)} result=${rendered.take(180)}"
                     )
                     results["$formulaSheet!$address"] = cacheKey to rendered
                 }
+
                 mainHandler.post {
                     if (isFinishing || isDestroyed) return@post
                     if (jobId != formulaRecalcJobId.get() || revision != workbookRevision.get()) {
@@ -1827,7 +1768,7 @@ class MainActivity : Activity() {
                     }
                     val oldSpillKeys = formulaSpillCache.keys.toList()
                     formulaSpillCache.clear()
-                    if (hyperFormulaComplete) formulaSpillCache.putAll(hyperFormulaSpillResults)
+                    formulaSpillCache.putAll(spillResults)
                     (oldSpillKeys + formulaSpillCache.keys).toSet().forEach { spillKey ->
                         val splitAt = spillKey.lastIndexOf('!')
                         if (splitAt <= 0) return@forEach
@@ -1840,7 +1781,7 @@ class MainActivity : Activity() {
                 }
             }
         } catch (_: RejectedExecutionException) {
-            // Never block typing if the bounded worker queue is full; a later edit can retry.
+            // A later edit or sheet render can retry; never calculate with a second engine.
         }
     }
 
@@ -2882,49 +2823,16 @@ class MainActivity : Activity() {
     }
 
     private fun display(address:String):String {
-        val raw=data[address] ?: return ""
+        val raw = data[address] ?: return ""
         val st = sheetStyles[address]
         if (!raw.startsWith("=")) {
-            val n = raw.toDoubleOrNull()
-            return if (n != null && st != null) formatNumber(n, st.numberFormat, raw) else raw
+            val number = raw.toDoubleOrNull()
+            return if (number != null && st != null) formatNumber(number, st.numberFormat, raw) else raw
         }
         val cacheKey = "$sheetName|$address|$raw|${st?.numberFormat ?: "General"}"
-        formulaDisplayCache[cacheKey]?.let { return it }
-        val result = try {
-            val expression = raw.drop(1)
-            // Keep local text/error semantics for XOR and VLOOKUP. POI may coerce
-            // Boolean/error results to numeric zero in this workbook bridge.
-            val localEngine = FormulaEngine(data)
-            // Only bypass POI for a direct reference when its source is a Boolean/error
-            // literal or a formula whose result needs local Boolean/error preservation.
-            // Numeric and ordinary text formulas must keep the established POI-first path.
-            val preserveReferencedValue = shouldUseLocalReferenceResult(expression, data)
-            val localSpecial = if (preserveReferencedValue || Regex("(?i)^(XOR|VLOOKUP|MATCH|NA|INDEX)\\s*\\(").containsMatchIn(expression))
-                localEngine.evalText(expression)?.takeUnless { it == "#ERROR" } else null
-            if (localSpecial != null) {
-                formulaDisplayCache[cacheKey] = localSpecial
-                return localSpecial
-            }
-            // Preserve an Excel error returned by POI; do not replace it with the
-            // local evaluator's generic #ERROR fallback.
-            val imported = PoiFormulaBridge.evaluate(sheets, sheetName, address, expression)
-            when {
-                imported?.error != null -> imported.error
-                imported?.text != null -> imported.text
-                imported?.number != null -> formatNumber(imported.number, st?.numberFormat ?: "General", imported.number.toString())
-                else -> runCatching {
-                    val engine=FormulaEngine(data)
-                    val textResult = engine.evalText(expression)
-                    if (textResult != null) textResult
-                    else {
-                        val value=engine.eval(expression)
-                        if(value.isNaN()||value.isInfinite()) "#NUM!" else formatNumber(value, st?.numberFormat ?: "General", value.toString())
-                    }
-                }.getOrElse { error -> error.message?.takeIf { it.startsWith("#") } ?: "#ERROR" }
-            } ?: "#ERROR"
-        } catch(error:Exception) { error.message?.takeIf { it.startsWith("#") } ?: "#ERROR" }
-        formulaDisplayCache[cacheKey] = result
-        return result
+        // Formula cells are evaluated only by HyperFormula's isolated runtime.
+        // Never synchronously invoke POI or the legacy local FormulaEngine here.
+        return formulaDisplayCache[cacheKey] ?: "…"
     }
     private fun formatNumber(value: Double, format: String, fallback: String): String = when (format) {
         "Number (2 decimals)" -> String.format(Locale.US, "%.2f", value)
