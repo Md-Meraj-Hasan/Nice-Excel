@@ -136,7 +136,8 @@ internal object HyperFormulaRuntime {
                         val numericArray = response.optJSONArray("numericKeys") ?: JSONArray()
                         val numericKeys = buildSet {
                             for (index in 0 until numericArray.length()) {
-                                numericArray.optString(index).takeIf { it.isNotBlank() }?.let(::add)
+                                val key = numericArray.optString(index)
+                                if (key.isNotBlank()) add(key)
                             }
                         }
                         result.set(Calculation(values, numericKeys))
