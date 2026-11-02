@@ -62,6 +62,8 @@ public final class HyperFormulaEngineService extends Service {
     private Message activeRequest;
     private Runnable activeTimeout;
     private long requestSequence;
+    private int runtimeProbeAttempts;
+    private Runnable runtimeProbeTask;
 
     private final Messenger messenger = new Messenger(new Handler(Looper.getMainLooper()) {
         @Override public void handleMessage(Message message) {
@@ -99,12 +101,15 @@ public final class HyperFormulaEngineService extends Service {
             webView.setWebViewClient(new WebViewClient() {
                 @Override public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
                     Log.i(TAG, "WEB_PAGE_STARTED url=" + url);
+                    if (url != null && url.contains("hyperformula_runtime.html")) {
+                        scheduleRuntimeProbe(250L);
+                    }
                 }
 
                 @Override public void onPageFinished(WebView view, String url) {
                     Log.i(TAG, "WEB_PAGE_FINISHED url=" + url);
                     if (url == null || !url.contains("hyperformula_runtime.html")) return;
-                    probeRuntime();
+                    scheduleRuntimeProbe(0L);
                 }
 
                 @Override public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
@@ -155,8 +160,16 @@ public final class HyperFormulaEngineService extends Service {
         }
     }
 
+    private void scheduleRuntimeProbe(long delayMs) {
+        if (ready || initializationFailure != null) return;
+        if (runtimeProbeTask != null) main.removeCallbacks(runtimeProbeTask);
+        runtimeProbeTask = this::probeRuntime;
+        main.postDelayed(runtimeProbeTask, delayMs);
+    }
+
     private void probeRuntime() {
-        if (webView == null || initializationFailure != null) return;
+        if (webView == null || initializationFailure != null || ready) return;
+        runtimeProbeAttempts++;
         webView.evaluateJavascript(
                 "Boolean(window.HyperFormula && typeof window.HyperFormula.buildFromSheets === 'function' "
                         + "&& window.NiceExcelHF && window.NiceExcelHF.ready === true)",
@@ -167,9 +180,13 @@ public final class HyperFormulaEngineService extends Service {
                         initializing = false;
                         Log.i(TAG, "HYPERFORMULA_READY engine=HyperFormula bundle=local license=gpl-v3");
                         processNext();
+                    } else if (runtimeProbeAttempts < 40) {
+                        Log.i(TAG, "RUNTIME_PROBE_PENDING attempt=" + runtimeProbeAttempts
+                                + " value=" + value);
+                        scheduleRuntimeProbe(500L);
                     } else {
-                        failInitialization("Runtime page loaded but HyperFormula bundle/API is unavailable; probe="
-                                + value);
+                        failInitialization("HyperFormula bundle/API did not become ready after "
+                                + runtimeProbeAttempts + " probes; last probe=" + value);
                     }
                 });
     }
