@@ -295,6 +295,8 @@ class MainActivity : Activity() {
         status=TextView(this).apply { text="Ready • Offline workbook"; textSize=12f; setTextColor(Color.WHITE); setPadding(dp(10),dp(7),dp(10),dp(7)); setBackgroundColor(Color.rgb(20,30,40)) }
         root.addView(status)
         setContentView(root)
+        // Start the local-only formula runtime before the first render schedules calculations.
+        HyperFormulaRuntime.attach(this)
         // Save inline edits when the keyboard is dismissed (including Android navigation Back).
         // Capture the current edit-session token: a delayed callback from an old editor must
         // never commit a newer editor opened while the IME was animating closed/open.
@@ -1672,22 +1674,23 @@ class MainActivity : Activity() {
         try {
             backgroundExecutor.execute {
                 val results = linkedMapOf<String, Pair<String, String>>()
-                // Try the isolated LibreOffice Calc process first. Native failures are contained
-                // in that process; the existing POI + Kotlin path remains the safe fallback.
-                val libreOfficeBatchResults = runCatching {
-                    LibreOfficeServiceClient.recalculateSnapshot(this@MainActivity, allSheetsSnapshot)
+                // HyperFormula is the primary engine. It runs in a local-only WebView renderer;
+                // the worker waits for its asynchronous result and never evaluates formulas on
+                // the Android UI thread. The existing POI + Kotlin path remains a safe fallback.
+                val hyperFormulaBatchResults = runCatching {
+                    HyperFormulaRuntime.recalculateSnapshot(allSheetsSnapshot)
                 }.onFailure { failure ->
-                    Log.e("NiceExcel-Formula", "LIBREOFFICE_RUNTIME_FAILURE: Calc service/recalculation failed; POI fallback will be used", failure)
+                    Log.e("NiceExcel-Formula", "HYPERFORMULA_RUNTIME_FAILURE: calculation failed; POI fallback will be used", failure)
                 }.getOrNull().orEmpty()
-                Log.i("NiceExcel-Formula", "LIBREOFFICE_RUNTIME_RESULT: formulas=${allFormulas.size}, returned=${libreOfficeBatchResults.size}, sampleG2=${libreOfficeBatchResults.entries.firstOrNull { it.key.endsWith("!G2") }?.value ?: "<missing>"}")
+                Log.i("NiceExcel-Formula", "HYPERFORMULA_RUNTIME_RESULT: formulas=${allFormulas.size}, returned=${hyperFormulaBatchResults.size}")
                 val allFormulaKeys = allFormulas.map { (name, address, _) ->
                     "$name!${address.uppercase(Locale.US)}"
                 }.toSet()
-                val libreOfficeComplete = allFormulaKeys.isNotEmpty() &&
-                    allFormulaKeys.all { it in libreOfficeBatchResults }
-                // Keep the established single-pass POI evaluator as fallback only when Calc
-                // is unavailable or returns an incomplete workbook result.
-                val poiBatchResults = if (libreOfficeComplete) emptyMap()
+                val hyperFormulaComplete = allFormulaKeys.isNotEmpty() &&
+                    allFormulaKeys.all { it in hyperFormulaBatchResults }
+                // Keep the established single-pass POI evaluator as fallback only when the
+                // HyperFormula runtime is unavailable or returns an incomplete workbook result.
+                val poiBatchResults = if (hyperFormulaComplete) emptyMap()
                     else PoiFormulaBridge.evaluateAll(allSheetsSnapshot)
                 formulas.forEach { (formulaSheet, address, raw) ->
                     if (jobId != formulaRecalcJobId.get() || isFinishing || isDestroyed) return@forEach
@@ -1700,7 +1703,7 @@ class MainActivity : Activity() {
                         val preserveReferencedValue = shouldUseLocalReferenceResult(expression, formulaCells)
                         val localSpecial = if (preserveReferencedValue || Regex("(?i)^(XOR|VLOOKUP|MATCH|NA|INDEX)\\s*\\(").containsMatchIn(expression))
                             localEngine.evalText(expression)?.takeUnless { it == "#ERROR" } else null
-                        val calcValue = libreOfficeBatchResults["$formulaSheet!${address.uppercase(Locale.US)}"]
+                        val calcValue = hyperFormulaBatchResults["$formulaSheet!${address.uppercase(Locale.US)}"]
                         if (calcValue != null) {
                             val calcNumber = calcValue.toDoubleOrNull()
                             if (calcNumber != null) formatNumber(calcNumber, st?.numberFormat ?: "General", calcValue)
@@ -2739,6 +2742,7 @@ class MainActivity : Activity() {
         filterJobId.incrementAndGet()
         sortJobId.incrementAndGet()
         formulaRecalcJobId.incrementAndGet()
+        HyperFormulaRuntime.close()
         backgroundExecutor.shutdownNow()
         super.onDestroy()
     }
