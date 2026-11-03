@@ -45,6 +45,20 @@ class MainActivity : Activity() {
     private var sheetName = "Sheet1"
     private var selected = "A1"
     private var activeTopSection = "Home"
+    private var nightTheme = false
+    private fun themedColor(color: Int): Int {
+        if (!nightTheme) return color
+        return when (color) {
+            Color.rgb(245,247,249), Color.rgb(255,255,255), Color.WHITE -> Color.rgb(25,29,35)
+            Color.rgb(232,240,235), Color.rgb(225,242,232) -> Color.rgb(38,45,53)
+            Color.rgb(17,94,57) -> Color.rgb(20,25,31)
+            Color.rgb(209,250,229) -> Color.rgb(49,74,63)
+            Color.rgb(6,78,59), Color.rgb(24,32,39), Color.rgb(35,70,50), Color.rgb(55,67,77) -> Color.rgb(225,231,238)
+            Color.rgb(204,218,209) -> Color.rgb(75,85,98)
+            else -> color
+        }
+    }
+
     private var ribbonToolsVisible = false
     private val undoHistory = mutableMapOf<String, MutableList<Map<String, String>>>()
     private val redoHistory = mutableMapOf<String, MutableList<Map<String, String>>>()
@@ -128,8 +142,9 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        window.statusBarColor = Color.rgb(17, 94, 57)
-        window.navigationBarColor = Color.rgb(20, 30, 40)
+        nightTheme = getPreferences(MODE_PRIVATE).getBoolean("night_theme", false)
+        window.statusBarColor = themedColor(Color.rgb(17, 94, 57))
+        window.navigationBarColor = themedColor(Color.rgb(20, 30, 40))
         sheets["Sheet1"] = mutableMapOf(
             "A1" to "Item", "B1" to "Qty", "C1" to "Price", "D1" to "Total",
             "A2" to "Notebook", "B2" to "3", "C2" to "12.5", "D2" to "=B2*C2",
@@ -447,6 +462,21 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun toggleNightTheme() {
+        nightTheme = !nightTheme
+        getPreferences(MODE_PRIVATE).edit().putBoolean("night_theme", nightTheme).apply()
+        val currentSheet = sheetName
+        val currentSelection = selected
+        buildUi()
+        sheetName = currentSheet
+        selected = currentSelection
+        render()
+        window.statusBarColor = themedColor(Color.rgb(17, 94, 57))
+        window.navigationBarColor = themedColor(Color.rgb(20, 30, 40))
+        showTopMenu(activeTopSection)
+        status.text = if (nightTheme) "Night theme enabled" else "Day theme enabled"
+    }
+
     private fun showTopMenu(section: String) {
         val items: List<Pair<String, () -> Unit>> = when (section) {
             "File" -> listOf(
@@ -494,8 +524,9 @@ class MainActivity : Activity() {
             )
             "Formula" -> listOf("Insert function…" to { formulaPickerMenu() }, "Formula help" to { formulaHelp() }, "Formula examples" to { formulaHelp() })
             "View" -> listOf(
+                (if (nightTheme) "Switch to Day Theme" else "Switch to Night Theme") to { toggleNightTheme() },
                 "Refresh current sheet formulas" to { refreshCurrentSheetFormulas() },
-                "Workbook info" to { status.text = "${sheets.size} sheet(s) • $rowCount rows • Offline workbook" }
+                "Workbook info" to { status.text = "\${sheets.size} sheet(s) • $rowCount rows • Offline workbook" }
             )
             else -> listOf(
                 "Workbook info" to { status.text = "${sheets.size} sheet(s) • $rowCount rows • Offline workbook" }
