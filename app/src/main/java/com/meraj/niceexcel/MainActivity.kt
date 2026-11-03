@@ -1473,7 +1473,10 @@ class MainActivity : Activity() {
         if (appliedCellBackgrounds[view] == signature) return
         view.background = android.graphics.drawable.GradientDrawable().apply {
             setColor(fill)
-            setStroke(if (strokeWidth == 1) 1 else dp(strokeWidth), strokeColor)
+            // Use density-scaled strokes for every grid edge. A raw 1px stroke
+            // is thinner than 1dp on most phones and can land on fractional physical
+            // pixels while scrolling, making adjacent cell borders look broken.
+            setStroke(dp(strokeWidth), strokeColor)
         }
         appliedCellBackgrounds[view] = signature
     }
