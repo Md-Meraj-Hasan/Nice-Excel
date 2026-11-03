@@ -2971,7 +2971,9 @@ DayPalette("Black", Color.rgb(25,25,25), Color.rgb(238,238,238), Color.rgb(20,20
         val columnInput = EditText(this).apply {
             hint = "Column letter, e.g. A, B, D"
             setSingleLine(true)
-            setText(filterColumn ?: selectedCol)
+            // Always target the currently selected cell's column. Reusing the previous
+            // filter column here made it appear that filters on later columns were ignored.
+            setText(selectedCol)
             inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS
         }
         val queryInput = EditText(this).apply {
@@ -3006,9 +3008,10 @@ DayPalette("Black", Color.rgb(25,25,25), Color.rgb(238,238,238), Color.rgb(20,20
                     filterColumn = null
                     filterText = null
                 } else if (!Regex("^[A-Z]{1,3}$").matches(col) || columnIndex(col) !in 0 until colLimit) {
-                    status.text = "Invalid column. Enter a valid column letter."
+                    status.text = "Invalid column. Enter a visible column from A to ${colNameFromIndex(colLimit - 1)}."
+                    return@setPositiveButton
                 } else {
-                    filterColumn = col
+                    filterColumn = colNameFromIndex(columnIndex(col))
                     filterText = q
                 }
                 refreshFilterVisibility()
