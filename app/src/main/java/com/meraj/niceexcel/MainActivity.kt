@@ -491,6 +491,10 @@ class MainActivity : Activity() {
                 "Workbook data range info" to { val used = usedRange(); status.text = "Used range: A1:${colName(used.second)}${used.first}" }
             )
             "Formula" -> listOf("Insert function…" to { formulaPickerMenu() }, "Formula help" to { formulaHelp() }, "Formula examples" to { formulaHelp() })
+            "View" -> listOf(
+                "Refresh current sheet formulas" to { refreshCurrentSheetFormulas() },
+                "Workbook info" to { status.text = "${sheets.size} sheet(s) • $rowCount rows • Offline workbook" }
+            )
             else -> listOf(
                 "Workbook info" to { status.text = "${sheets.size} sheet(s) • $rowCount rows • Offline workbook" }
             )
@@ -507,7 +511,7 @@ class MainActivity : Activity() {
             "Number format…" to "Number", "Selected row: Single / Double line…" to "↵ Wrap", "Table styles…" to "Styles",
             "Sort column A → Z" to "Sort A→Z", "Filter column…" to "Filter", "Clear filter" to "Clear filter", "Find / Replace…" to "Find",
             "Workbook data range info" to "Range info", "Insert function…" to "ƒx Insert", "Formula help" to "ƒx Help",
-            "Workbook info" to "Info"
+            "Workbook info" to "Info", "Refresh current sheet formulas" to "↻ Refresh"
         )
         items.forEach { item ->
             val label = compactLabels[item.first] ?: item.first
@@ -994,7 +998,7 @@ class MainActivity : Activity() {
         if (canReuseGrid) {
             refreshVisibleCells()
             renderTabs()
-            scheduleFormulaRecalculation()
+            scheduleFormulaRecalculationIfNeeded()
             Log.d("NiceExcelPerf", "render sheet=$sheetName mode=reuse ms=${SystemClock.elapsedRealtime() - perfStarted}")
             return
         }
@@ -1042,7 +1046,7 @@ class MainActivity : Activity() {
         // Bottom Add Row bar removed: row insertion remains available in the Insert ribbon.
         applyMergedCellPresentation()
         renderTabs()
-        scheduleFormulaRecalculation()
+        scheduleFormulaRecalculationIfNeeded()
         Log.d("NiceExcelPerf", "render sheet=$sheetName mode=rebuild cells=${cellViews.size} ms=${SystemClock.elapsedRealtime() - perfStarted}")
     }
 
@@ -1239,22 +1243,15 @@ class MainActivity : Activity() {
                 setOnClickListener {
                     if (sheetName == name) return@setOnClickListener
 
-                    // A sheet switch is a new calculation context. Cancel any in-flight
-                    // result from the previous sheet before rendering the newly selected one.
-                    formulaRecalcJobId.incrementAndGet()
+                    // Switching tabs must preserve completed formula results. A sheet
+                    // change alone is not a workbook edit and must not restart calculation.
                     sheetName = name
                     selected = "A1"
                     cellName.text = selected
                     formula.setText(data[selected].orEmpty())
 
-                    // Clear only this sheet cached formula/spill values. render() below
-                    // schedules a fresh full-workbook calculation, including cross-sheet refs.
-                    val formulaPrefix = name + "|"
-                    formulaDisplayCache.keys.removeAll { it.startsWith(formulaPrefix) }
-                    val spillPrefix = name + "!"
-                    formulaSpillCache.keys.filter { it.startsWith(spillPrefix) }.forEach {
-                        formulaSpillCache.remove(it)
-                    }
+                    // Keep the sheet's cached formula/spill values. The View > Refresh
+                    // command is the explicit way to force a new calculation when needed.
                     render()
                 }
                 setOnLongClickListener { renameSheet(name); true }
@@ -1650,6 +1647,42 @@ class MainActivity : Activity() {
      * initial workbook/sheet calculation. After an edit, only that cell and its
      * transitive formula dependents are recalculated; unrelated formulas are skipped.
      */
+    /** Recalculate only when the active sheet has formula cells without a valid cached display. */
+    private fun scheduleFormulaRecalculationIfNeeded() {
+        val activeCells = sheets[sheetName].orEmpty()
+        val needsCalculation = activeCells.any { (address, raw) ->
+            if (!raw.trimStart().startsWith("=")) return@any false
+            val style = styles[sheetName]?.get(address)
+            val key = "$sheetName|$address|$raw|${style?.numberFormat ?: "General"}"
+            !formulaDisplayCache.containsKey(key)
+        }
+        if (needsCalculation) {
+            Log.i("NiceExcel-Formula", "HYPERFORMULA_CACHE_MISS sheet=$sheetName action=calculate")
+            scheduleFormulaRecalculation()
+        } else {
+            Log.i("NiceExcel-Formula", "HYPERFORMULA_CACHE_HIT sheet=$sheetName action=skip")
+        }
+    }
+
+    /** User-triggered refresh: clear this sheet's displayed results and recalculate the workbook. */
+    private fun refreshCurrentSheetFormulas() {
+        val targetSheet = sheetName
+        val formulaCells = sheets[targetSheet].orEmpty().filterValues { it.trimStart().startsWith("=") }
+        if (formulaCells.isEmpty()) {
+            status.text = "No formulas to refresh in $targetSheet"
+            Toast.makeText(this, "No formulas in $targetSheet", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val prefix = "$targetSheet|"
+        formulaDisplayCache.keys.removeAll { it.startsWith(prefix) }
+        val spillPrefix = "$targetSheet!"
+        formulaSpillCache.keys.filter { it.startsWith(spillPrefix) }.forEach { formulaSpillCache.remove(it) }
+        formulaCells.keys.forEach { address -> cellViews[address]?.text = "…" }
+        Log.i("NiceExcel-Formula", "HYPERFORMULA_MANUAL_REFRESH sheet=$targetSheet formulas=${formulaCells.size}")
+        status.text = "Refreshing formulas in $targetSheet…"
+        scheduleFormulaRecalculation()
+    }
+
     private fun scheduleFormulaRecalculation(changedCells: Set<String>? = null) {
         val jobId = formulaRecalcJobId.incrementAndGet()
         val revision = workbookRevision.get()
