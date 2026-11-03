@@ -235,7 +235,7 @@ def _book(book_id: str) -> Workbook:
 
 
 def _sheet(wb: Workbook, name: str):
-    if name == _REPORTING_META_SHEET or name not in wb.sheetnames:
+    if name in {_REPORTING_META_SHEET, "_NiceExcelCF"} or name not in wb.sheetnames:
         raise HTTPException(status_code=404, detail=f"Worksheet not found: {name}")
     return wb[name]
 
@@ -342,7 +342,7 @@ def workbook_info(book_id: str):
             {"name": ws.title, "max_row": ws.max_row, "max_column": ws.max_column,
              "freeze_panes": str(ws.freeze_panes) if ws.freeze_panes else None,
              "merged_ranges": [str(r) for r in ws.merged_cells.ranges]}
-            for ws in wb.worksheets if ws.title != _REPORTING_META_SHEET
+            for ws in wb.worksheets if ws.title not in {_REPORTING_META_SHEET, "_NiceExcelCF"}
         ],
         "active_sheet": wb.active.title,
         "formula_calculation": "limited_nice_excel_subset_evaluator",
