@@ -1248,15 +1248,18 @@ class MainActivity : Activity() {
         return lines.coerceIn(1, 6)
     }
 
-    private fun rowHeightPx(row: Int): Int {
-        val lines = rowLineCount(row)
-        return if (lines == 1) 24 else 24 * lines + 4
+    // Keep the normal one-line row at 24dp. Each additional text line adds
+    // only the actual compact line allowance instead of another full 24dp row,
+    // which was leaving visibly large empty bands above/below multiline text.
+    private fun rowHeightForLines(lines: Int): Int {
+        val safeLines = lines.coerceIn(1, 6)
+        return if (safeLines == 1) 24 else 24 + (safeLines - 1) * 18
     }
 
-    private fun rowHeightPxForEdit(row: Int, address: String, value: String): Int {
-        val lines = rowLineCountForEdit(row, address, value)
-        return if (lines == 1) 24 else 24 * lines + 4
-    }
+    private fun rowHeightPx(row: Int): Int = rowHeightForLines(rowLineCount(row))
+
+    private fun rowHeightPxForEdit(row: Int, address: String, value: String): Int =
+        rowHeightForLines(rowLineCountForEdit(row, address, value))
 
     /**
      * Display value used only inside the grid. In double-line mode, split at the first
@@ -1285,7 +1288,7 @@ class MainActivity : Activity() {
             // Preserve complete glyph ascenders/descenders and use consistent line spacing.
             // Without font padding Android can clip the lower line on some device fonts.
             includeFontPadding = false
-            setLineSpacing(0f, 1.0f)
+            setLineSpacing(0f, 0.97f)
             gravity = if (header || key == null) Gravity.CENTER else Gravity.CENTER_VERTICAL or Gravity.START
             setPadding(dp(3), 0, dp(3), 0)
             val st = if (key != null) sheetStyles[key] else null
@@ -1551,7 +1554,7 @@ class MainActivity : Activity() {
             // Match grid text metrics; default EditText font padding leaves excess vertical gap.
             includeFontPadding = false
             setLineSpacing(0f, 1.0f)
-            setPadding(dp(3), dp(1), dp(3), dp(1))
+            setPadding(dp(3), 0, dp(3), 0)
             setBackgroundColor(Color.rgb(207, 239, 220))
             imeOptions = (if (text.toString().trimStart().startsWith("=")) android.view.inputmethod.EditorInfo.IME_ACTION_DONE else android.view.inputmethod.EditorInfo.IME_ACTION_NONE) or android.view.inputmethod.EditorInfo.IME_FLAG_NO_EXTRACT_UI
             minHeight = dp(18)
