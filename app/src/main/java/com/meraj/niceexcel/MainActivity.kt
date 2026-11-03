@@ -46,9 +46,25 @@ class MainActivity : Activity() {
     private var selected = "A1"
     private var activeTopSection = "Home"
     private var nightTheme = false
+    private var dayPaletteIndex = 0
+    private data class DayPalette(
+        val name: String, val primary: Int, val pale: Int, val ink: Int,
+        val soft: Int, val border: Int, val light: Int, val accent: Int
+    )
+    private val dayPalettes = listOf(
+        DayPalette("Green", Color.rgb(17,94,57), Color.rgb(209,250,229), Color.rgb(6,78,59), Color.rgb(227,244,234), Color.rgb(204,218,209), Color.rgb(213,229,218), Color.rgb(21,93,66)),
+        DayPalette("Ocean Blue", Color.rgb(30,86,150), Color.rgb(219,234,254), Color.rgb(30,64,115), Color.rgb(230,240,255), Color.rgb(190,210,238), Color.rgb(214,228,247), Color.rgb(37,99,235)),
+        DayPalette("Royal Purple", Color.rgb(105,55,150), Color.rgb(237,224,255), Color.rgb(76,29,120), Color.rgb(245,237,255), Color.rgb(215,196,238), Color.rgb(230,215,246), Color.rgb(126,58,180)),
+        DayPalette("Teal", Color.rgb(0,105,105), Color.rgb(204,251,241), Color.rgb(17,78,78), Color.rgb(224,247,244), Color.rgb(180,222,216), Color.rgb(205,232,228), Color.rgb(13,148,136)),
+        DayPalette("Sunset Orange", Color.rgb(180,83,9), Color.rgb(255,237,213), Color.rgb(124,45,18), Color.rgb(255,244,230), Color.rgb(240,205,174), Color.rgb(247,224,202), Color.rgb(234,120,35)),
+        DayPalette("Ruby Red", Color.rgb(159,35,55), Color.rgb(255,228,230), Color.rgb(136,19,35), Color.rgb(255,239,240), Color.rgb(239,190,196), Color.rgb(247,215,219), Color.rgb(190,45,65)),
+        DayPalette("Rose Pink", Color.rgb(157,45,105), Color.rgb(252,231,243), Color.rgb(131,24,85), Color.rgb(253,242,248), Color.rgb(235,195,218), Color.rgb(246,218,235), Color.rgb(219,39,119)),
+        DayPalette("Indigo", Color.rgb(67,56,150), Color.rgb(224,231,255), Color.rgb(49,46,129), Color.rgb(238,240,255), Color.rgb(194,199,239), Color.rgb(216,220,248), Color.rgb(79,70,229)),
+        DayPalette("Earth Brown", Color.rgb(120,72,38), Color.rgb(245,230,211), Color.rgb(92,51,23), Color.rgb(250,242,232), Color.rgb(225,204,180), Color.rgb(238,222,202), Color.rgb(161,98,50)),
+        DayPalette("Slate Gray", Color.rgb(71,85,105), Color.rgb(226,232,240), Color.rgb(51,65,85), Color.rgb(241,245,249), Color.rgb(203,213,225), Color.rgb(222,229,238), Color.rgb(100,116,139))
+    )
     private fun themedColor(color: Int): Int {
-        if (!nightTheme) return color
-        return when (color) {
+        if (nightTheme) return when (color) {
             Color.rgb(245,247,249), Color.rgb(255,255,255), Color.WHITE -> Color.rgb(25,29,35)
             Color.rgb(232,240,235), Color.rgb(225,242,232) -> Color.rgb(38,45,53)
             Color.rgb(17,94,57) -> Color.rgb(20,25,31)
@@ -57,6 +73,36 @@ class MainActivity : Activity() {
             Color.rgb(204,218,209) -> Color.rgb(75,85,98)
             else -> color
         }
+        val p = dayPalettes[dayPaletteIndex.coerceIn(dayPalettes.indices)]
+        return when (color) {
+            Color.rgb(17,94,57), Color.rgb(21,93,66) -> p.primary
+            Color.rgb(209,250,229), Color.rgb(207,239,220) -> p.pale
+            Color.rgb(6,78,59), Color.rgb(34,75,54), Color.rgb(35,70,50), Color.rgb(45,65,54) -> p.ink
+            Color.rgb(227,244,234), Color.rgb(236,246,239), Color.rgb(232,240,235), Color.rgb(225,242,232), Color.rgb(231,237,233) -> p.soft
+            Color.rgb(204,218,209), Color.rgb(198,207,214) -> p.border
+            Color.rgb(213,229,218) -> p.light
+            else -> color
+        }
+    }
+    private fun chooseDayPalette() {
+        val names = dayPalettes.map { it.name }.toTypedArray()
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Choose Day Mode Colour")
+            .setSingleChoiceItems(names, dayPaletteIndex) { dialog, which ->
+                dayPaletteIndex = which
+                getPreferences(MODE_PRIVATE).edit().putInt("day_palette_index", which).apply()
+                dialog.dismiss()
+                val currentSheet = sheetName
+                val currentCell = selected
+                buildUi()
+                sheetName = currentSheet
+                selected = currentCell
+                render()
+                showTopMenu(activeTopSection)
+                status.text = "${dayPalettes[which].name} day colour applied"
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private var ribbonToolsVisible = false
@@ -142,7 +188,7 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        nightTheme = getPreferences(MODE_PRIVATE).getBoolean("night_theme", false)
+        nightTheme = getPreferences(MODE_PRIVATE).getBoolean("night_theme", false)\n        dayPaletteIndex = getPreferences(MODE_PRIVATE).getInt("day_palette_index", 0).coerceIn(dayPalettes.indices)
         window.statusBarColor = themedColor(themedColor(Color.rgb(17, 94, 57)))
         window.navigationBarColor = themedColor(themedColor(Color.rgb(20, 30, 40)))
         sheets["Sheet1"] = mutableMapOf(
@@ -523,9 +569,10 @@ class MainActivity : Activity() {
                 "Workbook data range info" to { val used = usedRange(); status.text = "Used range: A1:${colName(used.second)}${used.first}" }
             )
             "Formula" -> listOf("Insert function…" to { formulaPickerMenu() }, "Formula help" to { formulaHelp() }, "Formula examples" to { formulaHelp() })
-            "View" -> listOf(
-                (if (nightTheme) "Switch to Day Theme" else "Switch to Night Theme") to { toggleNightTheme() },
-                "Refresh current sheet formulas" to { refreshCurrentSheetFormulas() },
+            "View" -> buildList {
+                add((if (nightTheme) "Switch to Day Theme" else "Switch to Night Theme") to { toggleNightTheme() })
+                if (!nightTheme) add("Choose Day Colour • ${dayPalettes[dayPaletteIndex].name}" to { chooseDayPalette() })
+                add("Refresh current sheet formulas" to { refreshCurrentSheetFormulas() })
                 "Workbook info" to { status.text = "\${sheets.size} sheet(s) • $rowCount rows • Offline workbook" }
             )
             else -> listOf(
