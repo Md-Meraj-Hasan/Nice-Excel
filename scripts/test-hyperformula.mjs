@@ -7,7 +7,9 @@ function normalizeFormulaBooleans(value) {
   const flush = (nextChar = '') => {
     if (token) {
       const upper = token.toUpperCase();
-      output += upper === 'TRUE' && nextChar !== '(' ? 'TRUE()' : upper === 'FALSE' && nextChar !== '(' ? 'FALSE()' : token;
+      // Normalize Excel CONCAT alias only when it is a function call.
+      if (upper === 'CONCAT' && nextChar === '(') output += 'CONCATENATE';
+      else output += upper === 'TRUE' && nextChar !== '(' ? 'TRUE()' : upper === 'FALSE' && nextChar !== '(' ? 'FALSE()' : token;
       token = '';
     }
   };
@@ -51,6 +53,9 @@ assert.equal(value(1), 'Notebook', 'VLOOKUP exact match');
 assert.equal(value(2), 'Pencil', 'XLOOKUP exact match');
 assert.equal(value(3)?.value, '#DIV/0!', 'Excel error propagation');
 assert.equal(value(4), true, 'boolean function value');
+const concatEngine = HyperFormula.buildFromArray([['=CONCAT("Nice","Excel")']], { licenseKey: 'gpl-v3' });
+assert.equal(concatEngine.getCellValue({ sheet: 0, row: 0, col: 0 }), 'NiceExcel', 'Excel CONCAT alias');
+concatEngine.destroy();
 const filterAnchor = { sheet: hf.getSheetId('Sheet2'), row: 5, col: 4 };
 const filterSpill = { sheet: hf.getSheetId('Sheet2'), row: 6, col: 4 };
 assert.equal(hf.getCellValue(filterAnchor), 'Notebook', 'FILTER first result');
