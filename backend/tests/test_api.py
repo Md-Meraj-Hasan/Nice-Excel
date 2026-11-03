@@ -435,3 +435,45 @@ def test_history_batch_undo_redo():
     assert response.status_code == 200
     assert response.get_json()['changed'] is True
     assert len(response.get_json()['results']) == 2
+
+
+def test_conditional_formatting_rules_persist_in_workbook_and_survive_recovery():
+    from niceexcel_api.main import _book
+
+    book_id = client.post("/workbooks", json={}).get_json()["workbook_id"]
+    payload = {
+        "sheet": "Sheet1",
+        "rules": [{
+            "type": "cellValue", "range": "B2:B20", "operator": "greaterThan",
+            "value": 100, "style": {"fillColor": "#D9EAD3", "fontColor": "006100"}
+        }, {
+            "type": "textContains", "range": "A1:A20", "text": "urgent",
+            "style": {"fillColor": "#FCE4D6"}
+        }]
+    }
+    saved = client.put(f"/workbooks/{book_id}/conditional-formatting", json=payload)
+    assert saved.status_code == 200, saved.get_data(as_text=True)
+    rules = saved.get_json()["rules"]
+    assert len(rules) == 2
+    assert rules[0]["style"]["fillColor"] == "#D9EAD3"
+    assert rules[0]["id"]
+
+    # Force a recovery-file reload rather than reading the in-memory Workbook.
+    from niceexcel_api.main import _workbooks
+    _workbooks.pop(book_id, None)
+    loaded = client.get(f"/workbooks/{book_id}/conditional-formatting", query_string={"sheet": "Sheet1"})
+    assert loaded.status_code == 200
+    assert loaded.get_json()["rules"] == rules
+    workbook_info = client.get(f"/workbooks/{book_id}").get_json()
+    assert "_NiceExcelCF" not in [item["name"] for item in workbook_info["sheets"]]
+
+
+def test_conditional_formatting_rejects_invalid_rule_without_mutating_workbook():
+    book_id = client.post("/workbooks", json={}).get_json()["workbook_id"]
+    response = client.put(f"/workbooks/{book_id}/conditional-formatting", json={
+        "sheet": "Sheet1",
+        "rules": [{"type": "cellValue", "range": "A1:A1", "operator": "invalid", "value": 1}]
+    })
+    assert response.status_code == 422
+    assert client.get(f"/workbooks/{book_id}/conditional-formatting",
+                      query_string={"sheet": "Sheet1"}).get_json()["rules"] == []
