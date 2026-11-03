@@ -1248,15 +1248,21 @@ class MainActivity : Activity() {
         return lines.coerceIn(1, 6)
     }
 
-    // Keep the normal one-line row at 24dp. Each additional text line adds
-    // only the actual compact line allowance instead of another full 24dp row,
-    // which was leaving visibly large empty bands above/below multiline text.
+    // The 24dp single-line row already contains the desired top/bottom inset.
+    // For multiline rows, add only the measured rendered text-line advance (not an
+    // arbitrary fixed height). This keeps the free space around the text unchanged.
+    private fun rowTextLineHeightDp(): Int {
+        val paint = android.graphics.Paint().apply {
+            textSize = 13f * resources.displayMetrics.scaledDensity
+        }
+        val metrics = paint.fontMetricsInt
+        val lineHeightPx = ((metrics.descent - metrics.ascent) * 0.97f).toInt()
+        return max(1, kotlin.math.ceil(lineHeightPx / resources.displayMetrics.density).toInt())
+    }
+
     private fun rowHeightForLines(lines: Int): Int {
         val safeLines = lines.coerceIn(1, 6)
-        // Add one rendered text-line height per extra line. Keeping the single-line
-        // 24dp baseline plus only the glyph line advance preserves the same top/bottom
-        // breathing room for one-line and multiline cells.
-        return 24 + (safeLines - 1) * 16
+        return 24 + (safeLines - 1) * rowTextLineHeightDp()
     }
 
     private fun rowHeightPx(row: Int): Int = rowHeightForLines(rowLineCount(row))
