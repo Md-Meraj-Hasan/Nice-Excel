@@ -47,6 +47,7 @@ class MainActivity : Activity() {
     private var selected = "A1"
     private var activeTopSection = "Home"
     private var dayPaletteIndex = 0
+    private var darkMode = false
     private data class DayPalette(
         val name: String, val primary: Int, val pale: Int, val ink: Int,
         val soft: Int, val border: Int, val light: Int, val accent: Int, val gridLine: Int, val highlight: Int
@@ -66,6 +67,18 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
     )
     private fun themedColor(color: Int): Int {
         val p = dayPalettes[dayPaletteIndex.coerceIn(dayPalettes.indices)]
+        if (darkMode) return when (color) {
+            Color.rgb(17,94,57), Color.rgb(21,93,66) -> p.primary
+            Color.rgb(209,250,229), Color.rgb(207,239,220) -> Color.rgb(35,48,68)
+            Color.rgb(6,78,59), Color.rgb(34,75,54), Color.rgb(35,70,50), Color.rgb(45,65,54) -> Color.rgb(232,240,250)
+            Color.rgb(227,244,234), Color.rgb(236,246,239), Color.rgb(232,240,235), Color.rgb(225,242,232), Color.rgb(231,237,233) -> Color.rgb(20,29,44)
+            Color.rgb(204,218,209), Color.rgb(198,207,214) -> Color.rgb(43,57,77)
+            Color.rgb(213,229,218), Color.rgb(224,232,239) -> Color.rgb(31,44,64)
+            Color.rgb(174,187,198) -> Color.rgb(65,82,106)
+            Color.rgb(24,32,39) -> Color.rgb(235,241,250)
+            Color.rgb(55,67,77) -> Color.rgb(190,204,224)
+            else -> color
+        }
         return when (color) {
             Color.rgb(17,94,57), Color.rgb(21,93,66) -> p.primary
             Color.rgb(209,250,229), Color.rgb(207,239,220) -> p.pale
@@ -77,15 +90,57 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
             else -> color
         }
     }
+    private fun themedSurface(color: Int): Int {
+        if (!darkMode) return themedColor(color)
+        return when (color) {
+            Color.WHITE -> Color.BLACK
+            Color.rgb(245,247,249) -> Color.rgb(11,16,32)
+            Color.rgb(232,240,235), Color.rgb(227,244,234), Color.rgb(236,246,239) -> Color.rgb(18,26,43)
+            Color.rgb(225,242,232), Color.rgb(224,232,239), Color.rgb(213,229,218) -> Color.rgb(25,37,56)
+            else -> themedColor(color)
+        }
+    }
+
+    private fun themedCellTextColor(color: Int): Int =
+        if (darkMode && color == Color.rgb(24,32,39)) Color.rgb(235,241,250) else themedColor(color)
+
+    private fun updateSystemBars() {
+        window.statusBarColor = dayPalettes[dayPaletteIndex.coerceIn(dayPalettes.indices)].primary
+        window.navigationBarColor = if (darkMode) Color.rgb(5,9,18) else Color.rgb(20,30,40)
+        window.decorView.systemUiVisibility = 0
+    }
+
+    private fun toggleDarkTheme() {
+        darkMode = !darkMode
+        getSharedPreferences("niceexcel_theme", MODE_PRIVATE).edit()
+            .putBoolean("dark_mode", darkMode)
+            .putInt("day_palette_index", dayPaletteIndex)
+            .putInt("day_palette_primary", dayPalettes[dayPaletteIndex].primary)
+            .apply()
+        updateSystemBars()
+        val currentSheet = sheetName
+        val currentCell = selected
+        buildUi()
+        sheetName = currentSheet
+        selected = currentCell
+        render()
+        showTopMenu(activeTopSection)
+        status.text = if (darkMode) "Black theme applied" else "Day theme applied"
+    }
+
     private fun chooseDayPalette() {
         val names = dayPalettes.map { it.name }.toTypedArray()
         android.app.AlertDialog.Builder(this)
             .setTitle("Choose Day Mode Colour")
             .setSingleChoiceItems(names, dayPaletteIndex) { dialog, which ->
                 dayPaletteIndex = which
-                window.statusBarColor = dayPalettes[which].primary
-                window.navigationBarColor = Color.rgb(20, 30, 40)
                 getPreferences(MODE_PRIVATE).edit().putInt("day_palette_index", which).apply()
+                getSharedPreferences("niceexcel_theme", MODE_PRIVATE).edit()
+                    .putInt("day_palette_index", which)
+                    .putInt("day_palette_primary", dayPalettes[which].primary)
+                    .putBoolean("dark_mode", darkMode)
+                    .apply()
+                updateSystemBars()
                 dialog.dismiss()
                 val currentSheet = sheetName
                 val currentCell = selected
@@ -183,9 +238,11 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        dayPaletteIndex = getPreferences(MODE_PRIVATE).getInt("day_palette_index", 0).coerceIn(dayPalettes.indices)
-        window.statusBarColor = themedColor(Color.rgb(17, 94, 57))
-        window.navigationBarColor = Color.rgb(20, 30, 40)
+        val themePrefs = getSharedPreferences("niceexcel_theme", MODE_PRIVATE)
+        dayPaletteIndex = themePrefs.getInt("day_palette_index", getPreferences(MODE_PRIVATE).getInt("day_palette_index", 0)).coerceIn(dayPalettes.indices)
+        darkMode = themePrefs.getBoolean("dark_mode", false)
+        updateSystemBars()
+        themePrefs.edit().putInt("day_palette_primary", dayPalettes[dayPaletteIndex].primary).apply()
         if (!restoreLastWorkbook()) {
             sheets["Sheet1"] = mutableMapOf(
                 "A1" to "Item", "B1" to "Qty", "C1" to "Price", "D1" to "Total",
@@ -273,7 +330,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
     }
 
     private fun buildUi() {
-        val root = LinearLayout(this).apply { orientation=LinearLayout.VERTICAL; setBackgroundColor(themedColor(Color.rgb(245,247,249))) }
+        val root = LinearLayout(this).apply { orientation=LinearLayout.VERTICAL; setBackgroundColor(themedSurface(Color.rgb(245,247,249))) }
         // Compact spreadsheet-style menu bar replaces the large app title.
         val menuScroll = HorizontalScrollView(this).apply {
             isHorizontalScrollBarEnabled = false
@@ -331,7 +388,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         val toolScroll = HorizontalScrollView(this).apply {
             isHorizontalScrollBarEnabled = false
             setFillViewport(false)
-            setBackgroundColor(themedColor(Color.rgb(232, 240, 235)))
+            setBackgroundColor(themedSurface(Color.rgb(232, 240, 235)))
             clipToPadding = false
             overScrollMode = android.view.View.OVER_SCROLL_IF_CONTENT_SCROLLS
         }
@@ -345,10 +402,10 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         root.addView(toolScroll, LinearLayout.LayoutParams(-1, dp(44)))
         toolScroll.visibility = android.view.View.GONE
 
-        val formulaBar=LinearLayout(this).apply { orientation=LinearLayout.HORIZONTAL; gravity=Gravity.CENTER_VERTICAL; setPadding(dp(6),dp(4),dp(6),dp(4)); setBackgroundColor(themedColor(Color.rgb(255,255,255))) }
+        val formulaBar=LinearLayout(this).apply { orientation=LinearLayout.HORIZONTAL; gravity=Gravity.CENTER_VERTICAL; setPadding(dp(6),dp(4),dp(6),dp(4)); setBackgroundColor(themedSurface(Color.rgb(255,255,255))) }
         cellName=TextView(this).apply { text=selected; textSize=14f; typeface=Typeface.DEFAULT_BOLD; gravity=Gravity.CENTER; setTextColor(themedColor(Color.rgb(17,94,57))); setPadding(dp(10),dp(11),dp(10),dp(11)); setBackgroundColor(themedColor(Color.rgb(225,242,232))) }
         formulaBar.addView(cellName)
-        formula=EditText(this).apply { setSingleLine(true); textSize=14f; hint="Enter value or formula"; inputType=InputType.TYPE_CLASS_TEXT; setPadding(dp(8),dp(3),dp(8),dp(3)); setBackgroundColor(themedColor(Color.WHITE)); setText(data[selected].orEmpty()); setOnEditorActionListener { _,_,_ -> applyFormula(); true } }
+        formula=EditText(this).apply { setSingleLine(true); textSize=14f; hint="Enter value or formula"; inputType=InputType.TYPE_CLASS_TEXT; setPadding(dp(8),dp(3),dp(8),dp(3)); setBackgroundColor(themedSurface(Color.WHITE)); setText(data[selected].orEmpty()); setOnEditorActionListener { _,_,_ -> applyFormula(); true } }
         formulaBar.addView(formula,LinearLayout.LayoutParams(0,-2,1f))
         formulaBar.addView(TextView(this).apply { text="ƒx ▾"; textSize=12f; setTextColor(themedColor(Color.rgb(17,94,57))); setPadding(dp(7),dp(10),dp(7),dp(10)); setOnClickListener { formulaPickerMenu() } })
         root.addView(formulaBar)
@@ -629,6 +686,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
             "Formula" -> listOf("Insert function…" to { formulaPickerMenu() }, "Formula help" to { formulaHelp() }, "Formula examples" to { formulaHelp() })
             "View" -> buildList {
                 add("Choose Colour • ${dayPalettes[dayPaletteIndex].name}" to { chooseDayPalette() })
+                add(if (darkMode) "Switch to Day Theme" to { toggleDarkTheme() } else "Switch to Black Theme" to { toggleDarkTheme() })
                 add("Refresh cells grid" to { refreshCurrentSheetGrid() })
                 add("Refresh current sheet formulas" to { refreshCurrentSheetFormulas() })
                 add("Workbook info" to { status.text = "${sheets.size} sheet(s) • $rowCount rows • Offline workbook" })
@@ -825,7 +883,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
             }
             view.text = text
             val st = sheetStyles[address]
-            view.setTextColor(st?.textColor ?: themedColor(Color.rgb(24, 32, 39)))
+            view.setTextColor(themedCellTextColor(st?.textColor ?: Color.rgb(24, 32, 39)))
             view.textSize = st?.fontSize ?: 13f
             view.typeface = Typeface.create(
                 Typeface.DEFAULT,
@@ -851,7 +909,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         val rowLimit = rowCount
         // Snapshot every active column criterion; workers never read mutable workbook maps.
         val columnValues = criteria.mapValues { (col, _) ->
-            (2..rowLimit).associateWith { row -> data["${col}$row"].orEmpty() }
+            (2..rowLimit).associateWith { row -> gridDisplay("${col}$row") }
         }
         status.text = if (criteria.isEmpty()) "Clearing filters…" else "Applying filters…"
         try {
@@ -873,7 +931,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                                 if (filterColumn != null && filterText != null) mapOf(filterColumn!! to filterText!!) else emptyMap()
                             } != criteria) return@post
                         if (columnValues.any { (col, values) ->
-                                values.any { (row, value) -> data["${col}$row"].orEmpty() != value }
+                                values.any { (row, value) -> gridDisplay("${col}$row") != value }
                             }) return@post
                         for (i in 0 until grid.childCount) {
                             val rowView = grid.getChildAt(i) as? LinearLayout ?: continue
@@ -1272,7 +1330,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
             if (filterColumn != null && filterText != null) mapOf(filterColumn!! to filterText!!) else emptyMap()
         }
         return criteria.all { (column, query) ->
-            data["${column}$row"].orEmpty().contains(query, ignoreCase = true)
+            gridDisplay("${column}$row").contains(query, ignoreCase = true)
         }
     }
 
@@ -1443,7 +1501,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
             gravity = if (header || key == null) Gravity.CENTER else Gravity.CENTER_VERTICAL or Gravity.START
             setPadding(dp(3), 0, dp(3), 0)
             val st = if (key != null) sheetStyles[key] else null
-            setTextColor(if(header) themedColor(Color.rgb(55,67,77)) else st?.textColor ?: themedColor(Color.rgb(24,32,39)))
+            setTextColor(if(header) themedColor(Color.rgb(55,67,77)) else themedCellTextColor(st?.textColor ?: Color.rgb(24,32,39)))
             textSize = st?.fontSize ?: 13f
             typeface = Typeface.create(Typeface.DEFAULT, (if (st?.bold == true || header) Typeface.BOLD else Typeface.NORMAL) or (if (st?.italic == true) Typeface.ITALIC else Typeface.NORMAL))
             paint.isUnderlineText = st?.underline == true
@@ -1617,17 +1675,17 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         val st = if (address != null) sheetStyles[address] else null
         val isSelected = address != null && (address == selected || address in selectedRangeCells)
         val fill = when {
-            header -> themedColor(Color.rgb(224, 232, 239))
-            isSelected -> dayPalettes[dayPaletteIndex.coerceIn(dayPalettes.indices)].highlight
-            st != null -> st.fillColor
-            else -> themedColor(Color.WHITE)
+            header -> themedSurface(Color.rgb(224, 232, 239))
+            isSelected -> if (darkMode) dayPalettes[dayPaletteIndex.coerceIn(dayPalettes.indices)].primary else dayPalettes[dayPaletteIndex.coerceIn(dayPalettes.indices)].highlight
+            st != null -> if (darkMode && st.fillColor == Color.WHITE) Color.BLACK else st.fillColor
+            else -> themedSurface(Color.WHITE)
         }
         val palette = dayPalettes[dayPaletteIndex.coerceIn(dayPalettes.indices)]
         val isTableBorder = st?.border == true && st.thickBorder
         val strokeColor = when {
             isSelected -> palette.primary
             isTableBorder -> palette.primary
-            else -> palette.gridLine
+            else -> if (darkMode) Color.rgb(65,82,106) else palette.gridLine
         }
         val strokeWidth = if (isSelected || isTableBorder) 2 else 1
         val signature = "$fill|$strokeColor|$strokeWidth"
@@ -2891,9 +2949,9 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
 
     private fun tableMenu() {
         val rangeInput = EditText(this).apply {
-            hint = "Range e.g. A1:D20"
+            hint = "Enter range, e.g. A1:D20"
             setSingleLine(true)
-            setText(selectedRangeLabel ?: run {
+            setText(selectedRangeLabel?.takeIf { it.contains(":") } ?: run {
                 val used = usedRange()
                 "A1:${colName(used.second)}${used.first}"
             })
@@ -2901,30 +2959,52 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         }
         val panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(8), dp(20), dp(8))
+            setPadding(dp(18), dp(10), dp(18), dp(8))
             addView(TextView(this@MainActivity).apply {
-                text = "Choose the exact range for table formatting. Both rows and columns are included."
+                text = "Select the exact table range. Formatting applies to every cell in both the selected rows and columns."
                 textSize = 13f
+                setTextColor(themedCellTextColor(Color.rgb(24,32,39)))
+                setPadding(0, 0, 0, dp(8))
             })
             addView(rangeInput, LinearLayout.LayoutParams(-1, -2))
         }
-        val actions = arrayOf(
+        val actions = listOf(
             "Format first row as heading",
-            "Apply table style to selected range",
-            "Apply THICK borders to selected range",
-            "Remove table styling from selected range",
+            "Apply table style to full range",
+            "Apply THICK borders to full range",
+            "Remove table styling from range",
             "Clear first-row heading"
         )
-        AlertDialog.Builder(this).setTitle("Table and borders")
-            .setView(panel)
-            .setItems(actions) { _, which ->
-                val range = rangeInput.text.toString().trim().uppercase(Locale.ROOT)
-                val cells = parseCellRange(range)
-                if (cells.isEmpty()) { status.text = "Invalid range. Example: A1:D20"; return@setItems }
-                applyTableRangeAction(which, cells, range)
+        lateinit var dialog: android.app.AlertDialog
+        actions.forEachIndexed { index, label ->
+            val button = TextView(this).apply {
+                text = label
+                textSize = 15f
+                setTextColor(themedCellTextColor(Color.rgb(24,32,39)))
+                setPadding(dp(12), dp(13), dp(12), dp(13))
+                isClickable = true
+                isFocusable = true
+                background = roundedToolbarBackground(themedSurface(Color.WHITE), themedColor(Color.rgb(204,218,209)), 8)
+                setOnClickListener {
+                    val range = rangeInput.text.toString().trim().uppercase(Locale.ROOT)
+                    val cells = parseCellRange(range)
+                    if (cells.isEmpty()) {
+                        status.text = "Invalid range. Example: A1:D20"
+                        rangeInput.error = "Use a valid range such as A1:D20"
+                    } else {
+                        dialog.dismiss()
+                        applyTableRangeAction(index, cells, range)
+                    }
+                }
             }
+            panel.addView(button, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(5) })
+        }
+        dialog = android.app.AlertDialog.Builder(this)
+            .setTitle("Table and borders")
+            .setView(panel)
             .setNegativeButton("Cancel", null)
-            .showProfessional()
+            .create()
+        dialog.show()
     }
 
     private fun applyTableRangeAction(action: Int, cells: List<String>, range: String) {
