@@ -65,6 +65,56 @@ const compatibility = HyperFormula.buildFromSheets(
 const testSheet = compatibility.getSheetId('Formula Tests');
 assert.equal(compatibility.getCellValue({ sheet: testSheet, row: 1, col: 3 }), 5, 'exact COUNTIF absolute-range test');
 assert.equal(compatibility.getCellValue({ sheet: testSheet, row: 13, col: 3 }), 4, 'exact MATCH absolute-range test');
+// Regression coverage for the exact boolean and lookup formulas reported
+// by the Android FORMULA_VALUE diagnostics. Keep HLOOKUP and VLOOKUP in
+// separate sheets because the user's two sample ranges overlap at M2:N4.
+const regression = HyperFormula.buildFromSheets({
+  BooleanTests: [
+    ['=AND(TRUE,TRUE,1=1)', '=OR(FALSE,FALSE,2=2)', '=NOT(FALSE)'],
+    ['=AND(TRUE(),TRUE(),1=1)', '=OR(FALSE(),FALSE(),2=2)', '=NOT(FALSE())'],
+    ['=TRUE', '=FALSE', '=TRUE()'],
+  ],
+  HLookupTests: [
+    [],
+    [],
+    [],
+  ],
+  VLookupTests: [
+    [],
+    [],
+    [],
+    [],
+  ],
+}, { licenseKey: 'gpl-v3' });
+const boolSheet = regression.getSheetId('BooleanTests');
+const boolValue = (row, col) => regression.getCellValue({ sheet: boolSheet, row, col });
+assert.equal(boolValue(0, 0), true, 'AND with bare TRUE literal');
+assert.equal(boolValue(0, 1), true, 'OR with bare FALSE literal and comparison');
+assert.equal(boolValue(0, 2), true, 'NOT with bare FALSE literal');
+assert.equal(boolValue(1, 0), true, 'AND function-call boolean control');
+assert.equal(boolValue(1, 1), true, 'OR function-call boolean control');
+assert.equal(boolValue(1, 2), true, 'NOT function-call boolean control');
+assert.equal(boolValue(2, 0), true, 'bare TRUE literal');
+assert.equal(boolValue(2, 1), false, 'bare FALSE literal');
+assert.equal(boolValue(2, 2), true, 'TRUE() function control');
+regression.setCellContents({ sheet: regression.getSheetId('HLookupTests'), row: 1, col: 12 }, [
+  ['Q1', 'Q2', 'Q3'],
+  ['Jan', 'Feb', 'Mar'],
+  [100, 200, 300],
+]);
+const hSheet = regression.getSheetId('HLookupTests');
+regression.setCellContents({ sheet: hSheet, row: 0, col: 0 }, [['=HLOOKUP("Q2",M2:O4,3,FALSE)']]);
+assert.equal(regression.getCellValue({ sheet: hSheet, row: 0, col: 0 }), 200, 'HLOOKUP exact match with bare FALSE');
+regression.setCellContents({ sheet: regression.getSheetId('VLookupTests'), row: 1, col: 12 }, [
+  ['A', 100],
+  ['B', 200],
+  ['C', 300],
+  ['D', 400],
+]);
+const vSheet = regression.getSheetId('VLookupTests');
+regression.setCellContents({ sheet: vSheet, row: 0, col: 0 }, [['=VLOOKUP("B",M2:N5,2,FALSE)']]);
+assert.equal(regression.getCellValue({ sheet: vSheet, row: 0, col: 0 }), 200, 'VLOOKUP exact match with bare FALSE');
+regression.destroy();
 compatibility.destroy();
 hf.destroy();
 console.log('HyperFormula GPLv3 smoke tests passed: SUM, cross-sheet references, VLOOKUP, XLOOKUP, FILTER array cells, booleans, COUNTIF, MATCH, and #DIV/0!. SUM, cross-sheet references, VLOOKUP, XLOOKUP, FILTER array cells, booleans, and #DIV/0!.');
