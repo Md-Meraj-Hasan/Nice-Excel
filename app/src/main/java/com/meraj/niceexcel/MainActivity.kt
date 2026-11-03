@@ -1660,29 +1660,17 @@ class MainActivity : Activity() {
             cells.filterValues { it.trimStart().startsWith("=") }.map { (address, raw) -> Triple(name, address, raw) }
         }
         if (allFormulas.isEmpty()) return
-        val formulas = if (changedCells == null) {
-            allFormulas
-        } else {
-            val dependencies = allFormulas.associate { (name, address, raw) ->
-                "$name!$address" to formulaDependencies(name, raw.drop(1), allSheetsSnapshot)
-            }
-            val affected = changedCells.mapTo(linkedSetOf()) { key ->
-                val split = key.lastIndexOf('!')
-                if (split >= 0) "${key.substring(0, split)}!${key.substring(split + 1).uppercase(Locale.US)}"
-                else "$activeSheet!${key.uppercase(Locale.US)}"
-            }
-            var expanded: Boolean
-            do {
-                expanded = false
-                dependencies.forEach { (formulaKey, refs) ->
-                    if (formulaKey !in affected && refs.any { it in affected }) {
-                        affected.add(formulaKey)
-                        expanded = true
-                    }
-                }
-            } while (expanded)
-            allFormulas.filter { (name, address, _) -> "$name!$address" in affected }
-        }
+        // Always recalculate the complete workbook snapshot after a committed edit.
+        // Dependency-only invalidation can miss INDIRECT/OFFSET, named ranges, dynamic
+        // references, and cross-sheet chains; those stale results were showing as FAIL
+        // in formula-status/check columns after users edited an otherwise unrelated cell.
+        // HyperFormula maintains its dependency graph, so requesting all formula cells
+        // does not rebuild the engine when the sheet structure is unchanged.
+        val formulas = allFormulas
+        Log.i(
+            "NiceExcel-Formula",
+            "HYPERFORMULA_RECALC_SCOPE changedCells=${changedCells?.size ?: -1} formulas=${formulas.size} mode=FULL_WORKBOOK"
+        )
         if (formulas.isEmpty()) return
 
         formulas.forEach { (formulaSheet, address, _) ->
