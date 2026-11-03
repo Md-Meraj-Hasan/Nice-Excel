@@ -1064,7 +1064,7 @@ class MainActivity : Activity() {
             }
         }
         if (lastRow < rowCount) {
-            mainHandler.postOnAnimation {
+            grid.postOnAnimation {
                 appendRowsInBatches(lastRow + 1, columnWidths, generation, renderStarted)
             }
             return
