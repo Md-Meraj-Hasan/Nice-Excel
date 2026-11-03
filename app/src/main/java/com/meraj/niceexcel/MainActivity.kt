@@ -98,6 +98,8 @@ class MainActivity : Activity() {
     private val columnWidthsBySheet = mutableMapOf<String, List<Int>>()
     // Build row line counts in one pass and reuse them during grid layout. Null means invalidated.
     private var cachedExplicitLineCountsByRow: Map<Int, Int>? = null
+    // Cancels stale frame-batched grid builds when the user switches sheets or rerenders.
+    private var renderGeneration = 0
     private val cellAddressRowPattern = Regex("^[A-Z]+(\\d+)$")
     private var lastTapAddress: String? = null
     private var lastTapAt = 0L
@@ -988,6 +990,7 @@ class MainActivity : Activity() {
     private fun render() {
         cachedExplicitLineCountsByRow = null
         val perfStarted = SystemClock.elapsedRealtime()
+        val generation = ++renderGeneration
         // Treat a full/in-place render as a workbook-state boundary. Any background
         // snapshot started before this boundary must revalidate before committing.
         workbookRevision.incrementAndGet()
@@ -1038,16 +1041,43 @@ class MainActivity : Activity() {
         } else {
             frozenRowHorizontal.visibility = android.view.View.GONE
         }
-        for(r in 2..rowCount) {
-            val rowView = createRowView(r, columnWidths)
-            rowView.visibility = if (rowPassesFilter(r)) android.view.View.VISIBLE else android.view.View.GONE
-            grid.addView(rowView)
-        }
-        // Bottom Add Row bar removed: row insertion remains available in the Insert ribbon.
-        applyMergedCellPresentation()
+        // Build only a small batch of rows per display frame. The previous synchronous
+        // loop created up to 1,300 TextViews in onCreate()/sheet switches, delaying the
+        // first focused window and causing input-dispatch ANRs on slower phones.
         renderTabs()
+        appendRowsInBatches(2, columnWidths, generation, perfStarted)
+    }
+
+    private fun appendRowsInBatches(
+        firstRow: Int,
+        columnWidths: List<Int>,
+        generation: Int,
+        renderStarted: Long
+    ) {
+        if (generation != renderGeneration || isFinishing || isDestroyed) return
+        val lastRow = minOf(rowCount, firstRow + 1) // two worksheet rows per frame
+        if (firstRow <= lastRow) {
+            for (row in firstRow..lastRow) {
+                val rowView = createRowView(row, columnWidths)
+                rowView.visibility = if (rowPassesFilter(row)) android.view.View.VISIBLE else android.view.View.GONE
+                grid.addView(rowView)
+            }
+        }
+        if (lastRow < rowCount) {
+            mainHandler.postOnAnimation {
+                appendRowsInBatches(lastRow + 1, columnWidths, generation, renderStarted)
+            }
+            return
+        }
+
+        // Finalize merged-cell overlays and formula work only after all row views exist.
+        applyMergedCellPresentation()
+        selectedCellView = cellViews[selected]
         scheduleFormulaRecalculationIfNeeded()
-        Log.d("NiceExcelPerf", "render sheet=$sheetName mode=rebuild cells=${cellViews.size} ms=${SystemClock.elapsedRealtime() - perfStarted}")
+        Log.d(
+            "NiceExcelPerf",
+            "render sheet=$sheetName mode=batched cells=${cellViews.size} ms=${SystemClock.elapsedRealtime() - renderStarted}"
+        )
     }
 
     private fun rowPassesFilter(row: Int): Boolean {
