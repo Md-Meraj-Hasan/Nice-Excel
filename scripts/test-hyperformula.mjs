@@ -7,7 +7,7 @@ function normalizeFormulaBooleans(value) {
   const flush = () => {
     if (token) {
       const upper = token.toUpperCase();
-      output += upper === 'TRUE' ? 'TRUE()' : upper === 'FALSE' ? 'FALSE()' : token;
+      output += upper === 'TRUE' && value[i] !== '(' ? 'TRUE()' : upper === 'FALSE' && value[i] !== '(' ? 'FALSE()' : token;
       token = '';
     }
   };
@@ -133,6 +133,7 @@ regression.setCellContents({ sheet: vSheet, row: 1, col: 12 }, [
 regression.setCellContents({ sheet: vSheet, row: 0, col: 0 }, [[normalizeFormulaBooleans('=VLOOKUP("B",M2:N5,2,FALSE)')]]);
 assert.equal(normalizeFormulaBooleans('="FALSE"'), '="FALSE"', 'quoted boolean-looking text is preserved');
 assert.equal(normalizeFormulaBooleans('=TRUEVALUE'), '=TRUEVALUE', 'longer identifiers are preserved');
+assert.equal(normalizeFormulaBooleans('=TRUE()'), '=TRUE()', 'existing boolean function calls are preserved');
 const regressionResults = {
   andBareTrue: boolValue(0, 0),
   orBareFalse: boolValue(0, 1),
