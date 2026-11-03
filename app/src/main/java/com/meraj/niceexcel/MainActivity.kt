@@ -3020,7 +3020,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                 columns.forEachIndexed { index, col ->
                     val address = "${col}$headerRow"; affected.add(address)
                     styleFor(address).apply {
-                        bold = true; fillColor = 0xFF1B5E20.toInt()
+                        bold = true; fillColor = dayPalettes[dayPaletteIndex.coerceIn(dayPalettes.indices)].primary
                         textColor = themedColor(Color.WHITE); border = true
                     }
                 }
@@ -3034,7 +3034,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                     val st = styleFor(address)
                     st.border = true
                     if (row == headerRow) {
-                        st.bold = true; st.fillColor = 0xFF1B5E20.toInt(); st.textColor = themedColor(Color.WHITE)
+                        st.bold = true; st.fillColor = dayPalettes[dayPaletteIndex.coerceIn(dayPalettes.indices)].primary; st.textColor = themedColor(Color.WHITE)
                     } else {
                         st.fillColor = if ((columnIndex(col) + row) % 2 == 0) 0xFFE8F5E9.toInt() else themedColor(Color.WHITE)
                     }
