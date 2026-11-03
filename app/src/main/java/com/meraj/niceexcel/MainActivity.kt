@@ -855,8 +855,9 @@ DayPalette("Black", Color.rgb(25,25,25), Color.rgb(238,238,238), Color.rgb(20,20
         try {
             backgroundExecutor.execute {
                 try {
+                    val headerLimit = tableHeaderRow ?: 1
                     val visibleRows = (2..rowLimit).filter { row ->
-                        criteria.all { (col, query) ->
+                        row <= headerLimit || criteria.all { (col, query) ->
                             columnValues[col]?.get(row).orEmpty().contains(query, ignoreCase = true)
                         }
                     }.toSet()
