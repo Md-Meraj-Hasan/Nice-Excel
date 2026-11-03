@@ -3075,13 +3075,49 @@ class MainActivity : Activity() {
             } else if(requestCode==13) {
                 saveXlsxWithCalc(intent.data!!)
             } else if(requestCode==12) {
-                val text=contentResolver.openInputStream(intent.data!!)?.bufferedReader()?.use { it.readText() }.orEmpty()
-                data.clear(); sheetStyles.clear(); formulaDisplayCache.clear()
-                rowCount = max(50, text.lines().size)
-                text.lines().take(rowCount).forEachIndexed { r,line ->
-                    parseCsv(line).take(colLimit).forEachIndexed { c,v -> if(v.isNotEmpty()) data["${colName(c)}${r+1}"]=v }
+                val csvText = contentResolver.openInputStream(intent.data!!)?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
+                    ?: error("Could not read the selected CSV file")
+                // CSV is a separate document, not another sheet inside the previously open
+                // Excel workbook. Replace the old workbook state so stale Excel tabs/data
+                // cannot remain visible after importing a CSV.
+                val parsedRows = parseCsvDocument(csvText.removePrefix("\uFEFF"))
+                val displayName = contentResolver.query(intent.data!!, null, null, null, null)?.use { cursor ->
+                    val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                    if (nameIndex >= 0 && cursor.moveToFirst()) cursor.getString(nameIndex) else null
+                } ?: "Imported.csv"
+                val importedSheetName = displayName.substringBeforeLast('.', displayName)
+                    .ifBlank { "Imported" }.take(31)
+                sheets.clear()
+                styles.clear()
+                mergedRangesBySheet.clear()
+                undoHistory.clear()
+                redoHistory.clear()
+                formulaDisplayCache.clear()
+                clearFormulaSpillCache()
+                columnWidthsBySheet.clear()
+                wrappedRowsBySheet.clear()
+                sheetName = importedSheetName
+                selected = "A1"
+                val importedCells = mutableMapOf<String, String>()
+                parsedRows.take(10000).forEachIndexed { r, values ->
+                    values.take(colLimit).forEachIndexed { c, value ->
+                        if (value.isNotEmpty()) importedCells["${colName(c)}${r + 1}"] = value
+                    }
                 }
-                select("A1"); resetWorksheetHorizontalScroll(); status.text="CSV opened"
+                sheets[sheetName] = importedCells
+                styles[sheetName] = mutableMapOf()
+                rowCount = max(50, parsedRows.size.coerceAtMost(10000))
+                cachedExplicitLineCountsByRow = null
+                selectedRangeCells = emptyList()
+                selectedRangeLabel = null
+                filterColumn = null
+                filterText = null
+                tableHeaderRow = null
+                render()
+                cellName.text = selected
+                formula.setText(data[selected].orEmpty())
+                resetWorksheetHorizontalScroll()
+                status.text = "CSV opened • $displayName"
             } else if(requestCode==14) {
                 val loaded = contentResolver.openInputStream(intent.data!!)?.use { XlsxCodec.read(it) } ?: error("Could not open workbook")
                 sheets.clear(); sheets.putAll(loaded.sheets)
@@ -3100,6 +3136,40 @@ class MainActivity : Activity() {
             }
         } catch(e:Exception) { status.text="File error: ${e.message ?: "unknown"}" }
     }
+    /** Parse a complete CSV document, including quoted commas and embedded newlines. */
+    private fun parseCsvDocument(source: String): List<List<String>> {
+        val rows = mutableListOf<List<String>>()
+        var row = mutableListOf<String>()
+        val cell = StringBuilder()
+        var quoted = false
+        var i = 0
+        while (i < source.length) {
+            val ch = source[i]
+            when {
+                ch == '"' && quoted && i + 1 < source.length && source[i + 1] == '"' -> {
+                    cell.append('"'); i++
+                }
+                ch == '"' -> quoted = !quoted
+                (ch == ',' || ch == '\\n' || ch == '\\r') && !quoted -> {
+                    row.add(cell.toString()); cell.setLength(0)
+                    if (ch == ',') {
+                        // Continue the current row.
+                    } else {
+                        if (ch == '\\r' && i + 1 < source.length && source[i + 1] == '\\n') i++
+                        rows.add(row); row = mutableListOf()
+                    }
+                }
+                else -> cell.append(ch)
+            }
+            i++
+        }
+        if (cell.isNotEmpty() || row.isNotEmpty() || source.isEmpty() || (!source.endsWith("\\n") && !source.endsWith("\\r"))) {
+            row.add(cell.toString())
+            rows.add(row)
+        }
+        return rows
+    }
+
     private fun parseCsv(line:String):List<String> {
         val out=mutableListOf<String>(); val cur=StringBuilder(); var quoted=false; var i=0
         while(i<line.length) {
