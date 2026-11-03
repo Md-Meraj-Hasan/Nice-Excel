@@ -24,6 +24,7 @@ from openpyxl.utils import get_column_letter, range_boundaries
 from pydantic import BaseModel, Field
 from .formula_engine import calculate_cell
 from .dependency_graph import build_dependency_graph
+from .conditional_formatting import normalize_rule
 
 app = create_app(__name__)
 app.version = "0.1.0"
@@ -204,6 +205,11 @@ class SortRequest(RangeRequest):
 
 class ReportingMetadataRequest(BaseModel):
     metadata: dict[str, Any]
+
+
+class ConditionalFormattingRequest(BaseModel):
+    sheet: str = Field(min_length=1, max_length=31)
+    rules: list[dict[str, Any]] = Field(default_factory=list, max_items=200)
 
 
 class SmartTableRequest(BaseModel):
@@ -651,6 +657,78 @@ def put_reporting_metadata(book_id: str, request: ReportingMetadataRequest):
     _set_reporting_metadata(wb, normalized)
     _persist_workbook(book_id)
     return {"metadata": normalized, "autosaved": True}
+
+
+def _conditional_formatting_sheet(wb: Workbook):
+    """Dedicated hidden metadata sheet; never mixes with Smart Table metadata."""
+    name = "_NiceExcelCF"
+    if name not in wb.sheetnames:
+        ws = wb.create_sheet(name)
+        ws.sheet_state = "veryHidden"
+        ws["A1"] = "[]"
+    return wb[name]
+
+
+def _get_conditional_rules(wb: Workbook, sheet_name: str) -> list[dict[str, Any]]:
+    ws = wb["_NiceExcelCF"] if "_NiceExcelCF" in wb.sheetnames else None
+    if ws is None:
+        return []
+    try:
+        document = json.loads(str(ws["A1"].value or "{}"))
+        rules = document.get(sheet_name, []) if isinstance(document, dict) else []
+        return [normalize_rule(rule) for rule in rules]
+    except (ValueError, TypeError, json.JSONDecodeError):
+        return []
+
+
+def _set_conditional_rules(wb: Workbook, sheet_name: str, rules: list[dict[str, Any]]) -> None:
+    ws = _conditional_formatting_sheet(wb)
+    try:
+        document = json.loads(str(ws["A1"].value or "{}"))
+        if not isinstance(document, dict):
+            document = {}
+    except (ValueError, TypeError, json.JSONDecodeError):
+        document = {}
+    document[sheet_name] = rules
+    serialized = json.dumps(document, ensure_ascii=False, separators=(",", ":"))
+    if len(serialized) > 30000:
+        raise HTTPException(status_code=413, detail="Conditional-format metadata exceeds the workbook limit")
+    ws["A1"] = serialized
+    ws.sheet_state = "veryHidden"
+
+
+@app.get("/workbooks/{book_id}/conditional-formatting")
+def get_conditional_formatting(book_id: str, sheet: str):
+    wb = _book(book_id)
+    _sheet(wb, sheet)
+    return {"sheet": sheet, "rules": _get_conditional_rules(wb, sheet)}
+
+
+@app.put("/workbooks/{book_id}/conditional-formatting")
+def put_conditional_formatting(book_id: str, request: ConditionalFormattingRequest):
+    wb = _book(book_id)
+    _sheet(wb, request.sheet)
+    normalized = []
+    seen_ids = set()
+    try:
+        for raw in request.rules:
+            rule = normalize_rule(raw)
+            from openpyxl.utils.cell import range_boundaries as _range_boundaries
+            bounds = _range_boundaries(rule["range"])
+            if not all(bounds) or (bounds[2] - bounds[0] + 1) * (bounds[3] - bounds[1] + 1) > 10000:
+                raise ValueError("Each conditional-format range must contain at most 10,000 cells")
+            rule_id = rule["id"] or uuid.uuid4().hex
+            if rule_id in seen_ids:
+                raise ValueError("Conditional-format rule IDs must be unique within a sheet")
+            seen_ids.add(rule_id)
+            rule["id"] = rule_id
+            normalized.append(rule)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    _record_history(book_id)
+    _set_conditional_rules(wb, request.sheet, normalized)
+    _persist_workbook(book_id)
+    return {"sheet": request.sheet, "rules": normalized, "autosaved": True}
 
 
 @app.post("/workbooks/{book_id}/tables")
