@@ -4,10 +4,10 @@ import { HyperFormula } from 'hyperformula';
 function normalizeFormulaBooleans(value) {
   if (typeof value !== 'string' || value.charAt(0) !== '=') return value;
   let output = '', token = '', inString = false;
-  const flush = () => {
+  const flush = (nextChar = '') => {
     if (token) {
       const upper = token.toUpperCase();
-      output += upper === 'TRUE' && value[i] !== '(' ? 'TRUE()' : upper === 'FALSE' && value[i] !== '(' ? 'FALSE()' : token;
+      output += upper === 'TRUE' && nextChar !== '(' ? 'TRUE()' : upper === 'FALSE' && nextChar !== '(' ? 'FALSE()' : token;
       token = '';
     }
   };
@@ -21,11 +21,11 @@ function normalizeFormulaBooleans(value) {
       }
       continue;
     }
-    if (ch === '"') { flush(); output += ch; inString = true; continue; }
+    if (ch === '"') { flush(ch); output += ch; inString = true; continue; }
     if (/[A-Za-z0-9_.]/.test(ch)) { token += ch; continue; }
-    flush(); output += ch;
+    flush(ch); output += ch;
   }
-  flush();
+  flush('');
   return output;
 }
 
