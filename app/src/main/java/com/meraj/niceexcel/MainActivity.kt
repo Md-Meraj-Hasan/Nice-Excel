@@ -41,6 +41,7 @@ class MainActivity : Activity() {
     private var reportingMetadata: String? = null
     private var filterColumn: String? = null
     private var filterText: String? = null
+    private val filterCriteria = linkedMapOf<String, String>()
     private var tableHeaderRow: Int? = null
     private var sheetName = "Sheet1"
     private var selected = "A1"
@@ -842,34 +843,34 @@ DayPalette("Black", Color.rgb(25,25,25), Color.rgb(238,238,238), Color.rgb(20,20
         val jobId = filterJobId.incrementAndGet()
         val capturedSheet = sheetName
         val capturedRevision = workbookRevision.get()
-        val col = filterColumn
-        val query = filterText
+        val criteria = filterCriteria.toMap().ifEmpty {
+            if (filterColumn != null && filterText != null) mapOf(filterColumn!! to filterText!!) else emptyMap()
+        }
         val rowLimit = rowCount
-        // Worker receives immutable values only; it never reads workbook maps or Android Views.
-        val columnValues = if (col != null && query != null) {
+        // Snapshot every active column criterion; workers never read mutable workbook maps.
+        val columnValues = criteria.mapValues { (col, _) ->
             (2..rowLimit).associateWith { row -> data["${col}$row"].orEmpty() }
-        } else emptyMap()
+        }
         status.text = if (query.isNullOrEmpty()) "Clearing filter…" else "Applying filter…"
         try {
             backgroundExecutor.execute {
                 try {
-                    val visibleRows = if (col == null || query == null) {
-                        (2..rowLimit).toSet()
-                    } else {
-                        columnValues.asSequence()
-                            .filter { (_, value) -> value.contains(query, ignoreCase = true) }
-                            .map { it.key }
-                            .toSet()
-                    }
+                    val visibleRows = (2..rowLimit).filter { row ->
+                        criteria.all { (col, query) ->
+                            columnValues[col]?.get(row).orEmpty().contains(query, ignoreCase = true)
+                        }
+                    }.toSet()
                     mainHandler.post {
                         // Drop stale results after a sheet switch, newer filter, row-count change,
                         // or edits to the filtered column. Never apply yesterday's answer to new data.
                         if (isFinishing || isDestroyed || jobId != filterJobId.get() ||
                             sheetName != capturedSheet || rowCount != rowLimit ||
                             workbookRevision.get() != capturedRevision ||
-                            filterColumn != col || filterText != query) return@post
-                        if (col != null && query != null && columnValues.any { (row, value) ->
-                                data["${col}$row"].orEmpty() != value
+                            filterCriteria.toMap().ifEmpty {
+                                if (filterColumn != null && filterText != null) mapOf(filterColumn!! to filterText!!) else emptyMap()
+                            } != criteria) return@post
+                        if (columnValues.any { (col, values) ->
+                                values.any { (row, value) -> data["${col}$row"].orEmpty() != value }
                             }) return@post
                         for (i in 0 until grid.childCount) {
                             val rowView = grid.getChildAt(i) as? LinearLayout ?: continue
@@ -879,7 +880,7 @@ DayPalette("Black", Color.rgb(25,25,25), Color.rgb(238,238,238), Color.rgb(20,20
                         }
                         frozenRowHorizontal.visibility = android.view.View.VISIBLE
                         grid.requestLayout()
-                        status.text = if (query.isNullOrEmpty()) "Filter cleared" else "Filter: $col contains '$query'"
+                        status.text = if (criteria.isEmpty()) "Filter cleared" else "Filters applied: " + criteria.entries.joinToString(" AND ") { "${it.key} contains '${it.value}'" }
                     }
                 } catch (error: Exception) {
                     mainHandler.post {
@@ -1121,7 +1122,7 @@ DayPalette("Black", Color.rgb(25,25,25), Color.rgb(238,238,238), Color.rgb(20,20
             applyCellBackground(view, address, false)
         }
 
-        val filterActive = filterColumn != null && filterText != null
+        val filterActive = filterCriteria.isNotEmpty() || (filterColumn != null && filterText != null)
         for (i in 0 until grid.childCount) {
             val rowView = grid.getChildAt(i) as? LinearLayout ?: continue
             val row = rowView.tag as? Int ?: (i + 2)
@@ -1263,8 +1264,13 @@ DayPalette("Black", Color.rgb(25,25,25), Color.rgb(238,238,238), Color.rgb(20,20
     }
 
     private fun rowPassesFilter(row: Int): Boolean {
-        if (filterColumn == null || filterText == null || row <= 1) return true
-        return data["${filterColumn}$row"].orEmpty().contains(filterText!!, ignoreCase = true)
+        if (row <= (tableHeaderRow ?: 1)) return true
+        val criteria = filterCriteria.toMap().ifEmpty {
+            if (filterColumn != null && filterText != null) mapOf(filterColumn!! to filterText!!) else emptyMap()
+        }
+        return criteria.all { (column, query) ->
+            data["${column}$row"].orEmpty().contains(query, ignoreCase = true)
+        }
     }
 
     private fun createRowView(row: Int, columnWidths: List<Int>): LinearLayout {
@@ -1536,7 +1542,7 @@ DayPalette("Black", Color.rgb(25,25,25), Color.rgb(238,238,238), Color.rgb(20,20
         rowCount += count
         // Batch updates use one render so Add 5/10 does not repeatedly rebuild the UI.
         // If filtering is active, the full render keeps row visibility consistent.
-        val fast = filterColumn == null || filterText == null
+        val fast = filterCriteria.isEmpty() && (filterColumn == null || filterText == null)
         if (fast) {
             for (row in (oldCount + 1)..rowCount) {
                 // The add-row footer was removed; append after the last real grid row.
