@@ -837,7 +837,7 @@ class MainActivity : Activity() {
             }
             view.text = text
             val st = sheetStyles[address]
-            view.setTextColor(st?.textColor ?: themedColor(Color.rgb(24, 32, 39)))
+            view.setTextColor(st?.textColor?.let { themedCellText(it) } ?: themedColor(Color.rgb(24, 32, 39)))
             view.textSize = st?.fontSize ?: 13f
             view.typeface = Typeface.create(
                 Typeface.DEFAULT,
@@ -1119,7 +1119,7 @@ class MainActivity : Activity() {
             val text = gridDisplay(address)
             if (view.text.toString() != text) view.text = text
             val st = sheetStyles[address]
-            val textColor = st?.textColor ?: themedColor(Color.rgb(24, 32, 39))
+            val textColor = st?.textColor?.let { themedCellText(it) } ?: themedColor(Color.rgb(24, 32, 39))
             if (view.currentTextColor != textColor) view.setTextColor(textColor)
             val textSize = st?.fontSize ?: 13f
             if (view.textSize != textSize) view.textSize = textSize
@@ -1449,7 +1449,7 @@ class MainActivity : Activity() {
             gravity = if (header || key == null) Gravity.CENTER else Gravity.CENTER_VERTICAL or Gravity.START
             setPadding(dp(3), 0, dp(3), 0)
             val st = if (key != null) sheetStyles[key] else null
-            setTextColor(if(header) themedColor(Color.rgb(55,67,77)) else st?.textColor ?: themedColor(Color.rgb(24,32,39)))
+            setTextColor(if(header) themedColor(Color.rgb(55,67,77)) else st?.textColor?.let { themedCellText(it) } ?: themedColor(Color.rgb(24,32,39)))
             textSize = st?.fontSize ?: 13f
             typeface = Typeface.create(Typeface.DEFAULT, (if (st?.bold == true || header) Typeface.BOLD else Typeface.NORMAL) or (if (st?.italic == true) Typeface.ITALIC else Typeface.NORMAL))
             paint.isUnderlineText = st?.underline == true
