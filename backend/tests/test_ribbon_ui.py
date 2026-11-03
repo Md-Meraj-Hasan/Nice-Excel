@@ -36,3 +36,28 @@ def test_expanded_ribbon_exposes_more_working_tools_in_both_clients():
             assert f'id="{element_id}"' in html, f"missing expanded tool {element_id} in {path}"
         for handler in ["copyCellBtn').onclick", "pasteCellBtn').onclick", "clearCellBtn').onclick", "sortAscBtn').onclick", "filterColumnBtn').onclick"]:
             assert handler in html, f"missing working handler {handler} in {path}"
+
+
+def test_native_advanced_ribbon_exposes_and_wires_advanced_tools():
+    native = (ROOT / "app" / "src" / "main" / "java" / "com" / "meraj" / "niceexcel" / "MainActivity.kt").read_text(encoding="utf-8")
+    assert '"Advanced"' in native
+    for label in [
+        "Open Full Advanced Tools (Web)",
+        "Conditional Formatting…",
+        "Data Validation…",
+        "Data Cleaning…",
+        "Filter by Cell Colour",
+        "Pivot Summary…",
+        "Dashboard Builder…",
+    ]:
+        assert label in native, f"missing native Advanced tool: {label}"
+    for handler in [
+        "startActivity(Intent(this, FlaskActivity::class.java))",
+        "conditionalFormattingMenu()",
+        "dataValidationMenu()",
+        "dataCleaningMenu()",
+        "filterByCellColour()",
+        "pivotSummaryMenu(false)",
+        "pivotSummaryMenu(true)",
+    ]:
+        assert handler in native, f"missing native Advanced action: {handler}"
