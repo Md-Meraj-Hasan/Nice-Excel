@@ -35,8 +35,9 @@ class FlaskActivity : Activity() {
         val themePrefs = getSharedPreferences("niceexcel_theme", MODE_PRIVATE)
         val systemAccent = themePrefs.getInt("day_palette_primary", Color.rgb(17, 94, 57))
         val blackTheme = themePrefs.getBoolean("dark_mode", false)
-        window.statusBarColor = systemAccent
-        window.navigationBarColor = if (blackTheme) Color.rgb(5, 9, 18) else Color.rgb(20, 30, 40)
+        // Never carry the default green accent into system bars in Black Theme.
+        window.statusBarColor = if (blackTheme) Color.BLACK else systemAccent
+        window.navigationBarColor = if (blackTheme) Color.BLACK else Color.rgb(20, 30, 40)
         window.decorView.systemUiVisibility = 0
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(if (blackTheme) Color.rgb(11, 16, 32) else Color.WHITE) }
         loadingText = TextView(this).apply {
