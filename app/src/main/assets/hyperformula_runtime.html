@@ -13,6 +13,35 @@
     for (const ch of match[1].toUpperCase()) col = col * 26 + ch.charCodeAt(0) - 64;
     return { row: Number(match[2]) - 1, col: col - 1 };
   };
+  // HyperFormula 3.x treats bare TRUE/FALSE as unknown named expressions.
+  // Convert only standalone formula tokens; never alter quoted text or longer names.
+  function normalizeFormulaBooleans(value) {
+    if (typeof value !== 'string' || value.charAt(0) !== '=') return value;
+    let output = '', token = '', inString = false;
+    const flush = () => {
+      if (token) {
+        const upper = token.toUpperCase();
+        output += upper === 'TRUE' ? 'TRUE()' : upper === 'FALSE' ? 'FALSE()' : token;
+        token = '';
+      }
+    };
+    for (let i = 0; i < value.length; i++) {
+      const ch = value[i];
+      if (inString) {
+        output += ch;
+        if (ch === '"') {
+          if (value[i + 1] === '"') output += value[++i];
+          else inString = false;
+        }
+        continue;
+      }
+      if (ch === '"') { flush(); output += ch; inString = true; continue; }
+      if (/[A-Za-z0-9_.]/.test(ch)) { token += ch; continue; }
+      flush(); output += ch;
+    }
+    flush();
+    return output;
+  }
   const normalize = (value) => {
     if (value === null || value === undefined) return '';
     if (Array.isArray(value)) return value.map(normalize);
@@ -43,7 +72,7 @@
       const matrix = new Array(maxRow);
       for (const [pos, raw] of parsed) {
         if (!matrix[pos.row]) matrix[pos.row] = [];
-        matrix[pos.row][pos.col] = raw === '' ? null : raw;
+        matrix[pos.row][pos.col] = raw === '' ? null : normalizeFormulaBooleans(raw);
         inputCells++;
       }
       allocatedRowSlots += matrix.reduce((total, row) => total + (row ? row.length : 0), 0);
@@ -79,7 +108,7 @@
         if (before[address] === after[address]) continue;
         const pos = parseAddress(address);
         if (!pos || pos.row >= 10000 || pos.col >= 512) continue;
-        engine.setCellContents({ sheet: sheetId, row: pos.row, col: pos.col }, [[after[address] === undefined || after[address] === '' ? null : after[address]]]);
+        engine.setCellContents({ sheet: sheetId, row: pos.row, col: pos.col }, [[after[address] === undefined || after[address] === '' ? null : normalizeFormulaBooleans(after[address])]]);
       }
     }
     previous = JSON.parse(JSON.stringify(sheets));
