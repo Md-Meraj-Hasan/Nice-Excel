@@ -45,6 +45,58 @@ class MainActivity : Activity() {
     private var sheetName = "Sheet1"
     private var selected = "A1"
     private var activeTopSection = "Home"
+    private var dayPaletteIndex = 0
+    private data class DayPalette(
+        val name: String, val primary: Int, val pale: Int, val ink: Int,
+        val soft: Int, val border: Int, val light: Int, val accent: Int, val gridLine: Int, val highlight: Int
+    )
+    private val dayPalettes = listOf(
+DayPalette("Green", Color.rgb(17,94,57), Color.rgb(209,250,229), Color.rgb(6,78,59), Color.rgb(227,244,234), Color.rgb(204,218,209), Color.rgb(213,229,218), Color.rgb(21,93,66), Color.rgb(17,94,57), Color.rgb(209,250,229)),
+DayPalette("Ocean Blue", Color.rgb(30,86,150), Color.rgb(219,234,254), Color.rgb(30,64,115), Color.rgb(230,240,255), Color.rgb(190,210,238), Color.rgb(214,228,247), Color.rgb(37,99,235), Color.rgb(30,86,150), Color.rgb(219,234,254)),
+DayPalette("Royal Purple", Color.rgb(105,55,150), Color.rgb(237,224,255), Color.rgb(76,29,120), Color.rgb(245,237,255), Color.rgb(215,196,238), Color.rgb(230,215,246), Color.rgb(126,58,180), Color.rgb(105,55,150), Color.rgb(237,224,255)),
+DayPalette("Teal", Color.rgb(0,105,105), Color.rgb(204,251,241), Color.rgb(17,78,78), Color.rgb(224,247,244), Color.rgb(180,222,216), Color.rgb(205,232,228), Color.rgb(13,148,136), Color.rgb(0,105,105), Color.rgb(204,251,241)),
+DayPalette("Sunset Orange", Color.rgb(180,83,9), Color.rgb(255,237,213), Color.rgb(124,45,18), Color.rgb(255,244,230), Color.rgb(240,205,174), Color.rgb(247,224,202), Color.rgb(234,120,35), Color.rgb(180,83,9), Color.rgb(255,237,213)),
+DayPalette("Ruby Red", Color.rgb(159,35,55), Color.rgb(255,228,230), Color.rgb(136,19,35), Color.rgb(255,239,240), Color.rgb(239,190,196), Color.rgb(247,215,219), Color.rgb(190,45,65), Color.rgb(159,35,55), Color.rgb(255,228,230)),
+DayPalette("Rose Pink", Color.rgb(157,45,105), Color.rgb(252,231,243), Color.rgb(131,24,85), Color.rgb(253,242,248), Color.rgb(235,195,218), Color.rgb(246,218,235), Color.rgb(219,39,119), Color.rgb(157,45,105), Color.rgb(252,231,243)),
+DayPalette("Indigo", Color.rgb(67,56,150), Color.rgb(224,231,255), Color.rgb(49,46,129), Color.rgb(238,240,255), Color.rgb(194,199,239), Color.rgb(216,220,248), Color.rgb(79,70,229), Color.rgb(67,56,150), Color.rgb(224,231,255)),
+DayPalette("Earth Brown", Color.rgb(120,72,38), Color.rgb(245,230,211), Color.rgb(92,51,23), Color.rgb(250,242,232), Color.rgb(225,204,180), Color.rgb(238,222,202), Color.rgb(161,98,50), Color.rgb(120,72,38), Color.rgb(245,230,211)),
+DayPalette("Slate Gray", Color.rgb(71,85,105), Color.rgb(226,232,240), Color.rgb(51,65,85), Color.rgb(241,245,249), Color.rgb(203,213,225), Color.rgb(222,229,238), Color.rgb(100,116,139), Color.rgb(71,85,105), Color.rgb(226,232,240)),
+DayPalette("Black", Color.rgb(25,25,25), Color.rgb(238,238,238), Color.rgb(20,20,20), Color.rgb(250,250,250), Color.rgb(205,205,205), Color.rgb(225,225,225), Color.rgb(45,45,45), Color.rgb(0,0,0), Color.rgb(220,220,220)),
+    )
+    private fun themedColor(color: Int): Int {
+        val p = dayPalettes[dayPaletteIndex.coerceIn(dayPalettes.indices)]
+        return when (color) {
+            Color.rgb(17,94,57), Color.rgb(21,93,66) -> p.primary
+            Color.rgb(209,250,229), Color.rgb(207,239,220) -> p.pale
+            Color.rgb(6,78,59), Color.rgb(34,75,54), Color.rgb(35,70,50), Color.rgb(45,65,54) -> p.ink
+            Color.rgb(227,244,234), Color.rgb(236,246,239), Color.rgb(232,240,235), Color.rgb(225,242,232), Color.rgb(231,237,233) -> p.soft
+            Color.rgb(204,218,209), Color.rgb(198,207,214) -> p.border
+            Color.rgb(213,229,218), Color.rgb(224,232,239) -> p.light
+            Color.rgb(174,187,198) -> p.gridLine
+            else -> color
+        }
+    }
+    private fun chooseDayPalette() {
+        val names = dayPalettes.map { it.name }.toTypedArray()
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Choose Day Mode Colour")
+            .setSingleChoiceItems(names, dayPaletteIndex) { dialog, which ->
+                dayPaletteIndex = which
+                getPreferences(MODE_PRIVATE).edit().putInt("day_palette_index", which).apply()
+                dialog.dismiss()
+                val currentSheet = sheetName
+                val currentCell = selected
+                buildUi()
+                sheetName = currentSheet
+                selected = currentCell
+                render()
+                showTopMenu(activeTopSection)
+                status.text = "${dayPalettes[which].name} day colour applied"
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
     private var ribbonToolsVisible = false
     private val undoHistory = mutableMapOf<String, MutableList<Map<String, String>>>()
     private val redoHistory = mutableMapOf<String, MutableList<Map<String, String>>>()
@@ -70,6 +122,8 @@ class MainActivity : Activity() {
     private val mergedOriginalTextSizes = java.util.WeakHashMap<TextView, Float>()
     // Formula results are expensive (POI + fallback evaluator); reuse them across style-only renders.
     private val formulaDisplayCache = mutableMapOf<String, String>()
+    // Array-formula result cells are cached separately; the workbook stores only the anchor formula.
+    private val formulaSpillCache = mutableMapOf<String, String>()
     // CPU-heavy data operations run off the UI thread; Android views are updated only on main.
     // Bounded four-worker pool: independent CPU tasks may run in parallel without
     // allowing an unlimited backlog. Never use CallerRunsPolicy because it could
@@ -96,6 +150,8 @@ class MainActivity : Activity() {
     private val columnWidthsBySheet = mutableMapOf<String, List<Int>>()
     // Build row line counts in one pass and reuse them during grid layout. Null means invalidated.
     private var cachedExplicitLineCountsByRow: Map<Int, Int>? = null
+    // Cancels stale frame-batched grid builds when the user switches sheets or rerenders.
+    private var renderGeneration = 0
     private val cellAddressRowPattern = Regex("^[A-Z]+(\\d+)$")
     private var lastTapAddress: String? = null
     private var lastTapAt = 0L
@@ -124,38 +180,107 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        window.statusBarColor = Color.rgb(17, 94, 57)
+        dayPaletteIndex = getPreferences(MODE_PRIVATE).getInt("day_palette_index", 0).coerceIn(dayPalettes.indices)
+        window.statusBarColor = themedColor(Color.rgb(17, 94, 57))
         window.navigationBarColor = Color.rgb(20, 30, 40)
-        sheets["Sheet1"] = mutableMapOf(
-            "A1" to "Item", "B1" to "Qty", "C1" to "Price", "D1" to "Total",
-            "A2" to "Notebook", "B2" to "3", "C2" to "12.5", "D2" to "=B2*C2",
-            "A3" to "Pen", "B3" to "5", "C3" to "2", "D3" to "=B3*C3",
-            "A4" to "Grand Total", "D4" to "=SUM(D2:D3)"
-        )
-        sheets["Sheet2"] = mutableMapOf()
-        sheets["Sheet3"] = mutableMapOf()
-        styles["Sheet1"] = mutableMapOf()
-        styles["Sheet2"] = mutableMapOf()
-        styles["Sheet3"] = mutableMapOf()
-        val defaultWidths = List(colLimit) { c -> max(28, minOf(360, colName(c).length * 7 + 18)) }
-        columnWidthsBySheet["Sheet1"] = defaultWidths
-        columnWidthsBySheet["Sheet2"] = defaultWidths
-        columnWidthsBySheet["Sheet3"] = defaultWidths
+        if (!restoreLastWorkbook()) {
+            sheets["Sheet1"] = mutableMapOf(
+                "A1" to "Item", "B1" to "Qty", "C1" to "Price", "D1" to "Total",
+                "A2" to "Notebook", "B2" to "3", "C2" to "12.5", "D2" to "=B2*C2",
+                "A3" to "Pen", "B3" to "5", "C3" to "2", "D3" to "=B3*C3",
+                "A4" to "Grand Total", "D4" to "=SUM(D2:D3)"
+            )
+            sheets["Sheet2"] = mutableMapOf()
+            sheets["Sheet3"] = mutableMapOf()
+            styles["Sheet1"] = mutableMapOf()
+            styles["Sheet2"] = mutableMapOf()
+            styles["Sheet3"] = mutableMapOf()
+            val defaultWidths = List(colLimit) { c -> autoFitWidth(colName(c).length) }
+            columnWidthsBySheet["Sheet1"] = defaultWidths
+            columnWidthsBySheet["Sheet2"] = defaultWidths
+            columnWidthsBySheet["Sheet3"] = defaultWidths
+        }
         buildUi()
     }
 
+    private fun lastWorkbookFile() = java.io.File(filesDir, "niceexcel_last_session.xlsx")
+
+    /** Restore the last locally autosaved workbook before showing the demo workbook. */
+    private fun restoreLastWorkbook(): Boolean {
+        val file = lastWorkbookFile()
+        if (!file.isFile || file.length() <= 0L) return false
+        return try {
+            val restored = file.inputStream().use { XlsxCodec.read(it) }
+            if (restored.sheets.isEmpty()) return false
+            sheets.clear(); sheets.putAll(restored.sheets)
+            styles.clear(); styles.putAll(restored.styles)
+            mergedRangesBySheet.clear()
+            restored.mergedRanges.forEach { (name, ranges) -> mergedRangesBySheet[name] = ranges.toMutableList() }
+            reportingMetadata = restored.reportingMetadata
+            sheetName = getPreferences(MODE_PRIVATE).getString("last_session_sheet", null)
+                ?.takeIf { restored.sheets.containsKey(it) } ?: restored.sheets.keys.first()
+            selected = getPreferences(MODE_PRIVATE).getString("last_session_cell", "A1") ?: "A1"
+            val lastRow = sheets.values.flatMap { it.keys }
+                .mapNotNull { Regex("[A-Z]+([0-9]+)").matchEntire(it)?.groupValues?.get(1)?.toIntOrNull() }
+                .maxOrNull() ?: 50
+            val lastMergeRow = mergedRangesBySheet.values.flatten().flatMap { it.split(":") }
+                .mapNotNull { Regex("[A-Z]+([0-9]+)").matchEntire(it)?.groupValues?.get(1)?.toIntOrNull() }
+                .maxOrNull() ?: 50
+            rowCount = max(50, max(lastRow, lastMergeRow))
+            val widths = List(colLimit) { c -> autoFitWidth(colName(c).length) }
+            sheets.keys.forEach { name -> columnWidthsBySheet[name] = widths }
+            true
+        } catch (error: Exception) {
+            Log.e("NiceExcel", "Last workbook recovery failed", error)
+            false
+        }
+    }
+
+    /** Atomic internal autosave; this is independent of the user's original file. */
+    private fun persistLastWorkbook() {
+        if (sheets.isEmpty()) return
+        try {
+            activeInlineCommit?.invoke()
+            val snapshotSheets = sheets.mapValues { it.value.toMap() }
+            val snapshotStyles = styles.mapValues { (_, values) -> values.mapValues { it.value.copy() } }
+            val snapshotMerges = mergedRangesBySheet.mapValues { it.value.toList() }
+            val temp = java.io.File(filesDir, "niceexcel_last_session.tmp")
+            java.io.FileOutputStream(temp).use { output ->
+                XlsxCodec.write(output, snapshotSheets, snapshotStyles, reportingMetadata, snapshotMerges)
+                output.fd.sync()
+            }
+            val target = lastWorkbookFile()
+            if (!temp.renameTo(target)) {
+                temp.copyTo(target, overwrite = true)
+                temp.delete()
+            }
+            getPreferences(MODE_PRIVATE).edit()
+                .putString("last_session_sheet", sheetName)
+                .putString("last_session_cell", selected)
+                .apply()
+        } catch (error: Exception) {
+            Log.e("NiceExcel", "Local workbook autosave failed", error)
+        }
+    }
+
+    override fun onStop() {
+        // Save a recovery copy even when Android removes the app from recent tasks.
+        persistLastWorkbook()
+        super.onStop()
+    }
+
     private fun buildUi() {
-        val root = LinearLayout(this).apply { orientation=LinearLayout.VERTICAL; setBackgroundColor(Color.rgb(245,247,249)) }
+        val root = LinearLayout(this).apply { orientation=LinearLayout.VERTICAL; setBackgroundColor(themedColor(Color.rgb(245,247,249))) }
         // Compact spreadsheet-style menu bar replaces the large app title.
         val menuScroll = HorizontalScrollView(this).apply {
             isHorizontalScrollBarEnabled = false
-            setBackgroundColor(Color.rgb(17, 94, 57))
+            setBackgroundColor(themedColor(Color.rgb(17, 94, 57)))
         }
         val toolbar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(6), dp(5), dp(6), dp(5))
-            setBackgroundColor(Color.rgb(17, 94, 57))
+            setBackgroundColor(themedColor(Color.rgb(17, 94, 57)))
         }
         listOf("File", "Home", "Insert", "Format", "Data", "Formula", "View").forEach { label ->
             val button = tool(label) { showTopMenu(label) }.apply {
@@ -163,11 +288,11 @@ class MainActivity : Activity() {
                 minHeight = dp(34)
                 setPadding(dp(12), dp(8), dp(12), dp(8))
                 background = roundedToolbarBackground(
-                    if (label == activeTopSection) Color.rgb(209, 250, 229) else Color.rgb(17, 94, 57),
-                    if (label == activeTopSection) Color.rgb(209, 250, 229) else Color.rgb(17, 94, 57),
+                    if (label == activeTopSection) themedColor(Color.rgb(209, 250, 229)) else themedColor(Color.rgb(17, 94, 57)),
+                    if (label == activeTopSection) themedColor(Color.rgb(209, 250, 229)) else themedColor(Color.rgb(17, 94, 57)),
                     10
                 )
-                setTextColor(if (label == activeTopSection) Color.rgb(6, 78, 59) else Color.WHITE)
+                setTextColor(if (label == activeTopSection) themedColor(Color.rgb(6, 78, 59)) else themedColor(Color.WHITE))
                 if (label == activeTopSection) typeface = Typeface.DEFAULT_BOLD
                 else typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
                 setOnClickListener {
@@ -181,9 +306,9 @@ class MainActivity : Activity() {
                         for (i in 0 until toolbar.childCount) {
                             val tab = toolbar.getChildAt(i) as? TextView ?: continue
                             val active = tab.text.toString() == activeTopSection
-                            val tabColor = if (active) Color.rgb(209, 250, 229) else Color.rgb(17, 94, 57)
+                            val tabColor = if (active) themedColor(Color.rgb(209, 250, 229)) else themedColor(Color.rgb(17, 94, 57))
                             tab.background = roundedToolbarBackground(tabColor, tabColor, 10)
-                            tab.setTextColor(if (active) Color.rgb(6, 78, 59) else Color.WHITE)
+                            tab.setTextColor(if (active) themedColor(Color.rgb(6, 78, 59)) else themedColor(Color.WHITE))
                             tab.typeface = if (active) Typeface.DEFAULT_BOLD else Typeface.create("sans-serif-medium", Typeface.NORMAL)
                         }
                         showTopMenu(label)
@@ -203,7 +328,7 @@ class MainActivity : Activity() {
         val toolScroll = HorizontalScrollView(this).apply {
             isHorizontalScrollBarEnabled = false
             setFillViewport(false)
-            setBackgroundColor(Color.rgb(232, 240, 235))
+            setBackgroundColor(themedColor(Color.rgb(232, 240, 235)))
             clipToPadding = false
             overScrollMode = android.view.View.OVER_SCROLL_IF_CONTENT_SCROLLS
         }
@@ -211,18 +336,18 @@ class MainActivity : Activity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(7), dp(4), dp(7), dp(4))
-            setBackgroundColor(Color.rgb(232, 240, 235))
+            setBackgroundColor(themedColor(Color.rgb(232, 240, 235)))
         }
         toolScroll.addView(ribbonTools, android.widget.FrameLayout.LayoutParams(-2, dp(42)))
         root.addView(toolScroll, LinearLayout.LayoutParams(-1, dp(44)))
         toolScroll.visibility = android.view.View.GONE
 
-        val formulaBar=LinearLayout(this).apply { orientation=LinearLayout.HORIZONTAL; gravity=Gravity.CENTER_VERTICAL; setPadding(dp(6),dp(4),dp(6),dp(4)); setBackgroundColor(Color.rgb(255,255,255)) }
-        cellName=TextView(this).apply { text=selected; textSize=14f; typeface=Typeface.DEFAULT_BOLD; gravity=Gravity.CENTER; setTextColor(Color.rgb(17,94,57)); setPadding(dp(10),dp(11),dp(10),dp(11)); setBackgroundColor(Color.rgb(225,242,232)) }
+        val formulaBar=LinearLayout(this).apply { orientation=LinearLayout.HORIZONTAL; gravity=Gravity.CENTER_VERTICAL; setPadding(dp(6),dp(4),dp(6),dp(4)); setBackgroundColor(themedColor(Color.rgb(255,255,255))) }
+        cellName=TextView(this).apply { text=selected; textSize=14f; typeface=Typeface.DEFAULT_BOLD; gravity=Gravity.CENTER; setTextColor(themedColor(Color.rgb(17,94,57))); setPadding(dp(10),dp(11),dp(10),dp(11)); setBackgroundColor(themedColor(Color.rgb(225,242,232))) }
         formulaBar.addView(cellName)
-        formula=EditText(this).apply { setSingleLine(true); textSize=14f; hint="Enter value or formula"; inputType=InputType.TYPE_CLASS_TEXT; setPadding(dp(8),dp(3),dp(8),dp(3)); setBackgroundColor(Color.WHITE); setText(data[selected].orEmpty()); setOnEditorActionListener { _,_,_ -> applyFormula(); true } }
+        formula=EditText(this).apply { setSingleLine(true); textSize=14f; hint="Enter value or formula"; inputType=InputType.TYPE_CLASS_TEXT; setPadding(dp(8),dp(3),dp(8),dp(3)); setBackgroundColor(themedColor(Color.WHITE)); setText(data[selected].orEmpty()); setOnEditorActionListener { _,_,_ -> applyFormula(); true } }
         formulaBar.addView(formula,LinearLayout.LayoutParams(0,-2,1f))
-        formulaBar.addView(TextView(this).apply { text="ƒx ▾"; textSize=12f; setTextColor(Color.rgb(17,94,57)); setPadding(dp(7),dp(10),dp(7),dp(10)); setOnClickListener { formulaPickerMenu() } })
+        formulaBar.addView(TextView(this).apply { text="ƒx ▾"; textSize=12f; setTextColor(themedColor(Color.rgb(17,94,57))); setPadding(dp(7),dp(10),dp(7),dp(10)); setOnClickListener { formulaPickerMenu() } })
         root.addView(formulaBar)
 
         // Keep the column letters and worksheet row 1 outside the vertical scroller.
@@ -281,18 +406,18 @@ class MainActivity : Activity() {
             isHorizontalScrollBarEnabled = true
             isFillViewport = false
             overScrollMode = android.view.View.OVER_SCROLL_IF_CONTENT_SCROLLS
-            setBackgroundColor(Color.rgb(231,237,233))
+            setBackgroundColor(themedColor(Color.rgb(231,237,233)))
         }
         sheetTabs=LinearLayout(this).apply {
             orientation=LinearLayout.HORIZONTAL
             gravity=Gravity.CENTER_VERTICAL
             setPadding(dp(6),dp(5),dp(6),dp(5))
-            setBackgroundColor(Color.rgb(231,237,233))
+            setBackgroundColor(themedColor(Color.rgb(231,237,233)))
             layoutParams = FrameLayout.LayoutParams(-2, -2)
         }
         sheetTabsScroll.addView(sheetTabs)
         root.addView(sheetTabsScroll, LinearLayout.LayoutParams(-1, -2))
-        status=TextView(this).apply { text="Ready • Offline workbook"; textSize=12f; setTextColor(Color.WHITE); setPadding(dp(10),dp(7),dp(10),dp(7)); setBackgroundColor(Color.rgb(20,30,40)) }
+        status=TextView(this).apply { text="Ready • Offline workbook"; textSize=12f; setTextColor(themedColor(Color.WHITE)); setPadding(dp(10),dp(7),dp(10),dp(7)); setBackgroundColor(themedColor(Color.rgb(20,30,40))) }
         root.addView(status)
         setContentView(root)
         // Save inline edits when the keyboard is dismissed (including Android navigation Back).
@@ -336,14 +461,14 @@ class MainActivity : Activity() {
     private fun AlertDialog.Builder.showProfessional(): AlertDialog {
         val dialog = create()
         dialog.setOnShowListener {
-            val deepGreen = Color.rgb(21, 93, 66)
-            val paleGreen = Color.rgb(227, 244, 234)
-            val ink = Color.rgb(31, 45, 38)
+            val deepGreen = themedColor(Color.rgb(21, 93, 66))
+            val paleGreen = themedColor(Color.rgb(227, 244, 234))
+            val ink = themedColor(Color.rgb(31, 45, 38))
             dialog.window?.setBackgroundDrawable(
                 GradientDrawable().apply {
-                    setColor(Color.rgb(250, 252, 250))
+                    setColor(themedColor(Color.rgb(250, 252, 250)))
                     cornerRadius = dp(18).toFloat()
-                    setStroke(dp(1), Color.rgb(210, 225, 216))
+                    setStroke(dp(1), themedColor(Color.rgb(210, 225, 216)))
                 }
             )
             dialog.window?.decorView?.setPadding(dp(2), dp(2), dp(2), dp(2))
@@ -373,7 +498,7 @@ class MainActivity : Activity() {
                     isAllCaps = false
                     setPadding(dp(12), dp(8), dp(12), dp(8))
                     if (this === positive) {
-                        setTextColor(Color.WHITE)
+                        setTextColor(themedColor(Color.WHITE))
                         background = GradientDrawable().apply {
                             setColor(deepGreen)
                             cornerRadius = dp(10).toFloat()
@@ -383,7 +508,7 @@ class MainActivity : Activity() {
                         background = GradientDrawable().apply {
                             setColor(paleGreen)
                             cornerRadius = dp(10).toFloat()
-                            setStroke(dp(1), Color.rgb(190, 220, 202))
+                            setStroke(dp(1), themedColor(Color.rgb(190, 220, 202)))
                         }
                     }
                 }
@@ -402,13 +527,13 @@ class MainActivity : Activity() {
         when (view) {
             is EditText -> view.apply {
                 setTextColor(textColor)
-                setHintTextColor(Color.rgb(126, 143, 133))
+                setHintTextColor(themedColor(Color.rgb(126, 143, 133)))
                 textSize = 14f
                 setPadding(dp(12), dp(10), dp(12), dp(10))
                 background = GradientDrawable().apply {
-                    setColor(Color.WHITE)
+                    setColor(themedColor(Color.WHITE))
                     cornerRadius = dp(9).toFloat()
-                    setStroke(dp(1), Color.rgb(198, 216, 204))
+                    setStroke(dp(1), themedColor(Color.rgb(198, 216, 204)))
                 }
             }
             is android.view.ViewGroup -> {
@@ -420,7 +545,7 @@ class MainActivity : Activity() {
     private fun styleDialogList(view: android.view.View?, textColor: Int, accent: Int, selectedFill: Int) {
         when (view) {
             is ListView -> view.apply {
-                divider = ColorDrawable(Color.rgb(226, 235, 229))
+                divider = ColorDrawable(themedColor(Color.rgb(226, 235, 229)))
                 dividerHeight = dp(1)
                 selector = GradientDrawable().apply {
                     setColor(selectedFill)
@@ -489,8 +614,13 @@ class MainActivity : Activity() {
                 "Workbook data range info" to { val used = usedRange(); status.text = "Used range: A1:${colName(used.second)}${used.first}" }
             )
             "Formula" -> listOf("Insert function…" to { formulaPickerMenu() }, "Formula help" to { formulaHelp() }, "Formula examples" to { formulaHelp() })
+            "View" -> buildList {
+                add("Choose Colour • ${dayPalettes[dayPaletteIndex].name}" to { chooseDayPalette() })
+                add("Refresh cells grid" to { refreshCurrentSheetGrid() })
+                add("Refresh current sheet formulas" to { refreshCurrentSheetFormulas() })
+                add("Workbook info" to { status.text = "${sheets.size} sheet(s) • $rowCount rows • Offline workbook" })
+            }
             else -> listOf(
-                "Web Engine" to { startActivity(Intent(this, FlaskActivity::class.java)) },
                 "Workbook info" to { status.text = "${sheets.size} sheet(s) • $rowCount rows • Offline workbook" }
             )
         }
@@ -506,7 +636,7 @@ class MainActivity : Activity() {
             "Number format…" to "Number", "Selected row: Single / Double line…" to "↵ Wrap", "Table styles…" to "Styles",
             "Sort column A → Z" to "Sort A→Z", "Filter column…" to "Filter", "Clear filter" to "Clear filter", "Find / Replace…" to "Find",
             "Workbook data range info" to "Range info", "Insert function…" to "ƒx Insert", "Formula help" to "ƒx Help",
-            "Web Engine" to "Web Excel", "Workbook info" to "Info"
+            "Workbook info" to "Info", "Refresh current sheet formulas" to "↻ Refresh"
         )
         items.forEach { item ->
             val label = compactLabels[item.first] ?: item.first
@@ -518,11 +648,11 @@ class MainActivity : Activity() {
                 typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
                 gravity = Gravity.CENTER
                 maxLines = 1
-                setTextColor(if (isEmphasis) Color.rgb(25, 74, 132) else Color.rgb(35, 70, 50))
+                setTextColor(if (isEmphasis) themedColor(Color.rgb(25, 74, 132)) else themedColor(Color.rgb(35, 70, 50)))
                 setPadding(dp(10), dp(6), dp(10), dp(6))
                 background = roundedToolbarBackground(
-                    if (isEmphasis) Color.rgb(219, 234, 254) else Color.WHITE,
-                    if (isEmphasis) Color.rgb(147, 197, 253) else Color.rgb(204, 218, 209),
+                    if (isEmphasis) themedColor(Color.rgb(219, 234, 254)) else themedColor(Color.WHITE),
+                    if (isEmphasis) themedColor(Color.rgb(147, 197, 253)) else themedColor(Color.rgb(204, 218, 209)),
                     9
                 )
                 elevation = dp(1).toFloat()
@@ -647,12 +777,12 @@ class MainActivity : Activity() {
             .setMessage("Create a blank workbook? Current unsaved changes will be cleared.")
             .setNegativeButton("Cancel", null)
             .setPositiveButton("Create") { _, _ ->
-                sheets.clear(); styles.clear(); formulaDisplayCache.clear(); columnWidthsBySheet.clear()
+                sheets.clear(); styles.clear(); formulaDisplayCache.clear(); clearFormulaSpillCache(); columnWidthsBySheet.clear()
                 sheetName = "Sheet1"; selected = "A1"; rowCount = 50
                 sheets["Sheet1"] = mutableMapOf(); styles["Sheet1"] = mutableMapOf()
                 sheets["Sheet2"] = mutableMapOf(); styles["Sheet2"] = mutableMapOf()
                 sheets["Sheet3"] = mutableMapOf(); styles["Sheet3"] = mutableMapOf()
-                val defaultWidths = List(colLimit) { c -> max(28, minOf(360, colName(c).length * 7 + 18)) }
+                val defaultWidths = List(colLimit) { c -> autoFitWidth(colName(c).length) }
                 columnWidthsBySheet["Sheet1"] = defaultWidths
                 columnWidthsBySheet["Sheet2"] = defaultWidths
                 columnWidthsBySheet["Sheet3"] = defaultWidths
@@ -663,10 +793,10 @@ class MainActivity : Activity() {
     }
 
     private fun tool(label:String, action:()->Unit)=TextView(this).apply {
-        text=label; textSize=14f; gravity=Gravity.CENTER; setTextColor(Color.WHITE); setPadding(dp(9),dp(9),dp(9),dp(9)); setOnClickListener { action() }
+        text=label; textSize=14f; gravity=Gravity.CENTER; setTextColor(themedColor(Color.WHITE)); setPadding(dp(9),dp(9),dp(9),dp(9)); setOnClickListener { action() }
     }
     private fun ribbonButton(label:String, action:()->Unit)=TextView(this).apply {
-        text=label; textSize=12f; gravity=Gravity.CENTER; setTextColor(Color.rgb(34,75,54)); setBackgroundColor(Color.rgb(236,246,239)); setOnClickListener { action() }
+        text=label; textSize=12f; gravity=Gravity.CENTER; setTextColor(themedColor(Color.rgb(34,75,54))); setBackgroundColor(themedColor(Color.rgb(236,246,239))); setOnClickListener { action() }
     }
 
     /** Update only the affected cell views after formatting; avoid touching the whole 1,300-cell grid. */
@@ -682,7 +812,7 @@ class MainActivity : Activity() {
             }
             view.text = text
             val st = sheetStyles[address]
-            view.setTextColor(st?.textColor ?: Color.rgb(24, 32, 39))
+            view.setTextColor(st?.textColor ?: themedColor(Color.rgb(24, 32, 39)))
             view.textSize = st?.fontSize ?: 13f
             view.typeface = Typeface.create(
                 Typeface.DEFAULT,
@@ -760,6 +890,40 @@ class MainActivity : Activity() {
      * appear late on slower phones. Keep auto-width behavior, but scope the work to the edited
      * column and update formulas separately on the background executor.
      */
+    /** Keep all cells in an edited row aligned to the row's committed content height. */
+    private fun refreshRowHeightInPlace(address: String) {
+        val row = cellAddressRowPattern.matchEntire(address)
+            ?.groupValues?.get(1)?.toIntOrNull() ?: return
+        val height = dp(rowHeightPx(row))
+        val rowView = (0 until grid.childCount)
+            .asSequence()
+            .mapNotNull { grid.getChildAt(it) as? LinearLayout }
+            .firstOrNull { (it.tag as? Int) == row }
+            ?: if (row == 1) frozenFirstRow else null
+
+        rowView?.let { view ->
+            view.layoutParams = (view.layoutParams ?: LinearLayout.LayoutParams(-2, height)).apply {
+                this.height = height
+            }
+            for (i in 0 until view.childCount) {
+                val child = view.getChildAt(i)
+                child.layoutParams = (child.layoutParams ?: LinearLayout.LayoutParams(dp(48), height)).apply {
+                    this.height = height
+                }
+            }
+        }
+        val rowPattern = Regex("^[A-Z]+${row}$")
+        cellViews.forEach { (cellAddress, view) ->
+            if (!rowPattern.matches(cellAddress)) return@forEach
+            view.layoutParams = (view.layoutParams ?: LinearLayout.LayoutParams(-2, height)).apply {
+                this.height = height
+            }
+            view.maxLines = rowLineCount(row)
+            view.ellipsize = if (view.maxLines == 2) null else android.text.TextUtils.TruncateAt.END
+        }
+        rowView?.requestLayout()
+    }
+
     private fun refreshEditedCellColumn(address: String) {
         val match = Regex("^([A-Z]+)(\\d+)$").matchEntire(address) ?: return
         val columnName = match.groupValues[1]
@@ -773,9 +937,9 @@ class MainActivity : Activity() {
             if (columnIndex(m.groupValues[1]) != column) return@forEach
             val row = m.groupValues[2].toIntOrNull() ?: return@forEach
             addresses.add(candidate to row)
-            if (row !in wrappedRows) longest = max(longest, gridDisplay(candidate).length)
+            longest = max(longest, longestLineLength(gridDisplay(candidate)))
         }
-        val widthPx = dp(max(28, minOf(360, longest * 7 + 18)))
+        val widthPx = dp(autoFitWidth(longest))
         if (columnHeader.childCount > column + 1) {
             val header = columnHeader.getChildAt(column + 1)
             header.layoutParams = (header.layoutParams ?: LinearLayout.LayoutParams(widthPx, dp(24))).apply { width = widthPx }
@@ -792,7 +956,7 @@ class MainActivity : Activity() {
             view.ellipsize = if (view.maxLines == 2) null else android.text.TextUtils.TruncateAt.END
             applyCellBackground(view, cellAddress, false)
         }
-        lastColumnWidths = lastColumnWidths.toMutableList().also { if (column < it.size) it[column] = max(28, minOf(360, longest * 7 + 18)) }
+        lastColumnWidths = lastColumnWidths.toMutableList().also { if (column < it.size) it[column] = autoFitWidth(longest) }
         columnWidthsBySheet[sheetName] = lastColumnWidths
         applyMergedCellPresentation()
     }
@@ -805,11 +969,14 @@ class MainActivity : Activity() {
             val match = cellAddressRowPattern.matchEntire(address) ?: return@forEach
             val column = columnIndex(match.groupValues[1])
             val row = match.groupValues[2].toIntOrNull() ?: return@forEach
-            if (column in 0 until colLimit && row !in wrappedRows) {
-                longestByColumn[column] = max(longestByColumn[column], gridDisplay(address).length)
+            if (column in 0 until colLimit) {
+                longestByColumn[column] = max(
+                    longestByColumn[column],
+                    longestLineLength(gridDisplay(address))
+                )
             }
         }
-        val columnWidths = longestByColumn.map { max(28, minOf(360, it * 7 + 18)) }
+        val columnWidths = longestByColumn.map { autoFitWidth(it) }
         lastColumnWidths = columnWidths
         columnWidthsBySheet[sheetName] = columnWidths
 
@@ -846,7 +1013,7 @@ class MainActivity : Activity() {
         cellViews.forEach { (address, view) ->
             view.text = gridDisplay(address)
             val st = sheetStyles[address]
-            view.setTextColor(st?.textColor ?: Color.rgb(24, 32, 39))
+            view.setTextColor(st?.textColor ?: themedColor(Color.rgb(24, 32, 39)))
             view.textSize = st?.fontSize ?: 13f
             view.typeface = Typeface.create(
                 Typeface.DEFAULT,
@@ -911,7 +1078,7 @@ class MainActivity : Activity() {
             // addresses and touching every TextView property when most are already default.
             if (blankSheet) {
                 if (view.text.isNotEmpty()) view.text = ""
-                if (view.currentTextColor != Color.rgb(24, 32, 39)) view.setTextColor(Color.rgb(24, 32, 39))
+                if (view.currentTextColor != themedColor(Color.rgb(24, 32, 39))) view.setTextColor(themedColor(Color.rgb(24, 32, 39)))
                 if (view.textSize != 13f) view.textSize = 13f
                 if (view.typeface?.style != Typeface.NORMAL) view.typeface = Typeface.DEFAULT
                 if (view.paint.isUnderlineText) view.paint.isUnderlineText = false
@@ -927,7 +1094,7 @@ class MainActivity : Activity() {
             val text = gridDisplay(address)
             if (view.text.toString() != text) view.text = text
             val st = sheetStyles[address]
-            val textColor = st?.textColor ?: Color.rgb(24, 32, 39)
+            val textColor = st?.textColor ?: themedColor(Color.rgb(24, 32, 39))
             if (view.currentTextColor != textColor) view.setTextColor(textColor)
             val textSize = st?.fontSize ?: 13f
             if (view.textSize != textSize) view.textSize = textSize
@@ -958,14 +1125,14 @@ class MainActivity : Activity() {
             } else if (rowView.visibility != android.view.View.VISIBLE) {
                 rowView.visibility = android.view.View.VISIBLE
             }
-            // Width checks are only needed when switching between sheets with different cached widths.
-            if (widthsChanged || wrappedRows.isNotEmpty() || rowHeightChanged) {
-                for (c in 0 until minOf(colLimit + 1, rowView.childCount)) {
-                    val child = rowView.getChildAt(c)
-                    val width = dp(if (c == 0) 48 else widths[c - 1])
-                    if (child.layoutParams.width != width || child.layoutParams.height != height) {
-                        child.layoutParams = child.layoutParams.apply { this.width = width; this.height = height }
-                    }
+            // Reconcile every body cell against the target sheet's canonical widths.
+            // Do not trust the previous sheet's layout state: a fast switch can reuse
+            // TextViews after an earlier edit/refresh changed cached width metadata.
+            for (c in 0 until minOf(colLimit + 1, rowView.childCount)) {
+                val child = rowView.getChildAt(c)
+                val width = dp(if (c == 0) 48 else widths[c - 1])
+                if (child.layoutParams.width != width || child.layoutParams.height != height) {
+                    child.layoutParams = child.layoutParams.apply { this.width = width; this.height = height }
                 }
             }
         }
@@ -976,6 +1143,16 @@ class MainActivity : Activity() {
         renderTabs()
         val tabsMs = SystemClock.elapsedRealtime() - tabsStarted
         grid.requestLayout()
+        // After widths are reconciled, keep all three horizontal strips at one
+        // clamped scroll position so column edges remain vertically aligned.
+        bodyHorizontal.post {
+            val alignedX = bodyHorizontal.scrollX
+            headerHorizontal.scrollTo(alignedX, 0)
+            frozenRowHorizontal.scrollTo(alignedX, 0)
+        }
+        headerHorizontal.requestLayout()
+        frozenRowHorizontal.requestLayout()
+        bodyHorizontal.requestLayout()
         Log.d("NiceExcelPerf", "sheetSwitchFast sheet=$sheetName blank=$blankSheet cellRefreshMs=$cellRefreshMs tabsMs=$tabsMs totalMs=${SystemClock.elapsedRealtime() - started}")
         return true
     }
@@ -983,6 +1160,7 @@ class MainActivity : Activity() {
     private fun render() {
         cachedExplicitLineCountsByRow = null
         val perfStarted = SystemClock.elapsedRealtime()
+        val generation = ++renderGeneration
         // Treat a full/in-place render as a workbook-state boundary. Any background
         // snapshot started before this boundary must revalidate before committing.
         workbookRevision.incrementAndGet()
@@ -993,7 +1171,7 @@ class MainActivity : Activity() {
         if (canReuseGrid) {
             refreshVisibleCells()
             renderTabs()
-            scheduleFormulaRecalculation()
+            scheduleFormulaRecalculationIfNeeded()
             Log.d("NiceExcelPerf", "render sheet=$sheetName mode=reuse ms=${SystemClock.elapsedRealtime() - perfStarted}")
             return
         }
@@ -1012,13 +1190,15 @@ class MainActivity : Activity() {
             val match = cellAddressPattern.matchEntire(address) ?: return@forEach
             val column = columnIndex(match.groupValues[1])
             val row = match.groupValues[2].toIntOrNull() ?: return@forEach
-            if (column in 0 until colLimit && row !in wrappedRows) {
-                val shownLength = gridDisplay(address).length
+            if (column in 0 until colLimit) {
+                // Multiline cells still participate in auto-fit. Measure the longest
+                // individual line, not the combined text including newline characters.
+                val shownLength = longestLineLength(gridDisplay(address))
                 if (shownLength > longestByColumn[column]) longestByColumn[column] = shownLength
             }
         }
         val columnWidths = longestByColumn.map { longest ->
-            max(28, minOf(360, longest * 7 + 18))
+            autoFitWidth(longest)
         }
         lastColumnWidths = columnWidths
         columnWidthsBySheet[sheetName] = columnWidths
@@ -1033,16 +1213,43 @@ class MainActivity : Activity() {
         } else {
             frozenRowHorizontal.visibility = android.view.View.GONE
         }
-        for(r in 2..rowCount) {
-            val rowView = createRowView(r, columnWidths)
-            rowView.visibility = if (rowPassesFilter(r)) android.view.View.VISIBLE else android.view.View.GONE
-            grid.addView(rowView)
-        }
-        // Bottom Add Row bar removed: row insertion remains available in the Insert ribbon.
-        applyMergedCellPresentation()
+        // Build only a small batch of rows per display frame. The previous synchronous
+        // loop created up to 1,300 TextViews in onCreate()/sheet switches, delaying the
+        // first focused window and causing input-dispatch ANRs on slower phones.
         renderTabs()
-        scheduleFormulaRecalculation()
-        Log.d("NiceExcelPerf", "render sheet=$sheetName mode=rebuild cells=${cellViews.size} ms=${SystemClock.elapsedRealtime() - perfStarted}")
+        appendRowsInBatches(2, columnWidths, generation, perfStarted)
+    }
+
+    private fun appendRowsInBatches(
+        firstRow: Int,
+        columnWidths: List<Int>,
+        generation: Int,
+        renderStarted: Long
+    ) {
+        if (generation != renderGeneration || isFinishing || isDestroyed) return
+        val lastRow = minOf(rowCount, firstRow + 1) // two worksheet rows per frame
+        if (firstRow <= lastRow) {
+            for (row in firstRow..lastRow) {
+                val rowView = createRowView(row, columnWidths)
+                rowView.visibility = if (rowPassesFilter(row)) android.view.View.VISIBLE else android.view.View.GONE
+                grid.addView(rowView)
+            }
+        }
+        if (lastRow < rowCount) {
+            grid.postOnAnimation {
+                appendRowsInBatches(lastRow + 1, columnWidths, generation, renderStarted)
+            }
+            return
+        }
+
+        // Finalize merged-cell overlays and formula work only after all row views exist.
+        applyMergedCellPresentation()
+        selectedCellView = cellViews[selected]
+        scheduleFormulaRecalculationIfNeeded()
+        Log.d(
+            "NiceExcelPerf",
+            "render sheet=$sheetName mode=batched cells=${cellViews.size} ms=${SystemClock.elapsedRealtime() - renderStarted}"
+        )
     }
 
     private fun rowPassesFilter(row: Int): Boolean {
@@ -1085,7 +1292,7 @@ class MainActivity : Activity() {
         val match = Regex("^([A-Z]+)(\\d+)$").matchEntire(address) ?: return false
         val col = columnIndex(match.groupValues[1])
         val currentWidth = lastColumnWidths.getOrNull(col) ?: return false
-        if (editedText.length * 7 + 18 > currentWidth) return false
+        if (longestLineLength(editedText) * 7 + 18 > currentWidth) return false
         val editedView = cellViews[address] ?: return false
         editedView.text = editedText
         var requiresLayout = false
@@ -1095,7 +1302,7 @@ class MainActivity : Activity() {
             val formulaText = gridDisplay(formulaAddress)
             val formulaMatch = Regex("^([A-Z]+)(\\d+)$").matchEntire(formulaAddress) ?: return@forEach
             val formulaCol = columnIndex(formulaMatch.groupValues[1])
-            if (formulaText.length * 7 + 18 > (lastColumnWidths.getOrNull(formulaCol) ?: 0)) {
+            if (longestLineLength(formulaText) * 7 + 18 > (lastColumnWidths.getOrNull(formulaCol) ?: 0)) {
                 requiresLayout = true
             } else {
                 cellViews[formulaAddress]?.text = formulaText
@@ -1104,14 +1311,28 @@ class MainActivity : Activity() {
         return !requiresLayout
     }
 
+    /** Width is based on the longest visible line in a cell, including multiline cells. */
+    private fun longestLineLength(value: String): Int =
+        value.split('\n').maxOfOrNull { it.trimEnd('\r').length } ?: 0
+
+    /**
+     * Keep exactly 26 worksheet columns (A:Z), but never impose a maximum width.
+     * The width grows from the longest line's character count. Saturate only at the
+     * platform integer limit to avoid arithmetic overflow on pathological cell text.
+     */
+    private fun autoFitWidth(characterCount: Int): Int {
+        val width = characterCount.toLong() * 7L + 18L
+        return max(28, width.coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
+    }
+
     private fun calculatedColumnWidth(column: Int): Int {
         val name = colName(column)
         val longest = data.entries.asSequence()
             .filter { it.key.startsWith(name) && it.key.drop(name.length).toIntOrNull() != null }
-            .map { gridDisplay(it.key).length }
+            .map { longestLineLength(gridDisplay(it.key)) }
             .maxOrNull() ?: name.length
         // Three-character default; auto-expand by one character-space per extra character.
-        return max(28, minOf(360, longest * 7 + 18))
+        return autoFitWidth(longest)
     }
 
     /** Row height follows explicit newlines in cell values, while preserving the existing
@@ -1137,7 +1358,40 @@ class MainActivity : Activity() {
         return max(if (row in wrappedRows) 2 else 1, explicitLines).coerceIn(1, 6)
     }
 
-    private fun rowHeightPx(row: Int): Int = if (rowLineCount(row) == 1) 24 else 24 * rowLineCount(row) + 4
+    private fun rowLineCountForEdit(row: Int, editedAddress: String, editedValue: String): Int {
+        var lines = if (row in wrappedRows) 2 else 1
+        data.forEach { (address, value) ->
+            val match = cellAddressRowPattern.matchEntire(address) ?: return@forEach
+            if (match.groupValues[1].toIntOrNull() != row || address == editedAddress) return@forEach
+            lines = max(lines, value.count { it == '\n' } + 1)
+        }
+        if (cellAddressRowPattern.matchEntire(editedAddress)?.groupValues?.get(1)?.toIntOrNull() == row) {
+            lines = max(lines, editedValue.count { it == '\n' } + 1)
+        }
+        return lines.coerceIn(1, 6)
+    }
+
+    // The 24dp single-line row already contains the desired top/bottom inset.
+    // For multiline rows, add only the measured rendered text-line advance (not an
+    // arbitrary fixed height). This keeps the free space around the text unchanged.
+    private fun rowTextLineHeightDp(): Int {
+        val paint = android.graphics.Paint().apply {
+            textSize = 13f * resources.displayMetrics.scaledDensity
+        }
+        val metrics = paint.fontMetricsInt
+        val lineHeightPx = ((metrics.descent - metrics.ascent) * 0.97f).toInt()
+        return max(1, kotlin.math.ceil(lineHeightPx / resources.displayMetrics.density).toInt())
+    }
+
+    private fun rowHeightForLines(lines: Int): Int {
+        val safeLines = lines.coerceIn(1, 6)
+        return 24 + (safeLines - 1) * rowTextLineHeightDp()
+    }
+
+    private fun rowHeightPx(row: Int): Int = rowHeightForLines(rowLineCount(row))
+
+    private fun rowHeightPxForEdit(row: Int, address: String, value: String): Int =
+        rowHeightForLines(rowLineCountForEdit(row, address, value))
 
     /**
      * Display value used only inside the grid. In double-line mode, split at the first
@@ -1165,12 +1419,12 @@ class MainActivity : Activity() {
             setHorizontallyScrolling(false)
             // Preserve complete glyph ascenders/descenders and use consistent line spacing.
             // Without font padding Android can clip the lower line on some device fonts.
-            includeFontPadding = true
-            setLineSpacing(0f, 1.0f)
+            includeFontPadding = false
+            setLineSpacing(0f, 0.97f)
             gravity = if (header || key == null) Gravity.CENTER else Gravity.CENTER_VERTICAL or Gravity.START
             setPadding(dp(3), 0, dp(3), 0)
             val st = if (key != null) sheetStyles[key] else null
-            setTextColor(if(header) Color.rgb(55,67,77) else st?.textColor ?: Color.rgb(24,32,39))
+            setTextColor(if(header) themedColor(Color.rgb(55,67,77)) else st?.textColor ?: themedColor(Color.rgb(24,32,39)))
             textSize = st?.fontSize ?: 13f
             typeface = Typeface.create(Typeface.DEFAULT, (if (st?.bold == true || header) Typeface.BOLD else Typeface.NORMAL) or (if (st?.italic == true) Typeface.ITALIC else Typeface.NORMAL))
             paint.isUnderlineText = st?.underline == true
@@ -1233,14 +1487,33 @@ class MainActivity : Activity() {
         sheets.keys.toList().forEach { name ->
             val t=TextView(this).apply {
                 text=name; textSize=13f; gravity=Gravity.CENTER; setPadding(dp(15),dp(9),dp(15),dp(9))
-                setTextColor(if(name==sheetName) Color.WHITE else Color.rgb(35,70,50))
-                setBackgroundColor(if(name==sheetName) Color.rgb(17,94,57) else Color.rgb(213,229,218))
-                setOnClickListener { sheetName=name; selected="A1"; cellName.text=selected; formula.setText(data[selected].orEmpty()); render() }
+                setTextColor(if(name==sheetName) themedColor(Color.WHITE) else themedColor(Color.rgb(35,70,50)))
+                setBackgroundColor(if(name==sheetName) themedColor(Color.rgb(17,94,57)) else themedColor(Color.rgb(213,229,218)))
+                setOnClickListener {
+                    if (sheetName == name) return@setOnClickListener
+
+                    // Switching tabs must preserve completed formula results. A sheet
+                    // change alone is not a workbook edit and must not restart calculation.
+                    sheetName = name
+                    selected = "A1"
+                    cellName.text = selected
+                    formula.setText(data[selected].orEmpty())
+
+                    // Reuse the existing 1,300-cell grid when the target sheet has
+                    // cached column widths. This avoids destroying/recreating every TextView
+                    // on each tab switch while keeping the workbook formula cache intact.
+                    cachedExplicitLineCountsByRow = null
+                    if (refreshSheetInPlaceFast()) {
+                        scheduleFormulaRecalculationIfNeeded()
+                    } else {
+                        render()
+                    }
+                }
                 setOnLongClickListener { renameSheet(name); true }
             }
             sheetTabs.addView(t)
         }
-        sheetTabs.addView(tool("+") { sheetOptionsMenu() }.apply { setTextColor(Color.rgb(17,94,57)) })
+        sheetTabs.addView(tool("+") { sheetOptionsMenu() }.apply { setTextColor(themedColor(Color.rgb(17,94,57))) })
     }
 
     private fun addOneRow() = addRows(1)
@@ -1325,17 +1598,13 @@ class MainActivity : Activity() {
         val st = if (address != null) sheetStyles[address] else null
         val isSelected = address != null && (address == selected || address in selectedRangeCells)
         val fill = when {
-            header -> Color.rgb(224, 232, 239)
-            isSelected -> Color.rgb(207, 239, 220)
+            header -> themedColor(Color.rgb(224, 232, 239))
+            isSelected -> dayPalettes[dayPaletteIndex.coerceIn(dayPalettes.indices)].highlight
             st != null -> st.fillColor
-            else -> Color.WHITE
+            else -> themedColor(Color.WHITE)
         }
-        val strokeColor = when {
-            header -> Color.rgb(174, 187, 198)
-            isSelected -> Color.rgb(17, 125, 72)
-            st?.border == true -> Color.rgb(70, 80, 88)
-            else -> Color.rgb(198, 207, 214)
-        }
+        val palette = dayPalettes[dayPaletteIndex.coerceIn(dayPalettes.indices)]
+        val strokeColor = if (isSelected) palette.primary else palette.gridLine
         val strokeWidth = when {
             isSelected -> 1
             st?.border == true && st.thickBorder -> 2
@@ -1345,7 +1614,10 @@ class MainActivity : Activity() {
         if (appliedCellBackgrounds[view] == signature) return
         view.background = android.graphics.drawable.GradientDrawable().apply {
             setColor(fill)
-            setStroke(if (strokeWidth == 1) 1 else dp(strokeWidth), strokeColor)
+            // Use density-scaled strokes for every grid edge. A raw 1px stroke
+            // is thinner than 1dp on most phones and can land on fractional physical
+            // pixels while scrolling, making adjacent cell borders look broken.
+            setStroke(dp(strokeWidth), strokeColor)
         }
         appliedCellBackgrounds[view] = signature
     }
@@ -1406,9 +1678,13 @@ class MainActivity : Activity() {
             setSelection(text.length)
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
             setHorizontallyScrolling(false)
-            gravity = Gravity.TOP or Gravity.START
+            // Center the complete multiline text block just like a normal grid cell.
+            // This keeps the top and bottom inset equal to the single-line cell inset.
+            gravity = Gravity.CENTER_VERTICAL or Gravity.START
+            includeFontPadding = false
+            setLineSpacing(0f, 0.97f)
             setPadding(dp(3), 0, dp(3), 0)
-            setBackgroundColor(Color.rgb(207, 239, 220))
+            setBackgroundColor(themedColor(Color.rgb(207, 239, 220)))
             imeOptions = (if (text.toString().trimStart().startsWith("=")) android.view.inputmethod.EditorInfo.IME_ACTION_DONE else android.view.inputmethod.EditorInfo.IME_ACTION_NONE) or android.view.inputmethod.EditorInfo.IME_FLAG_NO_EXTRACT_UI
             minHeight = dp(18)
             addTextChangedListener(object : android.text.TextWatcher {
@@ -1424,24 +1700,29 @@ class MainActivity : Activity() {
         editor.addTextChangedListener(object : android.text.TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
-                // Let the editing cell grow as the user adds more lines so the caret
-                // remains visible instead of being clipped by the original row height.
-                val lineCount = editor.lineCount.coerceIn(1, 6)
-                val wantedHeight = dp(if (lineCount == 1) 24 else 24 * lineCount + 4)
+                // Keep the entire row at the height required by its tallest cell.
+                // Include the live editor value, not only the previously saved workbook data.
+                val row = cellAddressRowPattern.matchEntire(address)
+                    ?.groupValues?.get(1)?.toIntOrNull() ?: return
+                val wantedHeight = dp(rowHeightPxForEdit(row, address, editor.text.toString()))
                 val current = editor.layoutParams
                 if (current != null && current.height != wantedHeight) {
                     current.height = wantedHeight
                     editor.layoutParams = current
                 }
                 val rowView = parent
-                if (rowView != null && rowView.layoutParams.height != wantedHeight) {
-                    rowView.layoutParams = rowView.layoutParams.apply { height = wantedHeight }
+                if (rowView != null) {
+                    if (rowView.layoutParams.height != wantedHeight) {
+                        rowView.layoutParams = rowView.layoutParams.apply { height = wantedHeight }
+                    }
+                    rowView.minimumHeight = wantedHeight
                     for (i in 0 until rowView.childCount) {
                         val child = rowView.getChildAt(i)
                         if (child !== editor && child.layoutParams.height != wantedHeight) {
                             child.layoutParams = child.layoutParams.apply { height = wantedHeight }
                         }
                     }
+                    rowView.requestLayout()
                 }
             }
             override fun afterTextChanged(s: android.text.Editable?) {}
@@ -1470,7 +1751,10 @@ class MainActivity : Activity() {
             if (save) {
                 putCell(address, newValue)
                 val row = Regex("^[A-Z]+(\\d+)$").matchEntire(address)?.groupValues?.get(1)?.toIntOrNull()
-                if (row != null && newValue.contains('\n')) wrappedRows.add(row)
+                if (row != null) {
+                    if (newValue.contains('\n')) wrappedRows.add(row) else wrappedRows.remove(row)
+                    cachedExplicitLineCountsByRow = null
+                }
             }
             editingAddress = null
             activeInlineCommit = null
@@ -1503,6 +1787,7 @@ class MainActivity : Activity() {
                     cell.text = gridDisplay(address)
                 } else {
                     refreshEditedCellColumn(address)
+                    refreshRowHeightInPlace(address)
                     scheduleFormulaRecalculation(setOf("$sheetName!$address"))
                 }
             } else {
@@ -1521,6 +1806,7 @@ class MainActivity : Activity() {
                         // the destination editor has been created and requested focus.
                         mainHandler.post {
                                         refreshEditedCellColumn(address)
+                            refreshRowHeightInPlace(address)
                             scheduleFormulaRecalculation(setOf("$sheetName!$address"))
                         }
                     } else {
@@ -1629,6 +1915,64 @@ class MainActivity : Activity() {
      * initial workbook/sheet calculation. After an edit, only that cell and its
      * transitive formula dependents are recalculated; unrelated formulas are skipped.
      */
+    /** Recalculate only when the active sheet has formula cells without a valid cached display. */
+    private fun scheduleFormulaRecalculationIfNeeded() {
+        val activeCells = sheets[sheetName].orEmpty()
+        val needsCalculation = activeCells.any { (address, raw) ->
+            if (!raw.trimStart().startsWith("=")) return@any false
+            val style = styles[sheetName]?.get(address)
+            val key = "$sheetName|$address|$raw|${style?.numberFormat ?: "General"}"
+            !formulaDisplayCache.containsKey(key)
+        }
+        if (needsCalculation) {
+            Log.i("NiceExcel-Formula", "HYPERFORMULA_CACHE_MISS sheet=$sheetName action=calculate")
+            scheduleFormulaRecalculation()
+        } else {
+            Log.i("NiceExcel-Formula", "HYPERFORMULA_CACHE_HIT sheet=$sheetName action=skip")
+        }
+    }
+
+    /** User-triggered refresh: clear this sheet's displayed results and recalculate the workbook. */
+    private fun refreshCurrentSheetGrid() {
+        val keepSheet = sheetName
+        val keepCell = selected
+        cachedExplicitLineCountsByRow = null
+        if (!refreshSheetInPlaceFast()) render()
+        sheetName = keepSheet
+        selected = keepCell
+        cellName.text = keepCell
+        formula.setText(sheets[keepSheet]?.get(keepCell).orEmpty())
+        selectedCellView = cellViews[keepCell]
+        selectedCellView?.let { applyCellBackground(it, keepCell, false) }
+        grid.requestLayout(); grid.invalidate()
+        headerHorizontal.post {
+            val x = bodyHorizontal.scrollX
+            headerHorizontal.scrollTo(x, 0)
+            frozenRowHorizontal.scrollTo(x, 0)
+            bodyHorizontal.requestLayout()
+        }
+        headerHorizontal.requestLayout(); frozenRowHorizontal.requestLayout(); bodyHorizontal.requestLayout()
+        status.text = "Cells grid refreshed • $keepSheet"
+        Toast.makeText(this, "Cells grid refreshed", Toast.LENGTH_SHORT).show()
+    }
+    private fun refreshCurrentSheetFormulas() {
+        val targetSheet = sheetName
+        val formulaCells = sheets[targetSheet].orEmpty().filterValues { it.trimStart().startsWith("=") }
+        if (formulaCells.isEmpty()) {
+            status.text = "No formulas to refresh in $targetSheet"
+            Toast.makeText(this, "No formulas in $targetSheet", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val prefix = "$targetSheet|"
+        formulaDisplayCache.keys.removeAll { it.startsWith(prefix) }
+        val spillPrefix = "$targetSheet!"
+        formulaSpillCache.keys.filter { it.startsWith(spillPrefix) }.forEach { formulaSpillCache.remove(it) }
+        formulaCells.keys.forEach { address -> cellViews[address]?.text = "…" }
+        Log.i("NiceExcel-Formula", "HYPERFORMULA_MANUAL_REFRESH sheet=$targetSheet formulas=${formulaCells.size}")
+        status.text = "Refreshing formulas in $targetSheet…"
+        scheduleFormulaRecalculation()
+    }
+
     private fun scheduleFormulaRecalculation(changedCells: Set<String>? = null) {
         val jobId = formulaRecalcJobId.incrementAndGet()
         val revision = workbookRevision.get()
@@ -1639,92 +1983,99 @@ class MainActivity : Activity() {
             cells.filterValues { it.trimStart().startsWith("=") }.map { (address, raw) -> Triple(name, address, raw) }
         }
         if (allFormulas.isEmpty()) return
-        val formulas = if (changedCells == null) {
-            allFormulas
-        } else {
-            val dependencies = allFormulas.associate { (name, address, raw) ->
-                "$name!$address" to formulaDependencies(name, raw.drop(1), allSheetsSnapshot)
-            }
-            val affected = changedCells.mapTo(linkedSetOf()) { key ->
-                val split = key.lastIndexOf('!')
-                if (split >= 0) "${key.substring(0, split)}!${key.substring(split + 1).uppercase(Locale.US)}"
-                else "$activeSheet!${key.uppercase(Locale.US)}"
-            }
-            var expanded: Boolean
-            do {
-                expanded = false
-                dependencies.forEach { (formulaKey, refs) ->
-                    if (formulaKey !in affected && refs.any { it in affected }) {
-                        affected.add(formulaKey)
-                        expanded = true
-                    }
-                }
-            } while (expanded)
-            allFormulas.filter { (name, address, _) -> "$name!$address" in affected }
-        }
+        // Always recalculate the complete workbook snapshot after a committed edit.
+        // Dependency-only invalidation can miss INDIRECT/OFFSET, named ranges, dynamic
+        // references, and cross-sheet chains; those stale results were showing as FAIL
+        // in formula-status/check columns after users edited an otherwise unrelated cell.
+        // HyperFormula maintains its dependency graph, so requesting all formula cells
+        // does not rebuild the engine when the sheet structure is unchanged.
+        val formulas = allFormulas
+        Log.i(
+            "NiceExcel-Formula",
+            "HYPERFORMULA_RECALC_SCOPE changedCells=${changedCells?.size ?: -1} formulas=${formulas.size} mode=FULL_WORKBOOK"
+        )
         if (formulas.isEmpty()) return
-        // Invalidate only results that will actually be recalculated. Cached values for
-        // unrelated formulas remain visible and are not needlessly refreshed.
-        formulas.forEach { (formulaSheet, address, _) ->
-            val prefix = "$formulaSheet|$address|"
-            formulaDisplayCache.keys.removeAll { it.startsWith(prefix) }
-        }
+
         try {
             backgroundExecutor.execute {
                 val results = linkedMapOf<String, Pair<String, String>>()
-                // Try the isolated LibreOffice Calc process first. Native failures are contained
-                // in that process; the existing POI + Kotlin path remains the safe fallback.
-                val libreOfficeBatchResults = runCatching {
-                    LibreOfficeServiceClient.recalculateSnapshot(this@MainActivity, allSheetsSnapshot)
+                val hyperFormulaCalculation = runCatching {
+                    HyperFormulaServiceClient.recalculateSnapshot(
+                        this@MainActivity, allSheetsSnapshot, formulas
+                    )
                 }.onFailure { failure ->
-                    Log.e("NiceExcel-Formula", "LIBREOFFICE_RUNTIME_FAILURE: Calc service/recalculation failed; POI fallback will be used", failure)
-                }.getOrNull().orEmpty()
-                Log.i("NiceExcel-Formula", "LIBREOFFICE_RUNTIME_RESULT: formulas=${allFormulas.size}, returned=${libreOfficeBatchResults.size}, sampleG2=${libreOfficeBatchResults.entries.firstOrNull { it.key.endsWith("!G2") }?.value ?: "<missing>"}")
-                val allFormulaKeys = allFormulas.map { (name, address, _) ->
-                    "$name!${address.uppercase(Locale.US)}"
-                }.toSet()
-                val libreOfficeComplete = allFormulaKeys.isNotEmpty() &&
-                    allFormulaKeys.all { it in libreOfficeBatchResults }
-                // Keep the established single-pass POI evaluator as fallback only when Calc
-                // is unavailable or returns an incomplete workbook result.
-                val poiBatchResults = if (libreOfficeComplete) emptyMap()
-                    else PoiFormulaBridge.evaluateAll(allSheetsSnapshot)
+                    Log.e("NiceExcel-Formula", "HYPERFORMULA_RUNTIME_FAILURE: no alternate formula engine will be used", failure)
+                }.getOrNull()
+
+                fun canonicalFormulaResultMap(source: Map<String, String>): Map<String, String> {
+                    val normalized = linkedMapOf<String, String>()
+                    source.forEach { (rawKey, value) ->
+                        val separator = rawKey.lastIndexOf('!')
+                        val key = if (separator > 0 && separator < rawKey.lastIndex) {
+                            rawKey.substring(0, separator + 1) +
+                                rawKey.substring(separator + 1).uppercase(Locale.US)
+                        } else rawKey
+                        if (normalized.put(key, value) != null) {
+                            Log.w("NiceExcel-Formula", "HYPERFORMULA_DUPLICATE_NORMALIZED_KEY raw=$rawKey normalized=$key")
+                        }
+                    }
+                    return normalized
+                }
+
+                val rawResults = hyperFormulaCalculation?.formulaResults.orEmpty()
+                val spillResults = canonicalFormulaResultMap(hyperFormulaCalculation?.spillResults.orEmpty())
+                val formulaResults = canonicalFormulaResultMap(rawResults)
+                val requestedKeys = formulas.map { (name, address, _) -> "$name!${address.uppercase(Locale.US)}" }
+                val missingKeys = requestedKeys.filterNot { formulaResults.containsKey(it) }
+                Log.i(
+                    "NiceExcel-Formula",
+                    "HYPERFORMULA_ONLY_RESULT requested=${requestedKeys.size}, returned=${formulaResults.size}, missing=${missingKeys.size}, errors=${requestedKeys.count { formulaResults[it]?.startsWith("#") == true }}"
+                )
+                if (missingKeys.isNotEmpty()) {
+                    Log.e("NiceExcel-Formula", "HYPERFORMULA_ONLY_MISSING cells=${missingKeys.take(40).joinToString(",")}")
+                }
+
                 formulas.forEach { (formulaSheet, address, raw) ->
                     if (jobId != formulaRecalcJobId.get() || isFinishing || isDestroyed) return@forEach
                     val st = stylesSnapshot[formulaSheet]?.get(address)
                     val cacheKey = "$formulaSheet|$address|$raw|${st?.numberFormat ?: "General"}"
-                    val rendered = runCatching {
-                        val expression = raw.drop(1)
-                        val formulaCells = allSheetsSnapshot[formulaSheet].orEmpty()
-                        val localEngine = FormulaEngine(formulaCells)
-                        val preserveReferencedValue = shouldUseLocalReferenceResult(expression, formulaCells)
-                        val localSpecial = if (preserveReferencedValue || Regex("(?i)^(XOR|VLOOKUP|MATCH|NA|INDEX)\\s*\\(").containsMatchIn(expression))
-                            localEngine.evalText(expression)?.takeUnless { it == "#ERROR" } else null
-                        val calcValue = libreOfficeBatchResults["$formulaSheet!${address.uppercase(Locale.US)}"]
-                        if (calcValue != null) {
-                            val calcNumber = calcValue.toDoubleOrNull()
-                            if (calcNumber != null) formatNumber(calcNumber, st?.numberFormat ?: "General", calcValue)
-                            else calcValue
-                        } else if (localSpecial != null) localSpecial else {
-                            val imported = poiBatchResults["$formulaSheet!${address.uppercase(Locale.US)}"]
-                            when {
-                                imported?.error != null -> imported.error
-                                imported?.text != null -> imported.text
-                                imported?.number != null -> formatNumber(imported.number, st?.numberFormat ?: "General", imported.number.toString())
-                                else -> {
-                                    val engine = FormulaEngine(allSheetsSnapshot[formulaSheet].orEmpty())
-                                    val textResult = engine.evalText(raw.drop(1))
-                                    textResult ?: engine.eval(raw.drop(1)).let { value ->
-                                        if (value.isNaN() || value.isInfinite()) "#NUM!" else formatNumber(value, st?.numberFormat ?: "General", value.toString())
-                                    }
-                                }
-                            } ?: "#ERROR"
-                        }
-                    }.getOrElse { error -> error.message?.takeIf { it.startsWith("#") } ?: "#ERROR" }
+                    val formulaKey = "$formulaSheet!${address.uppercase(Locale.US)}"
+                    val hyperFormulaValue = formulaResults[formulaKey]
+                    if (hyperFormulaValue == null) {
+                        // A missing engine response is not an Excel formula error.
+                        // Keep the last successful cached value (if any) instead of
+                        // replacing it with a synthetic #ENGINE! result that can make
+                        // workbook status/check columns report a false failure.
+                        Log.w(
+                            "NiceExcel-Formula",
+                            "HYPERFORMULA_RESULT_MISSING sheet=$formulaSheet cell=$address formula=${raw.take(180)} retainingLastKnownValue=true"
+                        )
+                        return@forEach
+                    }
+                    val number = hyperFormulaValue.toDoubleOrNull()
+                    val rendered = if (number != null) {
+                        formatNumber(number, st?.numberFormat ?: "General", hyperFormulaValue)
+                    } else {
+                        // Genuine HyperFormula values, including Excel errors such as
+                        // #DIV/0! and #VALUE!, must pass through unchanged.
+                        hyperFormulaValue
+                    }
+                    Log.i(
+                        "NiceExcel-Formula",
+                        "FORMULA_VALUE sheet=$formulaSheet cell=$address source=HYPERFORMULA formula=${raw.take(180)} result=${rendered.take(180)}"
+                    )
                     results["$formulaSheet!$address"] = cacheKey to rendered
                 }
+
                 mainHandler.post {
-                    if (isFinishing || isDestroyed || jobId != formulaRecalcJobId.get() || revision != workbookRevision.get()) return@post
+                    if (isFinishing || isDestroyed) return@post
+                    if (jobId != formulaRecalcJobId.get() || revision != workbookRevision.get()) {
+                        Log.i(
+                            "NiceExcel-Formula",
+                            "HYPERFORMULA_STALE_RESULT_IGNORED: job=$jobId currentJob=${formulaRecalcJobId.get()}, revision=$revision currentRevision=${workbookRevision.get()}, sheet=$activeSheet"
+                        )
+                        return@post
+                    }
                     results.forEach { (sheetAddress, result) ->
                         val splitAt = sheetAddress.lastIndexOf('!')
                         if (splitAt <= 0) return@forEach
@@ -1733,15 +2084,46 @@ class MainActivity : Activity() {
                         formulaDisplayCache[result.first] = result.second
                         if (formulaSheet == sheetName) cellViews[address]?.text = result.second
                     }
+                    if (hyperFormulaCalculation != null) {
+                        // Replace spill cache only after a successful engine response.
+                        // A runtime failure must not erase previously calculated FILTER cells.
+                        val oldSpillKeys = formulaSpillCache.keys.toList()
+                        formulaSpillCache.clear()
+                        formulaSpillCache.putAll(spillResults)
+                        (oldSpillKeys + formulaSpillCache.keys).toSet().forEach { spillKey ->
+                            val splitAt = spillKey.lastIndexOf('!')
+                            if (splitAt <= 0) return@forEach
+                            val spillSheet = spillKey.substring(0, splitAt)
+                            val spillAddress = spillKey.substring(splitAt + 1)
+                            if (spillSheet == sheetName && data[spillAddress].isNullOrEmpty()) {
+                                cellViews[spillAddress]?.text = formulaSpillCache[spillKey].orEmpty()
+                            }
+                        }
+                    }
                 }
             }
         } catch (_: RejectedExecutionException) {
-            // Never block typing if the bounded worker queue is full; a later edit can retry.
+            // A later edit or sheet render can retry; never calculate with a second engine.
+        }
+    }
+
+    private fun clearFormulaSpillCache() {
+        val oldKeys = formulaSpillCache.keys.toList()
+        formulaSpillCache.clear()
+        oldKeys.forEach { spillKey ->
+            val splitAt = spillKey.lastIndexOf('!')
+            if (splitAt <= 0) return@forEach
+            val spillSheet = spillKey.substring(0, splitAt)
+            val spillAddress = spillKey.substring(splitAt + 1)
+            if (spillSheet == sheetName && data[spillAddress].isNullOrEmpty()) {
+                cellViews[spillAddress]?.text = ""
+            }
         }
     }
 
     private fun putCell(address:String,value:String) {
         cachedExplicitLineCountsByRow = null
+        clearFormulaSpillCache()
         workbookRevision.incrementAndGet()
         // Do not clear the whole formula cache here. The edit handler immediately
         // schedules dependency-based recalculation, which invalidates only the
@@ -1965,7 +2347,7 @@ class MainActivity : Activity() {
         styles[name]=mutableMapOf()
         mergedRangesBySheet.remove(name)
         wrappedRowsBySheet[name]=mutableSetOf()
-        columnWidthsBySheet[name] = List(colLimit) { c -> max(28, minOf(360, (colName(c).length * 7 + 18))) }
+        columnWidthsBySheet[name] = List(colLimit) { c -> autoFitWidth(colName(c).length) }
         sheetName=name; selected="A1"
         lastColumnWidths = columnWidthsBySheet[name]!!
         val fast = refreshSheetInPlaceFast()
@@ -2442,7 +2824,7 @@ class MainActivity : Activity() {
 
     private fun chooseColor(title: String, apply: (Int) -> Unit) {
         val names = arrayOf("Black", "White", "Red", "Orange", "Yellow", "Green", "Blue", "Purple", "Gray", "Light blue")
-        val colors = intArrayOf(Color.BLACK, Color.WHITE, Color.RED, 0xFFFF9800.toInt(), Color.YELLOW, 0xFF2E7D32.toInt(), Color.BLUE, 0xFF7B1FA2.toInt(), Color.GRAY, 0xFFBBDEFB.toInt())
+        val colors = intArrayOf(Color.BLACK, themedColor(Color.WHITE), Color.RED, 0xFFFF9800.toInt(), Color.YELLOW, 0xFF2E7D32.toInt(), Color.BLUE, 0xFF7B1FA2.toInt(), Color.GRAY, 0xFFBBDEFB.toInt())
         AlertDialog.Builder(this).setTitle(title).setItems(names) { _, which -> apply(colors[which]); status.text = "$title applied" }.showProfessional()
     }
 
@@ -2494,7 +2876,7 @@ class MainActivity : Activity() {
                     val lastCol = usedRange().second
                     for (c in 0..lastCol) {
                         val a = "${colName(c)}$row"; affected.add(a); val st = styleFor(a)
-                        st.bold = true; st.fillColor = 0xFF1B5E20.toInt(); st.textColor = Color.WHITE; st.border = true
+                        st.bold = true; st.fillColor = 0xFF1B5E20.toInt(); st.textColor = themedColor(Color.WHITE); st.border = true
                     }
                     status.text = "Row $row formatted as table heading"
                 }
@@ -2502,7 +2884,7 @@ class MainActivity : Activity() {
                     val lastCol = usedRange().second
                     for (c in 0..lastCol) {
                         val a = "${colName(c)}$row"; affected.add(a); val st = styleFor(a)
-                        st.fillColor = if (c % 2 == 0) 0xFFE8F5E9.toInt() else Color.WHITE; st.border = true
+                        st.fillColor = if (c % 2 == 0) 0xFFE8F5E9.toInt() else themedColor(Color.WHITE); st.border = true
                     }
                 }
                 2 -> {
@@ -2530,8 +2912,8 @@ class MainActivity : Activity() {
                         affected.add(address)
                         val st = sheetStyles[address] ?: continue
                         st.bold = false
-                        st.fillColor = Color.WHITE
-                        st.textColor = Color.rgb(24, 32, 39)
+                        st.fillColor = themedColor(Color.WHITE)
+                        st.textColor = themedColor(Color.rgb(24, 32, 39))
                         st.border = false
                         st.thickBorder = false
                         st.alignment = Gravity.CENTER_VERTICAL or Gravity.START
@@ -2592,13 +2974,13 @@ class MainActivity : Activity() {
             addView(TextView(this@MainActivity).apply {
                 text = "Filter column (use the column containing your data, e.g. D for City):"
                 textSize = 13f
-                setTextColor(Color.rgb(45, 65, 54))
+                setTextColor(themedColor(Color.rgb(45, 65, 54)))
             })
             addView(columnInput, LinearLayout.LayoutParams(-1, -2))
             addView(TextView(this@MainActivity).apply {
                 text = "Show rows where the selected column contains:"
                 textSize = 13f
-                setTextColor(Color.rgb(45, 65, 54))
+                setTextColor(themedColor(Color.rgb(45, 65, 54)))
                 setPadding(0, dp(10), 0, 0)
             })
             addView(queryInput, LinearLayout.LayoutParams(-1, -2))
@@ -2748,7 +3130,11 @@ class MainActivity : Activity() {
      * lightweight placeholder is shown. Literal values remain immediately visible.
      */
     private fun displayForGrid(address: String): String {
-        val raw = data[address] ?: return ""
+        val raw = data[address]
+        if (raw.isNullOrEmpty()) {
+            formulaSpillCache["$sheetName!$address"]?.let { return it }
+        }
+        if (raw == null) return ""
         val st = sheetStyles[address]
         if (!raw.trimStart().startsWith("=")) {
             val number = raw.toDoubleOrNull()
@@ -2759,49 +3145,16 @@ class MainActivity : Activity() {
     }
 
     private fun display(address:String):String {
-        val raw=data[address] ?: return ""
+        val raw = data[address] ?: return ""
         val st = sheetStyles[address]
         if (!raw.startsWith("=")) {
-            val n = raw.toDoubleOrNull()
-            return if (n != null && st != null) formatNumber(n, st.numberFormat, raw) else raw
+            val number = raw.toDoubleOrNull()
+            return if (number != null && st != null) formatNumber(number, st.numberFormat, raw) else raw
         }
         val cacheKey = "$sheetName|$address|$raw|${st?.numberFormat ?: "General"}"
-        formulaDisplayCache[cacheKey]?.let { return it }
-        val result = try {
-            val expression = raw.drop(1)
-            // Keep local text/error semantics for XOR and VLOOKUP. POI may coerce
-            // Boolean/error results to numeric zero in this workbook bridge.
-            val localEngine = FormulaEngine(data)
-            // Only bypass POI for a direct reference when its source is a Boolean/error
-            // literal or a formula whose result needs local Boolean/error preservation.
-            // Numeric and ordinary text formulas must keep the established POI-first path.
-            val preserveReferencedValue = shouldUseLocalReferenceResult(expression, data)
-            val localSpecial = if (preserveReferencedValue || Regex("(?i)^(XOR|VLOOKUP|MATCH|NA|INDEX)\\s*\\(").containsMatchIn(expression))
-                localEngine.evalText(expression)?.takeUnless { it == "#ERROR" } else null
-            if (localSpecial != null) {
-                formulaDisplayCache[cacheKey] = localSpecial
-                return localSpecial
-            }
-            // Preserve an Excel error returned by POI; do not replace it with the
-            // local evaluator's generic #ERROR fallback.
-            val imported = PoiFormulaBridge.evaluate(sheets, sheetName, address, expression)
-            when {
-                imported?.error != null -> imported.error
-                imported?.text != null -> imported.text
-                imported?.number != null -> formatNumber(imported.number, st?.numberFormat ?: "General", imported.number.toString())
-                else -> runCatching {
-                    val engine=FormulaEngine(data)
-                    val textResult = engine.evalText(expression)
-                    if (textResult != null) textResult
-                    else {
-                        val value=engine.eval(expression)
-                        if(value.isNaN()||value.isInfinite()) "#NUM!" else formatNumber(value, st?.numberFormat ?: "General", value.toString())
-                    }
-                }.getOrElse { error -> error.message?.takeIf { it.startsWith("#") } ?: "#ERROR" }
-            } ?: "#ERROR"
-        } catch(error:Exception) { error.message?.takeIf { it.startsWith("#") } ?: "#ERROR" }
-        formulaDisplayCache[cacheKey] = result
-        return result
+        // Formula cells are evaluated only by HyperFormula's isolated runtime.
+        // Never synchronously invoke POI or the legacy local FormulaEngine here.
+        return formulaDisplayCache[cacheKey] ?: "…"
     }
     private fun formatNumber(value: Double, format: String, fallback: String): String = when (format) {
         "Number (2 decimals)" -> String.format(Locale.US, "%.2f", value)
@@ -2817,13 +3170,27 @@ class MainActivity : Activity() {
     }
     private fun dp(n:Int)=(n*resources.displayMetrics.density).toInt()
 
+    /** Reset the three synchronized worksheet strips after loading a new workbook.
+     * The selected address is reset to A1, so retaining an old horizontal offset can
+     * show Q:Z while the name box says A1/C1 and looks like phantom extra columns.
+     */
+    private fun resetWorksheetHorizontalScroll() {
+        if (!::headerHorizontal.isInitialized || !::frozenRowHorizontal.isInitialized || !::bodyHorizontal.isInitialized) return
+        headerHorizontal.post {
+            headerHorizontal.scrollTo(0, 0)
+            frozenRowHorizontal.scrollTo(0, 0)
+            bodyHorizontal.scrollTo(0, 0)
+        }
+    }
+
     private fun openMenu() {
         AlertDialog.Builder(this).setTitle("Open workbook")
             .setItems(arrayOf("Excel workbook (.xlsx)", "CSV file (.csv)")) { _, which ->
                 val i = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
                     addCategory(Intent.CATEGORY_OPENABLE)
-                    type = if (which == 0) "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" else "text/*"
-                    putExtra(Intent.EXTRA_MIME_TYPES, if (which == 0) arrayOf("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/octet-stream", "application/zip") else arrayOf("text/csv", "text/plain", "application/octet-stream"))
+                    // CSV providers may label files as text/csv, application/csv or octet-stream.
+                    type = if (which == 0) "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" else "*/*"
+                    putExtra(Intent.EXTRA_MIME_TYPES, if (which == 0) arrayOf("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/octet-stream", "application/zip") else arrayOf("text/csv", "text/comma-separated-values", "application/csv", "text/plain", "application/octet-stream"))
                 }
                 startActivityForResult(i, if (which == 0) 14 else 12)
             }.setNegativeButton("Cancel", null).showProfessional()
@@ -2832,6 +3199,7 @@ class MainActivity : Activity() {
         AlertDialog.Builder(this).setTitle("Save workbook")
             .setItems(arrayOf("Excel workbook (.xlsx)", "CSV file (.csv)")) { _, which ->
                 val xlsx = which == 0
+                if (!xlsx) pendingCsv = buildCsvContent()
                 val i = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
                     addCategory(Intent.CATEGORY_OPENABLE)
                     type = if (xlsx) "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" else "text/csv"
@@ -2841,9 +3209,8 @@ class MainActivity : Activity() {
             }.setNegativeButton("Cancel", null).showProfessional()
     }
     /**
-     * Save a stable workbook snapshot off the UI thread. LibreOfficeKit is disabled
-     * until its native Android runtime is proven stable; the OOXML writer preserves
-     * formulas and requests recalculation when opened in a spreadsheet application.
+     * Save a stable workbook snapshot off the UI thread. The OOXML writer preserves
+     * formula expressions; calculated display values are maintained by HyperFormula.
      */
     private fun saveXlsxWithCalc(uri: android.net.Uri) {
         val sheetSnapshot = sheets.mapValues { (_, cells) -> cells.toMap() }
@@ -2856,29 +3223,18 @@ class MainActivity : Activity() {
         try {
             backgroundExecutor.execute {
                 val sourceFile = java.io.File.createTempFile("niceexcel-save-", ".xlsx", cacheDir)
-                val calculatedFile = java.io.File.createTempFile("niceexcel-calc-", ".xlsx", cacheDir)
-                calculatedFile.delete()
-                var usedLibreOffice = false
                 try {
                     java.io.FileOutputStream(sourceFile).use { output ->
                         XlsxCodec.write(output, sheetSnapshot, styleSnapshot, metadataSnapshot, mergeSnapshot)
                     }
-                    // Do not initialize the LibreOffice native engine while saving.
-                    // XlsxCodec keeps the original formula expressions in the workbook.
-                    val finalFile = sourceFile
-
                     val destination = contentResolver.openOutputStream(uri)
                         ?: error("Could not open the selected save destination")
                     destination.use { output ->
-                        finalFile.inputStream().use { input -> input.copyTo(output) }
+                        sourceFile.inputStream().use { input -> input.copyTo(output) }
                     }
                     mainHandler.post {
                         if (!isFinishing && !isDestroyed) {
-                            status.text = if (usedLibreOffice) {
-                                "Excel workbook saved • LibreOffice Calc recalculated formulas"
-                            } else {
-                                "Excel workbook saved • formulas recalculate when opened in Excel"
-                            }
+                            status.text = "Excel workbook saved • formulas preserved"
                         }
                     }
                 } catch (error: Exception) {
@@ -2889,7 +3245,6 @@ class MainActivity : Activity() {
                     }
                 } finally {
                     sourceFile.delete()
-                    calculatedFile.delete()
                 }
             }
         } catch (error: RejectedExecutionException) {
@@ -2897,15 +3252,25 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun saveCsv() {
-        pendingCsv=(1..rowCount).joinToString("\n") { r ->
-            (0 until colLimit).joinToString(",") { c ->
-                val raw=data["${colName(c)}$r"].orEmpty().replace("\"","\"\"")
-                if(raw.contains(",")||raw.contains("\"")||raw.contains("\n")) "\"$raw\"" else raw
+    private fun buildCsvContent(): String {
+        // Snapshot the active worksheet before the Android save picker opens.
+        return (1..rowCount).joinToString("\r\n") { r ->
+            (0 until colLimit).joinToString(",") { col ->
+                val raw = data["${colName(col)}$r"].orEmpty()
+                val escaped = raw.replace("\"", "\"\"")
+                if (raw.contains(",") || raw.contains("\"") || raw.contains("\n") || raw.contains("\r")) "\"$escaped\"" else escaped
             }
         }
-        val i=Intent(Intent.ACTION_CREATE_DOCUMENT).apply { addCategory(Intent.CATEGORY_OPENABLE); type="text/csv"; putExtra(Intent.EXTRA_TITLE,"${sheetName}.csv") }
-        startActivityForResult(i,11)
+    }
+
+    private fun saveCsv() {
+        pendingCsv = buildCsvContent()
+        val i = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "text/csv"
+            putExtra(Intent.EXTRA_TITLE, "${sheetName}.csv")
+        }
+        startActivityForResult(i, 11)
     }
     @Deprecated("Deprecated")
     override fun onActivityResult(requestCode:Int,resultCode:Int,intent:Intent?) {
@@ -2913,18 +3278,61 @@ class MainActivity : Activity() {
         if(resultCode!=RESULT_OK||intent?.data==null) return
         try {
             if(requestCode==11) {
-                contentResolver.openOutputStream(intent.data!!)?.use { it.write(pendingCsv.toByteArray(Charsets.UTF_8)) }
-                status.text="CSV saved"
+                val destination = contentResolver.openOutputStream(intent.data!!, "wt")
+                    ?: error("Could not open the selected CSV save destination")
+                destination.use { output ->
+                    // UTF-8 BOM helps Excel display non-English text correctly.
+                    output.write(byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte()))
+                    output.write(pendingCsv.toByteArray(Charsets.UTF_8))
+                    output.flush()
+                }
+                status.text = "CSV saved • $sheetName.csv"
             } else if(requestCode==13) {
                 saveXlsxWithCalc(intent.data!!)
             } else if(requestCode==12) {
-                val text=contentResolver.openInputStream(intent.data!!)?.bufferedReader()?.use { it.readText() }.orEmpty()
-                data.clear(); sheetStyles.clear(); formulaDisplayCache.clear()
-                rowCount = max(50, text.lines().size)
-                text.lines().take(rowCount).forEachIndexed { r,line ->
-                    parseCsv(line).take(colLimit).forEachIndexed { c,v -> if(v.isNotEmpty()) data["${colName(c)}${r+1}"]=v }
+                val csvText = contentResolver.openInputStream(intent.data!!)?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
+                    ?: error("Could not read the selected CSV file")
+                // CSV is a separate document, not another sheet inside the previously open
+                // Excel workbook. Replace the old workbook state so stale Excel tabs/data
+                // cannot remain visible after importing a CSV.
+                val parsedRows = parseCsvDocument(csvText.removePrefix("\uFEFF"))
+                val displayName = contentResolver.query(intent.data!!, null, null, null, null)?.use { cursor ->
+                    val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                    if (nameIndex >= 0 && cursor.moveToFirst()) cursor.getString(nameIndex) else null
+                } ?: "Imported.csv"
+                val importedSheetName = displayName.substringBeforeLast('.', displayName)
+                    .ifBlank { "Imported" }.take(31)
+                sheets.clear()
+                styles.clear()
+                mergedRangesBySheet.clear()
+                undoHistory.clear()
+                redoHistory.clear()
+                formulaDisplayCache.clear()
+                clearFormulaSpillCache()
+                columnWidthsBySheet.clear()
+                wrappedRowsBySheet.clear()
+                sheetName = importedSheetName
+                selected = "A1"
+                val importedCells = mutableMapOf<String, String>()
+                parsedRows.take(10000).forEachIndexed { r, values ->
+                    values.take(colLimit).forEachIndexed { c, value ->
+                        if (value.isNotEmpty()) importedCells["${colName(c)}${r + 1}"] = value
+                    }
                 }
-                select("A1"); status.text="CSV opened"
+                sheets[sheetName] = importedCells
+                styles[sheetName] = mutableMapOf()
+                rowCount = max(50, parsedRows.size.coerceAtMost(10000))
+                cachedExplicitLineCountsByRow = null
+                selectedRangeCells = emptyList()
+                selectedRangeLabel = null
+                filterColumn = null
+                filterText = null
+                tableHeaderRow = null
+                render()
+                cellName.text = selected
+                formula.setText(data[selected].orEmpty())
+                resetWorksheetHorizontalScroll()
+                status.text = "CSV opened • $displayName"
             } else if(requestCode==14) {
                 val loaded = contentResolver.openInputStream(intent.data!!)?.use { XlsxCodec.read(it) } ?: error("Could not open workbook")
                 sheets.clear(); sheets.putAll(loaded.sheets)
@@ -2938,11 +3346,45 @@ class MainActivity : Activity() {
                 rowCount = max(50, max(lastCellRow, lastMergeRow))
                 loaded.sheets.keys.forEach { styles.getOrPut(it) { mutableMapOf() } }
                 if (sheets.isEmpty()) { sheets["Sheet1"] = mutableMapOf(); styles["Sheet1"] = mutableMapOf() }
-                sheetName = sheets.keys.first(); selected = "A1"; render(); cellName.text=selected; formula.setText(data[selected].orEmpty())
+                sheetName = sheets.keys.first(); selected = "A1"; render(); cellName.text=selected; formula.setText(data[selected].orEmpty()); resetWorksheetHorizontalScroll()
                 status.text="Excel workbook opened • ${sheets.size} sheet(s)"
             }
         } catch(e:Exception) { status.text="File error: ${e.message ?: "unknown"}" }
     }
+    /** Parse a complete CSV document, including quoted commas and embedded newlines. */
+    private fun parseCsvDocument(source: String): List<List<String>> {
+        val rows = mutableListOf<List<String>>()
+        var row = mutableListOf<String>()
+        val cell = StringBuilder()
+        var quoted = false
+        var i = 0
+        while (i < source.length) {
+            val ch = source[i]
+            when {
+                ch == '"' && quoted && i + 1 < source.length && source[i + 1] == '"' -> {
+                    cell.append('"'); i++
+                }
+                ch == '"' -> quoted = !quoted
+                (ch == ',' || ch == '\n' || ch == '\r') && !quoted -> {
+                    row.add(cell.toString()); cell.setLength(0)
+                    if (ch == ',') {
+                        // Continue the current row.
+                    } else {
+                        if (ch == '\r' && i + 1 < source.length && source[i + 1] == '\n') i++
+                        rows.add(row); row = mutableListOf()
+                    }
+                }
+                else -> cell.append(ch)
+            }
+            i++
+        }
+        if (cell.isNotEmpty() || row.isNotEmpty() || source.isEmpty() || (!source.endsWith("\\n") && !source.endsWith("\\r"))) {
+            row.add(cell.toString())
+            rows.add(row)
+        }
+        return rows
+    }
+
     private fun parseCsv(line:String):List<String> {
         val out=mutableListOf<String>(); val cur=StringBuilder(); var quoted=false; var i=0
         while(i<line.length) {

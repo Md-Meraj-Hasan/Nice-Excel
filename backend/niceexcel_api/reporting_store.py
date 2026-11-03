@@ -12,7 +12,7 @@ META_CHUNK_SIZE = 30000  # below Excel's 32,767-character cell limit
 
 
 def visible_sheetnames(wb: Workbook) -> list[str]:
-    return [name for name in wb.sheetnames if name != META_SHEET_NAME]
+    return [name for name in wb.sheetnames if name not in {META_SHEET_NAME, "_NiceExcelCF"}]
 
 
 def get_reporting_metadata(wb: Workbook) -> dict[str, Any]:

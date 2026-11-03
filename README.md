@@ -22,7 +22,20 @@ ZIP integrity is checked. Android Gradle compilation and on-device testing have 
 - No new runtime dependency added.
 
 ## Spreadsheet engine investigation
-LibreOfficeKit is being evaluated as a possible future calculation/rendering engine. It is not bundled in this version: the official Android implementation requires native LibreOffice libraries, JNI integration, threaded rendering/input handling, and significant build/packaging work. This needs a separate proof-of-concept before replacing the current engine.
+HyperFormula 3.5.0 is the primary formula calculation engine for the native Android grid. It is distributed under GPL-3.0-only and configured with the required `licenseKey: 'gpl-v3'`. The Android app runs the bundled JavaScript engine offline in a dedicated `:hyperformula` process so formula calculation does not block the native grid's UI process.
+
+The native grid retains its existing bounded background worker pool, formula-result cache, dependency-based recalculation selection, workbook revision checks, and main-thread-only view updates. Apache POI remains a guarded fallback if the isolated HyperFormula runtime cannot return a requested result.
+
+### HyperFormula development and build
+- Install the pinned npm dependencies: `npm install`.
+- Run formula smoke tests: `npm run test:hyperformula`.
+- Build the offline WebView bundle: `npm run build:hyperformula`.
+- Then build the Android APK with Gradle.
+- GitHub Actions runs the formula tests and generates the bundle before Android unit tests and APK assembly.
+- The APK does not load HyperFormula from a CDN and does not require internet access for formula calculations.
+- The project is licensed under GPL-3.0-only; see `LICENSE` and `THIRD_PARTY_NOTICES.md`.
+
+HyperFormula coverage is broad but is not identical to every Microsoft Excel version or feature. The native grid also renders non-anchor cells from HyperFormula array-formula ranges (including tested FILTER results). HyperFormula does not implement modern Excel dynamic-array behavior; array output dimensions have engine-specific constraints and must be tested with representative workbooks. Formula support must be verified with the included tests and representative real workbooks.
 
 
 ## v1.0.0 — text formula coverage

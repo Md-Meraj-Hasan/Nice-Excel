@@ -1,0 +1,5 @@
+node_modules/
+app/src/main/assets/hyperformula.bundle.js
+.gradle/
+**/build/
+local.properties
