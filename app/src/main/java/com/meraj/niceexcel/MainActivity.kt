@@ -619,6 +619,7 @@ DayPalette("Black", Color.rgb(25,25,25), Color.rgb(238,238,238), Color.rgb(20,20
                 "Data Validation…" to { dataValidationMenu() },
                 "Data Cleaning…" to { dataCleaningMenu() },
                 "Filter by Cell Colour" to { filterByCellColour() },
+                "Clear Advanced Filters" to { clearAdvancedFilters() },
                 "Pivot Summary…" to { pivotSummaryMenu(false) },
                 "Dashboard Builder…" to { pivotSummaryMenu(true) }
             )
@@ -644,7 +645,7 @@ DayPalette("Black", Color.rgb(25,25,25), Color.rgb(238,238,238), Color.rgb(20,20
             "Format cells…" to "Cells", "Range formatting…" to "Range", "Font size…" to "Size", "Text alignment…" to "Align",
             "Number format…" to "Number", "Selected row: Single / Double line…" to "↵ Wrap", "Table styles…" to "Styles",
             "Sort column A → Z" to "Sort A→Z", "Filter column…" to "Filter", "Clear filter" to "Clear filter", "Find / Replace…" to "Find",
-            "Workbook data range info" to "Range info", "Open Full Advanced Tools (Web)" to "Full Tools", "Conditional Formatting…" to "Conditional", "Data Validation…" to "Validation", "Data Cleaning…" to "Clean Data", "Filter by Cell Colour" to "Filter Colour", "Pivot Summary…" to "Pivot", "Dashboard Builder…" to "Dashboard", "Insert function…" to "ƒx Insert", "Formula help" to "ƒx Help",
+            "Workbook data range info" to "Range info", "Open Full Advanced Tools (Web)" to "Full Tools", "Conditional Formatting…" to "Conditional", "Data Validation…" to "Validation", "Data Cleaning…" to "Clean Data", "Filter by Cell Colour" to "Filter Colour", "Clear Advanced Filters" to "Clear Filters", "Pivot Summary…" to "Pivot", "Dashboard Builder…" to "Dashboard", "Insert function…" to "ƒx Insert", "Formula help" to "ƒx Help",
             "Workbook info" to "Info", "Refresh current sheet formulas" to "↻ Refresh"
         )
         items.forEach { item ->
@@ -2980,8 +2981,9 @@ DayPalette("Black", Color.rgb(25,25,25), Color.rgb(238,238,238), Color.rgb(20,20
         val options = arrayOf("Greater than", "Less than", "Equal to", "Text contains", "Duplicate values", "Blank cells")
         AlertDialog.Builder(this).setTitle("Conditional Formatting").setMessage("Highlight matching cells in the entered range.")
             .setItems(options) { _, which ->
-                val range = rangeInput.text.toString().trim().uppercase(Locale.ROOT)
-                val cells = parseCellRange(range)
+                val rawRange = rangeInput.text.toString().trim().uppercase(Locale.ROOT)
+                val range = if (Regex("^[A-Z]{1,3}[0-9]+$").matches(rawRange)) "$rawRange:$rawRange" else rawRange
+                val cells = parseCellRange(rawRange)
                 if (cells.isEmpty()) { status.text = "Enter a valid range such as A1:D20"; return@setItems }
                 if (which >= 4) {
                     val rule = ConditionalFormatRule(type = if (which == 4) "duplicateValues" else "blanks", range = range)
@@ -3067,6 +3069,17 @@ DayPalette("Black", Color.rgb(25,25,25), Color.rgb(238,238,238), Color.rgb(20,20
                 else -> { var removed = 0; rows.drop(1).forEach { row -> val rowCells = columns.map { it + row }; if (rowCells.all { data[it].orEmpty().isBlank() }) { rowCells.forEach { data.remove(it) }; removed++ } }; workbookRevision.incrementAndGet(); render(); status.text = "Cleared " + removed + " blank row(s)" }
             }
         }.setNegativeButton("Cancel", null).showProfessional()
+    }
+
+    private fun clearAdvancedFilters() {
+        filterColumn = null
+        filterText = null
+        for (i in 0 until grid.childCount) {
+            val rowView = grid.getChildAt(i) as? LinearLayout ?: continue
+            rowView.visibility = android.view.View.VISIBLE
+        }
+        refreshFilterVisibility()
+        status.text = "Advanced filters cleared"
     }
 
     private fun filterByCellColour() {
