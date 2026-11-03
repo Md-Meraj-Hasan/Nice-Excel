@@ -39,6 +39,7 @@ class _FlaskApp(Flask):
     version = "0.1.0"
     def get(self, path): return self._route(path, ["GET"])
     def post(self, path): return self._route(path, ["POST"])
+    def put(self, path): return self._route(path, ["PUT"])
     def patch(self, path): return self._route(path, ["PATCH"])
     def delete(self, path): return self._route(path, ["DELETE"])
     def _route(self, path, methods):
