@@ -143,8 +143,8 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         nightTheme = getPreferences(MODE_PRIVATE).getBoolean("night_theme", false)
-        window.statusBarColor = themedColor(Color.rgb(17, 94, 57))
-        window.navigationBarColor = themedColor(Color.rgb(20, 30, 40))
+        window.statusBarColor = themedColor(themedColor(Color.rgb(17, 94, 57)))
+        window.navigationBarColor = themedColor(themedColor(Color.rgb(20, 30, 40)))
         sheets["Sheet1"] = mutableMapOf(
             "A1" to "Item", "B1" to "Qty", "C1" to "Price", "D1" to "Total",
             "A2" to "Notebook", "B2" to "3", "C2" to "12.5", "D2" to "=B2*C2",
@@ -164,17 +164,17 @@ class MainActivity : Activity() {
     }
 
     private fun buildUi() {
-        val root = LinearLayout(this).apply { orientation=LinearLayout.VERTICAL; setBackgroundColor(Color.rgb(245,247,249)) }
+        val root = LinearLayout(this).apply { orientation=LinearLayout.VERTICAL; setBackgroundColor(themedColor(Color.rgb(245,247,249))) }
         // Compact spreadsheet-style menu bar replaces the large app title.
         val menuScroll = HorizontalScrollView(this).apply {
             isHorizontalScrollBarEnabled = false
-            setBackgroundColor(Color.rgb(17, 94, 57))
+            setBackgroundColor(themedColor(Color.rgb(17, 94, 57)))
         }
         val toolbar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(6), dp(5), dp(6), dp(5))
-            setBackgroundColor(Color.rgb(17, 94, 57))
+            setBackgroundColor(themedColor(Color.rgb(17, 94, 57)))
         }
         listOf("File", "Home", "Insert", "Format", "Data", "Formula", "View").forEach { label ->
             val button = tool(label) { showTopMenu(label) }.apply {
@@ -182,11 +182,11 @@ class MainActivity : Activity() {
                 minHeight = dp(34)
                 setPadding(dp(12), dp(8), dp(12), dp(8))
                 background = roundedToolbarBackground(
-                    if (label == activeTopSection) Color.rgb(209, 250, 229) else Color.rgb(17, 94, 57),
-                    if (label == activeTopSection) Color.rgb(209, 250, 229) else Color.rgb(17, 94, 57),
+                    if (label == activeTopSection) themedColor(Color.rgb(209, 250, 229)) else themedColor(Color.rgb(17, 94, 57)),
+                    if (label == activeTopSection) themedColor(Color.rgb(209, 250, 229)) else themedColor(Color.rgb(17, 94, 57)),
                     10
                 )
-                setTextColor(if (label == activeTopSection) Color.rgb(6, 78, 59) else Color.WHITE)
+                setTextColor(if (label == activeTopSection) themedColor(Color.rgb(6, 78, 59)) else themedColor(Color.WHITE))
                 if (label == activeTopSection) typeface = Typeface.DEFAULT_BOLD
                 else typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
                 setOnClickListener {
@@ -200,9 +200,9 @@ class MainActivity : Activity() {
                         for (i in 0 until toolbar.childCount) {
                             val tab = toolbar.getChildAt(i) as? TextView ?: continue
                             val active = tab.text.toString() == activeTopSection
-                            val tabColor = if (active) Color.rgb(209, 250, 229) else Color.rgb(17, 94, 57)
+                            val tabColor = if (active) themedColor(Color.rgb(209, 250, 229)) else themedColor(Color.rgb(17, 94, 57))
                             tab.background = roundedToolbarBackground(tabColor, tabColor, 10)
-                            tab.setTextColor(if (active) Color.rgb(6, 78, 59) else Color.WHITE)
+                            tab.setTextColor(if (active) themedColor(Color.rgb(6, 78, 59)) else themedColor(Color.WHITE))
                             tab.typeface = if (active) Typeface.DEFAULT_BOLD else Typeface.create("sans-serif-medium", Typeface.NORMAL)
                         }
                         showTopMenu(label)
@@ -222,7 +222,7 @@ class MainActivity : Activity() {
         val toolScroll = HorizontalScrollView(this).apply {
             isHorizontalScrollBarEnabled = false
             setFillViewport(false)
-            setBackgroundColor(Color.rgb(232, 240, 235))
+            setBackgroundColor(themedColor(Color.rgb(232, 240, 235)))
             clipToPadding = false
             overScrollMode = android.view.View.OVER_SCROLL_IF_CONTENT_SCROLLS
         }
@@ -230,18 +230,18 @@ class MainActivity : Activity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(7), dp(4), dp(7), dp(4))
-            setBackgroundColor(Color.rgb(232, 240, 235))
+            setBackgroundColor(themedColor(Color.rgb(232, 240, 235)))
         }
         toolScroll.addView(ribbonTools, android.widget.FrameLayout.LayoutParams(-2, dp(42)))
         root.addView(toolScroll, LinearLayout.LayoutParams(-1, dp(44)))
         toolScroll.visibility = android.view.View.GONE
 
-        val formulaBar=LinearLayout(this).apply { orientation=LinearLayout.HORIZONTAL; gravity=Gravity.CENTER_VERTICAL; setPadding(dp(6),dp(4),dp(6),dp(4)); setBackgroundColor(Color.rgb(255,255,255)) }
-        cellName=TextView(this).apply { text=selected; textSize=14f; typeface=Typeface.DEFAULT_BOLD; gravity=Gravity.CENTER; setTextColor(Color.rgb(17,94,57)); setPadding(dp(10),dp(11),dp(10),dp(11)); setBackgroundColor(Color.rgb(225,242,232)) }
+        val formulaBar=LinearLayout(this).apply { orientation=LinearLayout.HORIZONTAL; gravity=Gravity.CENTER_VERTICAL; setPadding(dp(6),dp(4),dp(6),dp(4)); setBackgroundColor(themedColor(Color.rgb(255,255,255))) }
+        cellName=TextView(this).apply { text=selected; textSize=14f; typeface=Typeface.DEFAULT_BOLD; gravity=Gravity.CENTER; setTextColor(themedColor(Color.rgb(17,94,57))); setPadding(dp(10),dp(11),dp(10),dp(11)); setBackgroundColor(themedColor(Color.rgb(225,242,232))) }
         formulaBar.addView(cellName)
-        formula=EditText(this).apply { setSingleLine(true); textSize=14f; hint="Enter value or formula"; inputType=InputType.TYPE_CLASS_TEXT; setPadding(dp(8),dp(3),dp(8),dp(3)); setBackgroundColor(Color.WHITE); setText(data[selected].orEmpty()); setOnEditorActionListener { _,_,_ -> applyFormula(); true } }
+        formula=EditText(this).apply { setSingleLine(true); textSize=14f; hint="Enter value or formula"; inputType=InputType.TYPE_CLASS_TEXT; setPadding(dp(8),dp(3),dp(8),dp(3)); setBackgroundColor(themedColor(Color.WHITE)); setText(data[selected].orEmpty()); setOnEditorActionListener { _,_,_ -> applyFormula(); true } }
         formulaBar.addView(formula,LinearLayout.LayoutParams(0,-2,1f))
-        formulaBar.addView(TextView(this).apply { text="ƒx ▾"; textSize=12f; setTextColor(Color.rgb(17,94,57)); setPadding(dp(7),dp(10),dp(7),dp(10)); setOnClickListener { formulaPickerMenu() } })
+        formulaBar.addView(TextView(this).apply { text="ƒx ▾"; textSize=12f; setTextColor(themedColor(Color.rgb(17,94,57))); setPadding(dp(7),dp(10),dp(7),dp(10)); setOnClickListener { formulaPickerMenu() } })
         root.addView(formulaBar)
 
         // Keep the column letters and worksheet row 1 outside the vertical scroller.
@@ -300,18 +300,18 @@ class MainActivity : Activity() {
             isHorizontalScrollBarEnabled = true
             isFillViewport = false
             overScrollMode = android.view.View.OVER_SCROLL_IF_CONTENT_SCROLLS
-            setBackgroundColor(Color.rgb(231,237,233))
+            setBackgroundColor(themedColor(Color.rgb(231,237,233)))
         }
         sheetTabs=LinearLayout(this).apply {
             orientation=LinearLayout.HORIZONTAL
             gravity=Gravity.CENTER_VERTICAL
             setPadding(dp(6),dp(5),dp(6),dp(5))
-            setBackgroundColor(Color.rgb(231,237,233))
+            setBackgroundColor(themedColor(Color.rgb(231,237,233)))
             layoutParams = FrameLayout.LayoutParams(-2, -2)
         }
         sheetTabsScroll.addView(sheetTabs)
         root.addView(sheetTabsScroll, LinearLayout.LayoutParams(-1, -2))
-        status=TextView(this).apply { text="Ready • Offline workbook"; textSize=12f; setTextColor(Color.WHITE); setPadding(dp(10),dp(7),dp(10),dp(7)); setBackgroundColor(Color.rgb(20,30,40)) }
+        status=TextView(this).apply { text="Ready • Offline workbook"; textSize=12f; setTextColor(themedColor(Color.WHITE)); setPadding(dp(10),dp(7),dp(10),dp(7)); setBackgroundColor(themedColor(Color.rgb(20,30,40))) }
         root.addView(status)
         setContentView(root)
         // Save inline edits when the keyboard is dismissed (including Android navigation Back).
@@ -355,14 +355,14 @@ class MainActivity : Activity() {
     private fun AlertDialog.Builder.showProfessional(): AlertDialog {
         val dialog = create()
         dialog.setOnShowListener {
-            val deepGreen = Color.rgb(21, 93, 66)
-            val paleGreen = Color.rgb(227, 244, 234)
-            val ink = Color.rgb(31, 45, 38)
+            val deepGreen = themedColor(Color.rgb(21, 93, 66))
+            val paleGreen = themedColor(Color.rgb(227, 244, 234))
+            val ink = themedColor(Color.rgb(31, 45, 38))
             dialog.window?.setBackgroundDrawable(
                 GradientDrawable().apply {
-                    setColor(Color.rgb(250, 252, 250))
+                    setColor(themedColor(Color.rgb(250, 252, 250)))
                     cornerRadius = dp(18).toFloat()
-                    setStroke(dp(1), Color.rgb(210, 225, 216))
+                    setStroke(dp(1), themedColor(Color.rgb(210, 225, 216)))
                 }
             )
             dialog.window?.decorView?.setPadding(dp(2), dp(2), dp(2), dp(2))
@@ -392,7 +392,7 @@ class MainActivity : Activity() {
                     isAllCaps = false
                     setPadding(dp(12), dp(8), dp(12), dp(8))
                     if (this === positive) {
-                        setTextColor(Color.WHITE)
+                        setTextColor(themedColor(Color.WHITE))
                         background = GradientDrawable().apply {
                             setColor(deepGreen)
                             cornerRadius = dp(10).toFloat()
@@ -402,7 +402,7 @@ class MainActivity : Activity() {
                         background = GradientDrawable().apply {
                             setColor(paleGreen)
                             cornerRadius = dp(10).toFloat()
-                            setStroke(dp(1), Color.rgb(190, 220, 202))
+                            setStroke(dp(1), themedColor(Color.rgb(190, 220, 202)))
                         }
                     }
                 }
@@ -421,13 +421,13 @@ class MainActivity : Activity() {
         when (view) {
             is EditText -> view.apply {
                 setTextColor(textColor)
-                setHintTextColor(Color.rgb(126, 143, 133))
+                setHintTextColor(themedColor(Color.rgb(126, 143, 133)))
                 textSize = 14f
                 setPadding(dp(12), dp(10), dp(12), dp(10))
                 background = GradientDrawable().apply {
-                    setColor(Color.WHITE)
+                    setColor(themedColor(Color.WHITE))
                     cornerRadius = dp(9).toFloat()
-                    setStroke(dp(1), Color.rgb(198, 216, 204))
+                    setStroke(dp(1), themedColor(Color.rgb(198, 216, 204)))
                 }
             }
             is android.view.ViewGroup -> {
@@ -439,7 +439,7 @@ class MainActivity : Activity() {
     private fun styleDialogList(view: android.view.View?, textColor: Int, accent: Int, selectedFill: Int) {
         when (view) {
             is ListView -> view.apply {
-                divider = ColorDrawable(Color.rgb(226, 235, 229))
+                divider = ColorDrawable(themedColor(Color.rgb(226, 235, 229)))
                 dividerHeight = dp(1)
                 selector = GradientDrawable().apply {
                     setColor(selectedFill)
@@ -471,8 +471,8 @@ class MainActivity : Activity() {
         sheetName = currentSheet
         selected = currentSelection
         render()
-        window.statusBarColor = themedColor(Color.rgb(17, 94, 57))
-        window.navigationBarColor = themedColor(Color.rgb(20, 30, 40))
+        window.statusBarColor = themedColor(themedColor(Color.rgb(17, 94, 57)))
+        window.navigationBarColor = themedColor(themedColor(Color.rgb(20, 30, 40)))
         showTopMenu(activeTopSection)
         status.text = if (nightTheme) "Night theme enabled" else "Day theme enabled"
     }
@@ -556,11 +556,11 @@ class MainActivity : Activity() {
                 typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
                 gravity = Gravity.CENTER
                 maxLines = 1
-                setTextColor(if (isEmphasis) Color.rgb(25, 74, 132) else Color.rgb(35, 70, 50))
+                setTextColor(if (isEmphasis) themedColor(Color.rgb(25, 74, 132)) else themedColor(Color.rgb(35, 70, 50)))
                 setPadding(dp(10), dp(6), dp(10), dp(6))
                 background = roundedToolbarBackground(
-                    if (isEmphasis) Color.rgb(219, 234, 254) else Color.WHITE,
-                    if (isEmphasis) Color.rgb(147, 197, 253) else Color.rgb(204, 218, 209),
+                    if (isEmphasis) themedColor(Color.rgb(219, 234, 254)) else themedColor(Color.WHITE),
+                    if (isEmphasis) themedColor(Color.rgb(147, 197, 253)) else themedColor(Color.rgb(204, 218, 209)),
                     9
                 )
                 elevation = dp(1).toFloat()
@@ -701,10 +701,10 @@ class MainActivity : Activity() {
     }
 
     private fun tool(label:String, action:()->Unit)=TextView(this).apply {
-        text=label; textSize=14f; gravity=Gravity.CENTER; setTextColor(Color.WHITE); setPadding(dp(9),dp(9),dp(9),dp(9)); setOnClickListener { action() }
+        text=label; textSize=14f; gravity=Gravity.CENTER; setTextColor(themedColor(Color.WHITE)); setPadding(dp(9),dp(9),dp(9),dp(9)); setOnClickListener { action() }
     }
     private fun ribbonButton(label:String, action:()->Unit)=TextView(this).apply {
-        text=label; textSize=12f; gravity=Gravity.CENTER; setTextColor(Color.rgb(34,75,54)); setBackgroundColor(Color.rgb(236,246,239)); setOnClickListener { action() }
+        text=label; textSize=12f; gravity=Gravity.CENTER; setTextColor(themedColor(Color.rgb(34,75,54))); setBackgroundColor(themedColor(Color.rgb(236,246,239))); setOnClickListener { action() }
     }
 
     /** Update only the affected cell views after formatting; avoid touching the whole 1,300-cell grid. */
@@ -720,7 +720,7 @@ class MainActivity : Activity() {
             }
             view.text = text
             val st = sheetStyles[address]
-            view.setTextColor(st?.textColor ?: Color.rgb(24, 32, 39))
+            view.setTextColor(st?.textColor ?: themedColor(Color.rgb(24, 32, 39)))
             view.textSize = st?.fontSize ?: 13f
             view.typeface = Typeface.create(
                 Typeface.DEFAULT,
@@ -921,7 +921,7 @@ class MainActivity : Activity() {
         cellViews.forEach { (address, view) ->
             view.text = gridDisplay(address)
             val st = sheetStyles[address]
-            view.setTextColor(st?.textColor ?: Color.rgb(24, 32, 39))
+            view.setTextColor(st?.textColor ?: themedColor(Color.rgb(24, 32, 39)))
             view.textSize = st?.fontSize ?: 13f
             view.typeface = Typeface.create(
                 Typeface.DEFAULT,
@@ -986,7 +986,7 @@ class MainActivity : Activity() {
             // addresses and touching every TextView property when most are already default.
             if (blankSheet) {
                 if (view.text.isNotEmpty()) view.text = ""
-                if (view.currentTextColor != Color.rgb(24, 32, 39)) view.setTextColor(Color.rgb(24, 32, 39))
+                if (view.currentTextColor != themedColor(Color.rgb(24, 32, 39))) view.setTextColor(themedColor(Color.rgb(24, 32, 39)))
                 if (view.textSize != 13f) view.textSize = 13f
                 if (view.typeface?.style != Typeface.NORMAL) view.typeface = Typeface.DEFAULT
                 if (view.paint.isUnderlineText) view.paint.isUnderlineText = false
@@ -1002,7 +1002,7 @@ class MainActivity : Activity() {
             val text = gridDisplay(address)
             if (view.text.toString() != text) view.text = text
             val st = sheetStyles[address]
-            val textColor = st?.textColor ?: Color.rgb(24, 32, 39)
+            val textColor = st?.textColor ?: themedColor(Color.rgb(24, 32, 39))
             if (view.currentTextColor != textColor) view.setTextColor(textColor)
             val textSize = st?.fontSize ?: 13f
             if (view.textSize != textSize) view.textSize = textSize
@@ -1332,7 +1332,7 @@ class MainActivity : Activity() {
             gravity = if (header || key == null) Gravity.CENTER else Gravity.CENTER_VERTICAL or Gravity.START
             setPadding(dp(3), 0, dp(3), 0)
             val st = if (key != null) sheetStyles[key] else null
-            setTextColor(if(header) Color.rgb(55,67,77) else st?.textColor ?: Color.rgb(24,32,39))
+            setTextColor(if(header) themedColor(Color.rgb(55,67,77)) else st?.textColor ?: themedColor(Color.rgb(24,32,39)))
             textSize = st?.fontSize ?: 13f
             typeface = Typeface.create(Typeface.DEFAULT, (if (st?.bold == true || header) Typeface.BOLD else Typeface.NORMAL) or (if (st?.italic == true) Typeface.ITALIC else Typeface.NORMAL))
             paint.isUnderlineText = st?.underline == true
@@ -1395,8 +1395,8 @@ class MainActivity : Activity() {
         sheets.keys.toList().forEach { name ->
             val t=TextView(this).apply {
                 text=name; textSize=13f; gravity=Gravity.CENTER; setPadding(dp(15),dp(9),dp(15),dp(9))
-                setTextColor(if(name==sheetName) Color.WHITE else Color.rgb(35,70,50))
-                setBackgroundColor(if(name==sheetName) Color.rgb(17,94,57) else Color.rgb(213,229,218))
+                setTextColor(if(name==sheetName) themedColor(Color.WHITE) else themedColor(Color.rgb(35,70,50)))
+                setBackgroundColor(if(name==sheetName) themedColor(Color.rgb(17,94,57)) else themedColor(Color.rgb(213,229,218)))
                 setOnClickListener {
                     if (sheetName == name) return@setOnClickListener
 
@@ -1421,7 +1421,7 @@ class MainActivity : Activity() {
             }
             sheetTabs.addView(t)
         }
-        sheetTabs.addView(tool("+") { sheetOptionsMenu() }.apply { setTextColor(Color.rgb(17,94,57)) })
+        sheetTabs.addView(tool("+") { sheetOptionsMenu() }.apply { setTextColor(themedColor(Color.rgb(17,94,57))) })
     }
 
     private fun addOneRow() = addRows(1)
@@ -1506,16 +1506,16 @@ class MainActivity : Activity() {
         val st = if (address != null) sheetStyles[address] else null
         val isSelected = address != null && (address == selected || address in selectedRangeCells)
         val fill = when {
-            header -> Color.rgb(224, 232, 239)
-            isSelected -> Color.rgb(207, 239, 220)
+            header -> themedColor(Color.rgb(224, 232, 239))
+            isSelected -> themedColor(Color.rgb(207, 239, 220))
             st != null -> st.fillColor
-            else -> Color.WHITE
+            else -> themedColor(Color.WHITE)
         }
         val strokeColor = when {
-            header -> Color.rgb(174, 187, 198)
-            isSelected -> Color.rgb(17, 125, 72)
-            st?.border == true -> Color.rgb(70, 80, 88)
-            else -> Color.rgb(198, 207, 214)
+            header -> themedColor(Color.rgb(174, 187, 198))
+            isSelected -> themedColor(Color.rgb(17, 125, 72))
+            st?.border == true -> themedColor(Color.rgb(70, 80, 88))
+            else -> themedColor(Color.rgb(198, 207, 214))
         }
         val strokeWidth = when {
             isSelected -> 1
@@ -1596,7 +1596,7 @@ class MainActivity : Activity() {
             includeFontPadding = false
             setLineSpacing(0f, 0.97f)
             setPadding(dp(3), 0, dp(3), 0)
-            setBackgroundColor(Color.rgb(207, 239, 220))
+            setBackgroundColor(themedColor(Color.rgb(207, 239, 220)))
             imeOptions = (if (text.toString().trimStart().startsWith("=")) android.view.inputmethod.EditorInfo.IME_ACTION_DONE else android.view.inputmethod.EditorInfo.IME_ACTION_NONE) or android.view.inputmethod.EditorInfo.IME_FLAG_NO_EXTRACT_UI
             minHeight = dp(18)
             addTextChangedListener(object : android.text.TextWatcher {
@@ -2703,7 +2703,7 @@ class MainActivity : Activity() {
 
     private fun chooseColor(title: String, apply: (Int) -> Unit) {
         val names = arrayOf("Black", "White", "Red", "Orange", "Yellow", "Green", "Blue", "Purple", "Gray", "Light blue")
-        val colors = intArrayOf(Color.BLACK, Color.WHITE, Color.RED, 0xFFFF9800.toInt(), Color.YELLOW, 0xFF2E7D32.toInt(), Color.BLUE, 0xFF7B1FA2.toInt(), Color.GRAY, 0xFFBBDEFB.toInt())
+        val colors = intArrayOf(Color.BLACK, themedColor(Color.WHITE), Color.RED, 0xFFFF9800.toInt(), Color.YELLOW, 0xFF2E7D32.toInt(), Color.BLUE, 0xFF7B1FA2.toInt(), Color.GRAY, 0xFFBBDEFB.toInt())
         AlertDialog.Builder(this).setTitle(title).setItems(names) { _, which -> apply(colors[which]); status.text = "$title applied" }.showProfessional()
     }
 
@@ -2755,7 +2755,7 @@ class MainActivity : Activity() {
                     val lastCol = usedRange().second
                     for (c in 0..lastCol) {
                         val a = "${colName(c)}$row"; affected.add(a); val st = styleFor(a)
-                        st.bold = true; st.fillColor = 0xFF1B5E20.toInt(); st.textColor = Color.WHITE; st.border = true
+                        st.bold = true; st.fillColor = 0xFF1B5E20.toInt(); st.textColor = themedColor(Color.WHITE); st.border = true
                     }
                     status.text = "Row $row formatted as table heading"
                 }
@@ -2763,7 +2763,7 @@ class MainActivity : Activity() {
                     val lastCol = usedRange().second
                     for (c in 0..lastCol) {
                         val a = "${colName(c)}$row"; affected.add(a); val st = styleFor(a)
-                        st.fillColor = if (c % 2 == 0) 0xFFE8F5E9.toInt() else Color.WHITE; st.border = true
+                        st.fillColor = if (c % 2 == 0) 0xFFE8F5E9.toInt() else themedColor(Color.WHITE); st.border = true
                     }
                 }
                 2 -> {
@@ -2791,8 +2791,8 @@ class MainActivity : Activity() {
                         affected.add(address)
                         val st = sheetStyles[address] ?: continue
                         st.bold = false
-                        st.fillColor = Color.WHITE
-                        st.textColor = Color.rgb(24, 32, 39)
+                        st.fillColor = themedColor(Color.WHITE)
+                        st.textColor = themedColor(Color.rgb(24, 32, 39))
                         st.border = false
                         st.thickBorder = false
                         st.alignment = Gravity.CENTER_VERTICAL or Gravity.START
@@ -2853,13 +2853,13 @@ class MainActivity : Activity() {
             addView(TextView(this@MainActivity).apply {
                 text = "Filter column (use the column containing your data, e.g. D for City):"
                 textSize = 13f
-                setTextColor(Color.rgb(45, 65, 54))
+                setTextColor(themedColor(Color.rgb(45, 65, 54)))
             })
             addView(columnInput, LinearLayout.LayoutParams(-1, -2))
             addView(TextView(this@MainActivity).apply {
                 text = "Show rows where the selected column contains:"
                 textSize = 13f
-                setTextColor(Color.rgb(45, 65, 54))
+                setTextColor(themedColor(Color.rgb(45, 65, 54)))
                 setPadding(0, dp(10), 0, 0)
             })
             addView(queryInput, LinearLayout.LayoutParams(-1, -2))
