@@ -1253,7 +1253,10 @@ class MainActivity : Activity() {
     // which was leaving visibly large empty bands above/below multiline text.
     private fun rowHeightForLines(lines: Int): Int {
         val safeLines = lines.coerceIn(1, 6)
-        return if (safeLines == 1) 24 else 24 + (safeLines - 1) * 18
+        // Add one rendered text-line height per extra line. Keeping the single-line
+        // 24dp baseline plus only the glyph line advance preserves the same top/bottom
+        // breathing room for one-line and multiline cells.
+        return 24 + (safeLines - 1) * 16
     }
 
     private fun rowHeightPx(row: Int): Int = rowHeightForLines(rowLineCount(row))
@@ -1550,10 +1553,11 @@ class MainActivity : Activity() {
             setSelection(text.length)
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
             setHorizontallyScrolling(false)
-            gravity = Gravity.TOP or Gravity.START
-            // Match grid text metrics; default EditText font padding leaves excess vertical gap.
+            // Center the complete multiline text block just like a normal grid cell.
+            // This keeps the top and bottom inset equal to the single-line cell inset.
+            gravity = Gravity.CENTER_VERTICAL or Gravity.START
             includeFontPadding = false
-            setLineSpacing(0f, 1.0f)
+            setLineSpacing(0f, 0.97f)
             setPadding(dp(3), 0, dp(3), 0)
             setBackgroundColor(Color.rgb(207, 239, 220))
             imeOptions = (if (text.toString().trimStart().startsWith("=")) android.view.inputmethod.EditorInfo.IME_ACTION_DONE else android.view.inputmethod.EditorInfo.IME_ACTION_NONE) or android.view.inputmethod.EditorInfo.IME_FLAG_NO_EXTRACT_UI
