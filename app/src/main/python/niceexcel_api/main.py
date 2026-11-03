@@ -652,7 +652,7 @@ def rename_sheet(book_id: str, request: RenameSheetRequest):
 def delete_sheet(book_id: str, sheet_name: str):
     wb = _book(book_id)
     ws = _sheet(wb, sheet_name)
-    if len(wb.sheetnames) == 1:
+    if len([n for n in wb.sheetnames if n not in {"_NiceExcelCF", "_NiceExcelDV"}]) <= 1:
         raise HTTPException(status_code=409, detail="A workbook must retain at least one worksheet")
     _record_history(book_id)
     wb.remove(ws)
