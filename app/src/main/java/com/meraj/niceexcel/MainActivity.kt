@@ -1619,6 +1619,14 @@ class MainActivity : Activity() {
             .showProfessional()
     }
 
+    private fun themedCellText(color: Int): Int {
+        if (!nightTheme) return color
+        return when (color) {
+            Color.BLACK, Color.rgb(24,32,39), Color.rgb(35,70,50), Color.rgb(6,78,59),
+            Color.rgb(34,75,54), Color.rgb(55,67,77) -> Color.rgb(229,234,240)
+            else -> color
+        }
+    }
     private fun themedCellFill(color: Int): Int {
         if (!nightTheme) return color
         return when (color) {
