@@ -116,7 +116,9 @@ def test_native_black_theme_uses_dark_cells_and_persists_palette_for_web_activit
     assert "Color.BLACK" in native and "Color.rgb(65,82,106)" in native
     assert 'putBoolean("dark_mode", darkMode)' in native
     assert 'getSharedPreferences("niceexcel_theme", MODE_PRIVATE)' in flask
-    assert "window.statusBarColor = systemAccent" in flask
+    assert 'window.statusBarColor = if (blackTheme) Color.BLACK else systemAccent' in flask
+    assert 'window.statusBarColor = if (darkMode) Color.BLACK' in native
+    assert 'window.navigationBarColor = if (darkMode) Color.BLACK' in native
 
 
 def test_native_filters_match_displayed_formula_results_in_any_column():
