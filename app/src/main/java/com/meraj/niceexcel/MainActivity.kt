@@ -3160,12 +3160,12 @@ class MainActivity : Activity() {
                     cell.append('"'); i++
                 }
                 ch == '"' -> quoted = !quoted
-                (ch == ',' || ch == '\\n' || ch == '\\r') && !quoted -> {
+                (ch == ',' || ch == '\n' || ch == '\r') && !quoted -> {
                     row.add(cell.toString()); cell.setLength(0)
                     if (ch == ',') {
                         // Continue the current row.
                     } else {
-                        if (ch == '\\r' && i + 1 < source.length && source[i + 1] == '\\n') i++
+                        if (ch == '\r' && i + 1 < source.length && source[i + 1] == '\n') i++
                         rows.add(row); row = mutableListOf()
                     }
                 }
