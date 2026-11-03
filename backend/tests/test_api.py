@@ -477,3 +477,42 @@ def test_conditional_formatting_rejects_invalid_rule_without_mutating_workbook()
     assert response.status_code == 422
     assert client.get(f"/workbooks/{book_id}/conditional-formatting",
                       query_string={"sheet": "Sheet1"}).get_json()["rules"] == []
+
+
+def test_open_workbook_multipart_upload_roundtrip():
+    from io import BytesIO
+    from openpyxl import Workbook
+
+    source = Workbook()
+    ws = source.active
+    ws.title = "Imported"
+    ws["A1"] = "Item"
+    ws["B1"] = 42
+    stream = BytesIO()
+    source.save(stream)
+    stream.seek(0)
+
+    opened = client.post(
+        "/workbooks/open",
+        data={"file": (stream, "roundtrip.xlsx")},
+        content_type="multipart/form-data",
+    )
+    assert opened.status_code == 200, opened.get_data(as_text=True)
+    payload = opened.get_json()
+    assert "Imported" in payload["sheets"]
+    book_id = payload["workbook_id"]
+    values = client.get(
+        f"/workbooks/{book_id}/range",
+        query_string={"sheet": "Imported", "range": "A1:B1"},
+    )
+    assert values.status_code == 200
+    assert values.get_json()["values"][0][:2] == ["Item", 42]
+
+
+def test_static_fallback_does_not_hide_api_health_endpoint():
+    health = client.get("/health")
+    assert health.status_code == 200
+    assert health.get_json()["status"] == "ok"
+
+    missing_asset = client.get("/assets/does-not-exist.js")
+    assert missing_asset.status_code == 404

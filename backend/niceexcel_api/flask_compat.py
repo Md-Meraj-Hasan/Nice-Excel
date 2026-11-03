@@ -60,6 +60,7 @@ class _FlaskApp(Flask):
                             args[name] = path_values[name]
                             continue
                         default = param.default
+                        annotation = hints.get(name, param.annotation)
                         if isinstance(default, _Query):
                             args[name] = flask_request.args.get(default.alias or name, default.default)
                         elif param.annotation is UploadFile or name == "file":
@@ -100,6 +101,13 @@ class _FlaskApp(Flask):
 
 def create_app(import_name):
     app = _FlaskApp(import_name)
+
+    # Translate adapter HTTP errors raised by ordinary Flask routes too,
+    # including the catch-all static-file route.
+    @app.errorhandler(HTTPException)
+    def handle_adapter_http_exception(exc):
+        return jsonify({"detail": exc.detail}), exc.status_code
+
     return app
 
 def FileResponse(path, media_type=None, filename=None, background=None):
