@@ -62,7 +62,7 @@ DayPalette("Rose Pink", Color.rgb(157,45,105), Color.rgb(252,231,243), Color.rgb
 DayPalette("Indigo", Color.rgb(67,56,150), Color.rgb(224,231,255), Color.rgb(49,46,129), Color.rgb(238,240,255), Color.rgb(194,199,239), Color.rgb(216,220,248), Color.rgb(79,70,229), Color.rgb(219,221,241), Color.rgb(224,231,255)),
 DayPalette("Earth Brown", Color.rgb(120,72,38), Color.rgb(245,230,211), Color.rgb(92,51,23), Color.rgb(250,242,232), Color.rgb(225,204,180), Color.rgb(238,222,202), Color.rgb(161,98,50), Color.rgb(235,224,210), Color.rgb(245,230,211)),
 DayPalette("Slate Gray", Color.rgb(71,85,105), Color.rgb(226,232,240), Color.rgb(51,65,85), Color.rgb(241,245,249), Color.rgb(203,213,225), Color.rgb(222,229,238), Color.rgb(100,116,139), Color.rgb(222,228,235), Color.rgb(226,232,240)),
-DayPalette("Black", Color.rgb(25,25,25), Color.rgb(238,238,238), Color.rgb(20,20,20), Color.rgb(250,250,250), Color.rgb(205,205,205), Color.rgb(225,225,225), Color.rgb(45,45,45), Color.rgb(0,0,0), Color.rgb(220,220,220)),
+DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20,20), Color.rgb(250,250,250), Color.rgb(205,205,205), Color.rgb(225,225,225), Color.rgb(65,78,98), Color.rgb(65,78,98), Color.rgb(220,220,220)),
     )
     private fun themedColor(color: Int): Int {
         val p = dayPalettes[dayPaletteIndex.coerceIn(dayPalettes.indices)]
@@ -83,6 +83,8 @@ DayPalette("Black", Color.rgb(25,25,25), Color.rgb(238,238,238), Color.rgb(20,20
             .setTitle("Choose Day Mode Colour")
             .setSingleChoiceItems(names, dayPaletteIndex) { dialog, which ->
                 dayPaletteIndex = which
+                window.statusBarColor = dayPalettes[which].primary
+                window.navigationBarColor = Color.rgb(20, 30, 40)
                 getPreferences(MODE_PRIVATE).edit().putInt("day_palette_index", which).apply()
                 dialog.dismiss()
                 val currentSheet = sheetName
