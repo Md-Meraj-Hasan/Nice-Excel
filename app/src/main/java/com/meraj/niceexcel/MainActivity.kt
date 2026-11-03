@@ -1250,9 +1250,15 @@ class MainActivity : Activity() {
                     cellName.text = selected
                     formula.setText(data[selected].orEmpty())
 
-                    // Keep the sheet's cached formula/spill values. The View > Refresh
-                    // command is the explicit way to force a new calculation when needed.
-                    render()
+                    // Reuse the existing 1,300-cell grid when the target sheet has
+                    // cached column widths. This avoids destroying/recreating every TextView
+                    // on each tab switch while keeping the workbook formula cache intact.
+                    cachedExplicitLineCountsByRow = null
+                    if (refreshSheetInPlaceFast()) {
+                        scheduleFormulaRecalculationIfNeeded()
+                    } else {
+                        render()
+                    }
                 }
                 setOnLongClickListener { renameSheet(name); true }
             }
