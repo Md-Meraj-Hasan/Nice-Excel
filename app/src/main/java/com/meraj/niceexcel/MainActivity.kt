@@ -1002,14 +1002,14 @@ class MainActivity : Activity() {
             } else if (rowView.visibility != android.view.View.VISIBLE) {
                 rowView.visibility = android.view.View.VISIBLE
             }
-            // Width checks are only needed when switching between sheets with different cached widths.
-            if (widthsChanged || wrappedRows.isNotEmpty() || rowHeightChanged) {
-                for (c in 0 until minOf(colLimit + 1, rowView.childCount)) {
-                    val child = rowView.getChildAt(c)
-                    val width = dp(if (c == 0) 48 else widths[c - 1])
-                    if (child.layoutParams.width != width || child.layoutParams.height != height) {
-                        child.layoutParams = child.layoutParams.apply { this.width = width; this.height = height }
-                    }
+            // Reconcile every body cell against the target sheet's canonical widths.
+            // Do not trust the previous sheet's layout state: a fast switch can reuse
+            // TextViews after an earlier edit/refresh changed cached width metadata.
+            for (c in 0 until minOf(colLimit + 1, rowView.childCount)) {
+                val child = rowView.getChildAt(c)
+                val width = dp(if (c == 0) 48 else widths[c - 1])
+                if (child.layoutParams.width != width || child.layoutParams.height != height) {
+                    child.layoutParams = child.layoutParams.apply { this.width = width; this.height = height }
                 }
             }
         }
@@ -1020,6 +1020,16 @@ class MainActivity : Activity() {
         renderTabs()
         val tabsMs = SystemClock.elapsedRealtime() - tabsStarted
         grid.requestLayout()
+        // After widths are reconciled, keep all three horizontal strips at one
+        // clamped scroll position so column edges remain vertically aligned.
+        bodyHorizontal.post {
+            val alignedX = bodyHorizontal.scrollX
+            headerHorizontal.scrollTo(alignedX, 0)
+            frozenRowHorizontal.scrollTo(alignedX, 0)
+        }
+        headerHorizontal.requestLayout()
+        frozenRowHorizontal.requestLayout()
+        bodyHorizontal.requestLayout()
         Log.d("NiceExcelPerf", "sheetSwitchFast sheet=$sheetName blank=$blankSheet cellRefreshMs=$cellRefreshMs tabsMs=$tabsMs totalMs=${SystemClock.elapsedRealtime() - started}")
         return true
     }
