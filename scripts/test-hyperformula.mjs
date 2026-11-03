@@ -88,32 +88,27 @@ const regression = HyperFormula.buildFromSheets({
 }, { licenseKey: 'gpl-v3' });
 const boolSheet = regression.getSheetId('BooleanTests');
 const boolValue = (row, col) => regression.getCellValue({ sheet: boolSheet, row, col });
-assert.equal(boolValue(0, 0), true, 'AND with bare TRUE literal');
-assert.equal(boolValue(0, 1), true, 'OR with bare FALSE literal and comparison');
-assert.equal(boolValue(0, 2), true, 'NOT with bare FALSE literal');
-assert.equal(boolValue(1, 0), true, 'AND function-call boolean control');
-assert.equal(boolValue(1, 1), true, 'OR function-call boolean control');
-assert.equal(boolValue(1, 2), true, 'NOT function-call boolean control');
-assert.equal(boolValue(2, 0), true, 'bare TRUE literal');
-assert.equal(boolValue(2, 1), false, 'bare FALSE literal');
-assert.equal(boolValue(2, 2), true, 'TRUE() function control');
-regression.setCellContents({ sheet: regression.getSheetId('HLookupTests'), row: 1, col: 12 }, [
-  ['Q1', 'Q2', 'Q3'],
-  ['Jan', 'Feb', 'Mar'],
-  [100, 200, 300],
-]);
-const hSheet = regression.getSheetId('HLookupTests');
-regression.setCellContents({ sheet: hSheet, row: 0, col: 0 }, [['=HLOOKUP("Q2",M2:O4,3,FALSE)']]);
-assert.equal(regression.getCellValue({ sheet: hSheet, row: 0, col: 0 }), 200, 'HLOOKUP exact match with bare FALSE');
-regression.setCellContents({ sheet: regression.getSheetId('VLookupTests'), row: 1, col: 12 }, [
-  ['A', 100],
-  ['B', 200],
-  ['C', 300],
-  ['D', 400],
-]);
-const vSheet = regression.getSheetId('VLookupTests');
-regression.setCellContents({ sheet: vSheet, row: 0, col: 0 }, [['=VLOOKUP("B",M2:N5,2,FALSE)']]);
-assert.equal(regression.getCellValue({ sheet: vSheet, row: 0, col: 0 }), 200, 'VLOOKUP exact match with bare FALSE');
+const regressionResults = {
+  andBareTrue: boolValue(0, 0),
+  orBareFalse: boolValue(0, 1),
+  notBareFalse: boolValue(0, 2),
+  andFunctionControl: boolValue(1, 0),
+  orFunctionControl: boolValue(1, 1),
+  notFunctionControl: boolValue(1, 2),
+  bareTrue: boolValue(2, 0),
+  bareFalse: boolValue(2, 1),
+  trueFunctionControl: boolValue(2, 2),
+  hlookupBareFalse: regression.getCellValue({ sheet: hSheet, row: 0, col: 0 }),
+  vlookupBareFalse: regression.getCellValue({ sheet: vSheet, row: 0, col: 0 }),
+};
+console.log('Boolean/lookup regression results:', JSON.stringify(regressionResults));
+const expectedRegressionResults = {
+  andBareTrue: true, orBareFalse: true, notBareFalse: true,
+  andFunctionControl: true, orFunctionControl: true, notFunctionControl: true,
+  bareTrue: true, bareFalse: false, trueFunctionControl: true,
+  hlookupBareFalse: 200, vlookupBareFalse: 200,
+};
+assert.deepEqual(regressionResults, expectedRegressionResults, 'boolean and lookup formula compatibility');
 regression.destroy();
 compatibility.destroy();
 hf.destroy();
