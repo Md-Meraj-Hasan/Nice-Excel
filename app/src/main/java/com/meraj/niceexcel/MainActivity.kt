@@ -45,7 +45,6 @@ class MainActivity : Activity() {
     private var sheetName = "Sheet1"
     private var selected = "A1"
     private var activeTopSection = "Home"
-    private var nightTheme = false
     private var dayPaletteIndex = 0
     private data class DayPalette(
         val name: String, val primary: Int, val pale: Int, val ink: Int,
@@ -62,17 +61,9 @@ class MainActivity : Activity() {
         DayPalette("Indigo", Color.rgb(67,56,150), Color.rgb(224,231,255), Color.rgb(49,46,129), Color.rgb(238,240,255), Color.rgb(194,199,239), Color.rgb(216,220,248), Color.rgb(79,70,229), Color.rgb(67,56,150)),
         DayPalette("Earth Brown", Color.rgb(120,72,38), Color.rgb(245,230,211), Color.rgb(92,51,23), Color.rgb(250,242,232), Color.rgb(225,204,180), Color.rgb(238,222,202), Color.rgb(161,98,50), Color.rgb(120,72,38)),
         DayPalette("Slate Gray", Color.rgb(71,85,105), Color.rgb(226,232,240), Color.rgb(51,65,85), Color.rgb(241,245,249), Color.rgb(203,213,225), Color.rgb(222,229,238), Color.rgb(100,116,139), Color.rgb(71,85,105)),
+        DayPalette("Black", Color.rgb(25,25,25), Color.rgb(238,238,238), Color.rgb(20,20,20), Color.rgb(250,250,250), Color.rgb(205,205,205), Color.rgb(225,225,225), Color.rgb(45,45,45), Color.rgb(0,0,0)),
     )
     private fun themedColor(color: Int): Int {
-        if (nightTheme) return when (color) {
-            Color.rgb(245,247,249), Color.rgb(255,255,255), Color.WHITE -> Color.rgb(25,29,35)
-            Color.rgb(232,240,235), Color.rgb(225,242,232) -> Color.rgb(38,45,53)
-            Color.rgb(17,94,57) -> Color.rgb(20,25,31)
-            Color.rgb(209,250,229) -> Color.rgb(49,74,63)
-            Color.rgb(6,78,59), Color.rgb(24,32,39), Color.rgb(35,70,50), Color.rgb(55,67,77) -> Color.rgb(225,231,238)
-            Color.rgb(204,218,209) -> Color.rgb(75,85,98)
-            else -> color
-        }
         val p = dayPalettes[dayPaletteIndex.coerceIn(dayPalettes.indices)]
         return when (color) {
             Color.rgb(17,94,57), Color.rgb(21,93,66) -> p.primary
@@ -80,7 +71,8 @@ class MainActivity : Activity() {
             Color.rgb(6,78,59), Color.rgb(34,75,54), Color.rgb(35,70,50), Color.rgb(45,65,54) -> p.ink
             Color.rgb(227,244,234), Color.rgb(236,246,239), Color.rgb(232,240,235), Color.rgb(225,242,232), Color.rgb(231,237,233) -> p.soft
             Color.rgb(204,218,209), Color.rgb(198,207,214) -> p.border
-            Color.rgb(213,229,218) -> p.light
+            Color.rgb(213,229,218), Color.rgb(224,232,239) -> p.light
+            Color.rgb(174,187,198) -> p.gridLine
             else -> color
         }
     }
@@ -188,10 +180,9 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        nightTheme = getPreferences(MODE_PRIVATE).getBoolean("night_theme", false)
         dayPaletteIndex = getPreferences(MODE_PRIVATE).getInt("day_palette_index", 0).coerceIn(dayPalettes.indices)
-        window.statusBarColor = themedColor(themedColor(Color.rgb(17, 94, 57)))
-        window.navigationBarColor = themedColor(themedColor(Color.rgb(20, 30, 40)))
+        window.statusBarColor = themedColor(Color.rgb(17, 94, 57))
+        window.navigationBarColor = Color.rgb(20, 30, 40)
         if (!restoreLastWorkbook()) {
             sheets["Sheet1"] = mutableMapOf(
                 "A1" to "Item", "B1" to "Qty", "C1" to "Price", "D1" to "Total",
@@ -577,21 +568,6 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun toggleNightTheme() {
-        nightTheme = !nightTheme
-        getPreferences(MODE_PRIVATE).edit().putBoolean("night_theme", nightTheme).apply()
-        val currentSheet = sheetName
-        val currentSelection = selected
-        buildUi()
-        sheetName = currentSheet
-        selected = currentSelection
-        render()
-        window.statusBarColor = themedColor(themedColor(Color.rgb(17, 94, 57)))
-        window.navigationBarColor = themedColor(themedColor(Color.rgb(20, 30, 40)))
-        showTopMenu(activeTopSection)
-        status.text = if (nightTheme) "Night theme enabled" else "Day theme enabled"
-    }
-
     private fun showTopMenu(section: String) {
         val items: List<Pair<String, () -> Unit>> = when (section) {
             "File" -> listOf(
@@ -639,8 +615,7 @@ class MainActivity : Activity() {
             )
             "Formula" -> listOf("Insert function…" to { formulaPickerMenu() }, "Formula help" to { formulaHelp() }, "Formula examples" to { formulaHelp() })
             "View" -> buildList {
-                add((if (nightTheme) "Switch to Day Theme" else "Switch to Night Theme") to { toggleNightTheme() })
-                if (!nightTheme) add("Choose Day Colour • ${dayPalettes[dayPaletteIndex].name}" to { chooseDayPalette() })
+                add("Choose Colour • ${dayPalettes[dayPaletteIndex].name}" to { chooseDayPalette() })
                 add("Refresh cells grid" to { refreshCurrentSheetGrid() })
                 add("Refresh current sheet formulas" to { refreshCurrentSheetFormulas() })
                 add("Workbook info" to { status.text = "${sheets.size} sheet(s) • $rowCount rows • Offline workbook" })
@@ -837,7 +812,7 @@ class MainActivity : Activity() {
             }
             view.text = text
             val st = sheetStyles[address]
-            view.setTextColor(st?.textColor?.let { themedCellText(it) } ?: themedColor(Color.rgb(24, 32, 39)))
+            view.setTextColor(st?.textColor ?: themedColor(Color.rgb(24, 32, 39)))
             view.textSize = st?.fontSize ?: 13f
             view.typeface = Typeface.create(
                 Typeface.DEFAULT,
@@ -1119,7 +1094,7 @@ class MainActivity : Activity() {
             val text = gridDisplay(address)
             if (view.text.toString() != text) view.text = text
             val st = sheetStyles[address]
-            val textColor = st?.textColor?.let { themedCellText(it) } ?: themedColor(Color.rgb(24, 32, 39))
+            val textColor = st?.textColor ?: themedColor(Color.rgb(24, 32, 39))
             if (view.currentTextColor != textColor) view.setTextColor(textColor)
             val textSize = st?.fontSize ?: 13f
             if (view.textSize != textSize) view.textSize = textSize
@@ -1449,7 +1424,7 @@ class MainActivity : Activity() {
             gravity = if (header || key == null) Gravity.CENTER else Gravity.CENTER_VERTICAL or Gravity.START
             setPadding(dp(3), 0, dp(3), 0)
             val st = if (key != null) sheetStyles[key] else null
-            setTextColor(if(header) themedColor(Color.rgb(55,67,77)) else st?.textColor?.let { themedCellText(it) } ?: themedColor(Color.rgb(24,32,39)))
+            setTextColor(if(header) themedColor(Color.rgb(55,67,77)) else st?.textColor ?: themedColor(Color.rgb(24,32,39)))
             textSize = st?.fontSize ?: 13f
             typeface = Typeface.create(Typeface.DEFAULT, (if (st?.bold == true || header) Typeface.BOLD else Typeface.NORMAL) or (if (st?.italic == true) Typeface.ITALIC else Typeface.NORMAL))
             paint.isUnderlineText = st?.underline == true
@@ -1619,37 +1594,17 @@ class MainActivity : Activity() {
             .showProfessional()
     }
 
-    private fun themedCellText(color: Int): Int {
-        if (!nightTheme) return color
-        return when (color) {
-            Color.BLACK, Color.rgb(24,32,39), Color.rgb(35,70,50), Color.rgb(6,78,59),
-            Color.rgb(34,75,54), Color.rgb(55,67,77) -> Color.rgb(229,234,240)
-            else -> color
-        }
-    }
-    private fun themedCellFill(color: Int): Int {
-        if (!nightTheme) return color
-        return when (color) {
-            Color.WHITE, Color.rgb(255,255,255), Color.rgb(245,247,249), Color.rgb(232,245,233),
-            Color.rgb(232,240,235), Color.rgb(227,244,234), Color.rgb(236,246,239), Color.rgb(225,242,232) -> Color.rgb(37,43,51)
-            else -> color
-        }
-    }
     private fun applyCellBackground(view: TextView, address: String?, header: Boolean) {
         val st = if (address != null) sheetStyles[address] else null
         val isSelected = address != null && (address == selected || address in selectedRangeCells)
         val fill = when {
             header -> themedColor(Color.rgb(224, 232, 239))
             isSelected -> themedColor(Color.rgb(207, 239, 220))
-            st != null -> themedCellFill(st.fillColor)
+            st != null -> st.fillColor
             else -> themedColor(Color.WHITE)
         }
-        val strokeColor = when {
-            nightTheme -> Color.BLACK
-            isSelected -> themedColor(Color.rgb(17, 125, 72))
-            st?.border == true -> themedColor(Color.rgb(70, 80, 88))
-            else -> dayPalettes[dayPaletteIndex.coerceIn(dayPalettes.indices)].gridLine
-        }
+        val palette = dayPalettes[dayPaletteIndex.coerceIn(dayPalettes.indices)]
+        val strokeColor = if (isSelected) palette.primary else palette.gridLine
         val strokeWidth = when {
             isSelected -> 1
             st?.border == true && st.thickBorder -> 2
