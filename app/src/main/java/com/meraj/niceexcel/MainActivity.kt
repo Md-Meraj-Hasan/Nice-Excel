@@ -767,6 +767,40 @@ class MainActivity : Activity() {
      * appear late on slower phones. Keep auto-width behavior, but scope the work to the edited
      * column and update formulas separately on the background executor.
      */
+    /** Keep all cells in an edited row aligned to the row's committed content height. */
+    private fun refreshRowHeightInPlace(address: String) {
+        val row = cellAddressRowPattern.matchEntire(address)
+            ?.groupValues?.get(1)?.toIntOrNull() ?: return
+        val height = dp(rowHeightPx(row))
+        val rowView = (0 until grid.childCount)
+            .asSequence()
+            .mapNotNull { grid.getChildAt(it) as? LinearLayout }
+            .firstOrNull { (it.tag as? Int) == row }
+            ?: if (row == 1) frozenFirstRow else null
+
+        rowView?.let { view ->
+            view.layoutParams = (view.layoutParams ?: LinearLayout.LayoutParams(-2, height)).apply {
+                this.height = height
+            }
+            for (i in 0 until view.childCount) {
+                val child = view.getChildAt(i)
+                child.layoutParams = (child.layoutParams ?: LinearLayout.LayoutParams(dp(48), height)).apply {
+                    this.height = height
+                }
+            }
+        }
+        val rowPattern = Regex("^[A-Z]+${row}$")
+        cellViews.forEach { (cellAddress, view) ->
+            if (!rowPattern.matches(cellAddress)) return@forEach
+            view.layoutParams = (view.layoutParams ?: LinearLayout.LayoutParams(-2, height)).apply {
+                this.height = height
+            }
+            view.maxLines = rowLineCount(row)
+            view.ellipsize = if (view.maxLines == 2) null else android.text.TextUtils.TruncateAt.END
+        }
+        rowView?.requestLayout()
+    }
+
     private fun refreshEditedCellColumn(address: String) {
         val match = Regex("^([A-Z]+)(\\d+)$").matchEntire(address) ?: return
         val columnName = match.groupValues[1]
@@ -780,7 +814,7 @@ class MainActivity : Activity() {
             if (columnIndex(m.groupValues[1]) != column) return@forEach
             val row = m.groupValues[2].toIntOrNull() ?: return@forEach
             addresses.add(candidate to row)
-            if (row !in wrappedRows) longest = max(longest, gridDisplay(candidate).length)
+            longest = max(longest, longestLineLength(gridDisplay(candidate)))
         }
         val widthPx = dp(max(28, minOf(360, longest * 7 + 18)))
         if (columnHeader.childCount > column + 1) {
@@ -1489,7 +1523,9 @@ class MainActivity : Activity() {
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
                 // Let the editing cell grow as the user adds more lines so the caret
                 // remains visible instead of being clipped by the original row height.
-                val lineCount = editor.lineCount.coerceIn(1, 6)
+                // Only explicit newlines should enlarge a row. editor.lineCount also
+                // counts soft-wrapped visual lines and caused false row-height growth.
+                val lineCount = (editor.text.count { it == '\n' } + 1).coerceIn(1, 6)
                 val wantedHeight = dp(if (lineCount == 1) 24 else 24 * lineCount + 4)
                 val current = editor.layoutParams
                 if (current != null && current.height != wantedHeight) {
@@ -1533,7 +1569,10 @@ class MainActivity : Activity() {
             if (save) {
                 putCell(address, newValue)
                 val row = Regex("^[A-Z]+(\\d+)$").matchEntire(address)?.groupValues?.get(1)?.toIntOrNull()
-                if (row != null && newValue.contains('\n')) wrappedRows.add(row)
+                if (row != null) {
+                    if (newValue.contains('\n')) wrappedRows.add(row) else wrappedRows.remove(row)
+                    cachedExplicitLineCountsByRow = null
+                }
             }
             editingAddress = null
             activeInlineCommit = null
@@ -1566,6 +1605,7 @@ class MainActivity : Activity() {
                     cell.text = gridDisplay(address)
                 } else {
                     refreshEditedCellColumn(address)
+                    refreshRowHeightInPlace(address)
                     scheduleFormulaRecalculation(setOf("$sheetName!$address"))
                 }
             } else {
@@ -1584,6 +1624,7 @@ class MainActivity : Activity() {
                         // the destination editor has been created and requested focus.
                         mainHandler.post {
                                         refreshEditedCellColumn(address)
+                            refreshRowHeightInPlace(address)
                             scheduleFormulaRecalculation(setOf("$sheetName!$address"))
                         }
                     } else {
