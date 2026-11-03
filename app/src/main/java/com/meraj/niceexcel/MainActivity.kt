@@ -2905,6 +2905,19 @@ class MainActivity : Activity() {
     }
     private fun dp(n:Int)=(n*resources.displayMetrics.density).toInt()
 
+    /** Reset the three synchronized worksheet strips after loading a new workbook.
+     * The selected address is reset to A1, so retaining an old horizontal offset can
+     * show Q:Z while the name box says A1/C1 and looks like phantom extra columns.
+     */
+    private fun resetWorksheetHorizontalScroll() {
+        if (!::headerHorizontal.isInitialized || !::frozenRowHorizontal.isInitialized || !::bodyHorizontal.isInitialized) return
+        headerHorizontal.post {
+            headerHorizontal.scrollTo(0, 0)
+            frozenRowHorizontal.scrollTo(0, 0)
+            bodyHorizontal.scrollTo(0, 0)
+        }
+    }
+
     private fun openMenu() {
         AlertDialog.Builder(this).setTitle("Open workbook")
             .setItems(arrayOf("Excel workbook (.xlsx)", "CSV file (.csv)")) { _, which ->
@@ -2999,7 +3012,7 @@ class MainActivity : Activity() {
                 text.lines().take(rowCount).forEachIndexed { r,line ->
                     parseCsv(line).take(colLimit).forEachIndexed { c,v -> if(v.isNotEmpty()) data["${colName(c)}${r+1}"]=v }
                 }
-                select("A1"); status.text="CSV opened"
+                select("A1"); resetWorksheetHorizontalScroll(); status.text="CSV opened"
             } else if(requestCode==14) {
                 val loaded = contentResolver.openInputStream(intent.data!!)?.use { XlsxCodec.read(it) } ?: error("Could not open workbook")
                 sheets.clear(); sheets.putAll(loaded.sheets)
@@ -3013,7 +3026,7 @@ class MainActivity : Activity() {
                 rowCount = max(50, max(lastCellRow, lastMergeRow))
                 loaded.sheets.keys.forEach { styles.getOrPut(it) { mutableMapOf() } }
                 if (sheets.isEmpty()) { sheets["Sheet1"] = mutableMapOf(); styles["Sheet1"] = mutableMapOf() }
-                sheetName = sheets.keys.first(); selected = "A1"; render(); cellName.text=selected; formula.setText(data[selected].orEmpty())
+                sheetName = sheets.keys.first(); selected = "A1"; render(); cellName.text=selected; formula.setText(data[selected].orEmpty()); resetWorksheetHorizontalScroll()
                 status.text="Excel workbook opened • ${sheets.size} sheet(s)"
             }
         } catch(e:Exception) { status.text="File error: ${e.message ?: "unknown"}" }
