@@ -105,8 +105,11 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         if (darkMode && color == Color.rgb(24,32,39)) Color.rgb(235,241,250) else themedColor(color)
 
     private fun updateSystemBars() {
-        window.statusBarColor = dayPalettes[dayPaletteIndex.coerceIn(dayPalettes.indices)].primary
-        window.navigationBarColor = if (darkMode) Color.rgb(5,9,18) else Color.rgb(20,30,40)
+        // Black theme must override the selected day-palette accent (often green).
+        // Keep light-theme palette colours unchanged.
+        window.statusBarColor = if (darkMode) Color.BLACK
+            else dayPalettes[dayPaletteIndex.coerceIn(dayPalettes.indices)].primary
+        window.navigationBarColor = if (darkMode) Color.BLACK else Color.rgb(20,30,40)
         window.decorView.systemUiVisibility = 0
     }
 
