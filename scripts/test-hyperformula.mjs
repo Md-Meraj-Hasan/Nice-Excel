@@ -53,7 +53,7 @@ assert.equal(value(1), 'Notebook', 'VLOOKUP exact match');
 assert.equal(value(2), 'Pencil', 'XLOOKUP exact match');
 assert.equal(value(3)?.value, '#DIV/0!', 'Excel error propagation');
 assert.equal(value(4), true, 'boolean function value');
-const concatEngine = HyperFormula.buildFromArray([['=CONCAT("Nice","Excel")']], { licenseKey: 'gpl-v3' });
+const concatEngine = HyperFormula.buildFromArray([[normalizeFormulaBooleans('=CONCAT("Nice","Excel")')]], { licenseKey: 'gpl-v3' });
 assert.equal(concatEngine.getCellValue({ sheet: 0, row: 0, col: 0 }), 'NiceExcel', 'Excel CONCAT alias');
 concatEngine.destroy();
 const filterAnchor = { sheet: hf.getSheetId('Sheet2'), row: 5, col: 4 };
