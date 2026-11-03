@@ -23,6 +23,8 @@ jobs:
       - name: Run backend API and data-tool tests
         working-directory: backend
         run: python -m pytest tests -q
+      - name: Verify Native Python API modules import
+        run: python -m compileall -q app/src/main/python/niceexcel_api && PYTHONPATH=app/src/main/python python -c "from niceexcel_api.main import app; assert app is not None"
       - name: Setup Node.js for offline HyperFormula bundle
         uses: actions/setup-node@v4
         with:
