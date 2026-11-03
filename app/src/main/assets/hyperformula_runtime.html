@@ -21,7 +21,9 @@
     const flush = (nextChar = '') => {
       if (token) {
         const upper = token.toUpperCase();
-        output += upper === 'TRUE' && nextChar !== '(' ? 'TRUE()' : upper === 'FALSE' && nextChar !== '(' ? 'FALSE()' : token;
+        // Normalize Excel CONCAT alias only when it is a function call.
+        if (upper === 'CONCAT' && nextChar === '(') output += 'CONCATENATE';
+        else output += upper === 'TRUE' && nextChar !== '(' ? 'TRUE()' : upper === 'FALSE' && nextChar !== '(' ? 'FALSE()' : token;
         token = '';
       }
     };
