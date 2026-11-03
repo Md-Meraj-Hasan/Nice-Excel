@@ -122,4 +122,4 @@ def test_web_filter_can_explicitly_choose_columns_through_z():
         assert "range=A1:Z40" in html
         assert "Choose the worksheet column to filter" in html
         assert "columnNumber(column)>COLS" in html
-        assert ".grid td.table-cell{border-right:2px solid var(--accent);border-bottom:2px solid var(--accent)}" in html
+        assert ".grid td.table-cell{border-right:1px solid var(--accent);border-bottom:1px solid var(--accent)}" in html
