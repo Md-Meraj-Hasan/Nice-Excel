@@ -282,7 +282,7 @@ DayPalette("Black", Color.rgb(25,25,25), Color.rgb(238,238,238), Color.rgb(20,20
             setPadding(dp(6), dp(5), dp(6), dp(5))
             setBackgroundColor(themedColor(Color.rgb(17, 94, 57)))
         }
-        listOf("File", "Home", "Insert", "Format", "Data", "Formula", "View").forEach { label ->
+        listOf("File", "Home", "Insert", "Format", "Data", "Advanced", "Formula", "View").forEach { label ->
             val button = tool(label) { showTopMenu(label) }.apply {
                 textSize = 13f
                 minHeight = dp(34)
@@ -613,6 +613,14 @@ DayPalette("Black", Color.rgb(25,25,25), Color.rgb(238,238,238), Color.rgb(20,20
                 "Find / Replace…" to { findReplaceMenu() },
                 "Workbook data range info" to { val used = usedRange(); status.text = "Used range: A1:${colName(used.second)}${used.first}" }
             )
+            "Advanced" -> listOf(
+                "Conditional Formatting…" to { conditionalFormattingMenu() },
+                "Data Validation…" to { dataValidationMenu() },
+                "Data Cleaning…" to { dataCleaningMenu() },
+                "Filter by Cell Colour" to { filterByCellColour() },
+                "Pivot Summary…" to { pivotSummaryMenu(false) },
+                "Dashboard Builder…" to { pivotSummaryMenu(true) }
+            )
             "Formula" -> listOf("Insert function…" to { formulaPickerMenu() }, "Formula help" to { formulaHelp() }, "Formula examples" to { formulaHelp() })
             "View" -> buildList {
                 add("Choose Colour • ${dayPalettes[dayPaletteIndex].name}" to { chooseDayPalette() })
@@ -635,7 +643,7 @@ DayPalette("Black", Color.rgb(25,25,25), Color.rgb(238,238,238), Color.rgb(20,20
             "Format cells…" to "Cells", "Range formatting…" to "Range", "Font size…" to "Size", "Text alignment…" to "Align",
             "Number format…" to "Number", "Selected row: Single / Double line…" to "↵ Wrap", "Table styles…" to "Styles",
             "Sort column A → Z" to "Sort A→Z", "Filter column…" to "Filter", "Clear filter" to "Clear filter", "Find / Replace…" to "Find",
-            "Workbook data range info" to "Range info", "Insert function…" to "ƒx Insert", "Formula help" to "ƒx Help",
+            "Workbook data range info" to "Range info", "Conditional Formatting…" to "Conditional", "Data Validation…" to "Validation", "Data Cleaning…" to "Clean Data", "Filter by Cell Colour" to "Filter Colour", "Pivot Summary…" to "Pivot", "Dashboard Builder…" to "Dashboard", "Insert function…" to "ƒx Insert", "Formula help" to "ƒx Help",
             "Workbook info" to "Info", "Refresh current sheet formulas" to "↻ Refresh"
         )
         items.forEach { item ->
@@ -2966,6 +2974,130 @@ DayPalette("Black", Color.rgb(25,25,25), Color.rgb(238,238,238), Color.rgb(20,20
         return (result - 1).coerceAtLeast(0)
     }
 
+    private fun conditionalFormattingMenu() {
+        val rangeInput = EditText(this).apply { hint = "Range e.g. A1:D20"; setSingleLine(true); setText(selectedRangeLabel ?: selected) }
+        val options = arrayOf("Greater than", "Less than", "Equal to", "Text contains", "Duplicate values", "Blank cells")
+        AlertDialog.Builder(this).setTitle("Conditional Formatting").setMessage("Highlight matching cells in the entered range.")
+            .setItems(options) { _, which ->
+                val range = rangeInput.text.toString().trim().uppercase(Locale.ROOT)
+                val cells = parseCellRange(range)
+                if (cells.isEmpty()) { status.text = "Enter a valid range such as A1:D20"; return@setItems }
+                if (which >= 4) {
+                    val rule = ConditionalFormatRule(type = if (which == 4) "duplicateValues" else "blanks", range = range)
+                    applyConditionalRule(rule, cells)
+                } else {
+                    val valueInput = EditText(this).apply { hint = if (which == 3) "Text to find" else "Number"; setSingleLine(true) }
+                    AlertDialog.Builder(this).setTitle(options[which]).setView(valueInput).setNegativeButton("Cancel", null)
+                        .setPositiveButton("Apply") { _, _ ->
+                            val value = valueInput.text.toString().trim()
+                            if (value.isEmpty()) { status.text = "Enter a value"; return@setPositiveButton }
+                            val type = if (which == 3) "textContains" else "cellValue"
+                            val op = when (which) { 0 -> "greaterThan"; 1 -> "lessThan"; else -> "equal" }
+                            applyConditionalRule(ConditionalFormatRule(type = type, range = range, operator = op, value = value, text = value), cells)
+                        }.showProfessional()
+                }
+            }.setNegativeButton("Cancel", null).showProfessional().also { dialog ->
+                dialog.setOnShowListener { dialog.setMessage("Range: " + rangeInput.text + "\nChoose a conditional formatting rule.") }
+            }
+    }
+
+    private fun applyConditionalRule(rule: ConditionalFormatRule, cells: List<String>) {
+        val error = ConditionalFormatting.validate(rule)
+        if (error != null) { status.text = error; return }
+        val values = cells.map { data[it] }
+        val counts = ConditionalFormatting.duplicateCounts(values)
+        var changed = 0
+        cells.forEachIndexed { index, address ->
+            val value = values[index]
+            val key = value?.trim()?.lowercase(Locale.ROOT).orEmpty()
+            if (ConditionalFormatting.matches(rule, value, counts[key] ?: 0)) {
+                styleFor(address).apply { fillColor = 0xFFFFF2CC.toInt(); textColor = 0xFF7F6000.toInt() }
+                changed++
+            }
+        }
+        render()
+        status.text = "Conditional formatting applied to " + changed + " cell(s)"
+    }
+
+    private fun dataValidationMenu() {
+        val rangeInput = EditText(this).apply { hint = "Range e.g. A1:A20"; setSingleLine(true); setText(selectedRangeLabel ?: selected) }
+        val choices = arrayOf("Whole numbers", "Decimal numbers", "Text only", "Allowed list")
+        AlertDialog.Builder(this).setTitle("Data Validation").setView(rangeInput).setItems(choices) { _, which ->
+            val cells = parseCellRange(rangeInput.text.toString())
+            if (cells.isEmpty()) { status.text = "Enter a valid range"; return@setItems }
+            if (which == 3) {
+                val allowedInput = EditText(this).apply { hint = "Allowed values separated by commas"; setSingleLine(true) }
+                AlertDialog.Builder(this).setTitle("Allowed values").setView(allowedInput).setNegativeButton("Cancel", null)
+                    .setPositiveButton("Check") { _, _ ->
+                        val allowed = allowedInput.text.toString().split(",").map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+                        val invalid = cells.filter { data[it].orEmpty().isNotBlank() && data[it].orEmpty() !in allowed }
+                        status.text = if (invalid.isEmpty()) "Validation passed for " + cells.size + " cells" else "Invalid cells: " + invalid.take(6).joinToString()
+                    }.showProfessional()
+            } else {
+                val invalid = cells.filter { address ->
+                    val value = data[address].orEmpty().trim()
+                    if (value.isEmpty() || value.startsWith("=")) false else when (which) {
+                        0 -> value.toLongOrNull() == null
+                        1 -> value.toDoubleOrNull() == null
+                        else -> value.toDoubleOrNull() != null
+                    }
+                }
+                status.text = if (invalid.isEmpty()) "Validation passed for " + cells.size + " cells" else "Invalid cells: " + invalid.take(6).joinToString()
+            }
+        }.setNegativeButton("Cancel", null).showProfessional()
+    }
+
+    private fun dataCleaningMenu() {
+        val rangeInput = EditText(this).apply { hint = "Range e.g. A1:D50"; setSingleLine(true); setText(selectedRangeLabel ?: selected) }
+        val choices = arrayOf("Trim spaces", "Remove duplicate rows", "Clear blank rows")
+        AlertDialog.Builder(this).setTitle("Data Cleaning").setView(rangeInput).setItems(choices) { _, which ->
+            val cells = parseCellRange(rangeInput.text.toString())
+            if (cells.isEmpty()) { status.text = "Enter a valid range"; return@setItems }
+            val rows = cells.mapNotNull { Regex("[0-9]+").find(it)?.value?.toIntOrNull() }.distinct().sorted()
+            val columns = cells.mapNotNull { Regex("^[A-Z]+").find(it)?.value }.distinct().sortedBy { columnIndex(it) }
+            when (which) {
+                0 -> { var changed = 0; cells.forEach { a -> val old = data[a].orEmpty(); if (old != old.trim()) { data[a] = old.trim(); changed++ } }; workbookRevision.incrementAndGet(); render(); status.text = "Trimmed " + changed + " cell(s)" }
+                1 -> {
+                    if (rows.size < 2) { status.text = "Select a header and data rows"; return@setItems }
+                    val seen = mutableSetOf<String>(); var removed = 0
+                    rows.drop(1).forEach { row -> val key = columns.joinToString("\u001F") { col -> data[col + row].orEmpty().trim().lowercase(Locale.ROOT) }; if (key.isNotBlank() && !seen.add(key)) { columns.forEach { data.remove(it + row) }; removed++ } }
+                    workbookRevision.incrementAndGet(); render(); status.text = "Removed " + removed + " duplicate row(s)"
+                }
+                else -> { var removed = 0; rows.drop(1).forEach { row -> val rowCells = columns.map { it + row }; if (rowCells.all { data[it].orEmpty().isBlank() }) { rowCells.forEach { data.remove(it) }; removed++ } }; workbookRevision.incrementAndGet(); render(); status.text = "Cleared " + removed + " blank row(s)" }
+            }
+        }.setNegativeButton("Cancel", null).showProfessional()
+    }
+
+    private fun filterByCellColour() {
+        val fill = sheetStyles[selected]?.fillColor ?: run { status.text = "Select a filled cell first"; return }
+        val header = tableHeaderRow ?: 1
+        val matching = (header + 1..rowCount).filter { row -> (0 until colLimit).any { c -> sheetStyles[colName(c) + row]?.fillColor == fill } }.toSet()
+        for (i in 0 until grid.childCount) { val rowView = grid.getChildAt(i) as? LinearLayout ?: continue; val row = rowView.tag as? Int ?: (i + 2); rowView.visibility = if (row <= header || row in matching) android.view.View.VISIBLE else android.view.View.GONE }
+        status.text = "Colour filter: " + matching.size + " matching row(s)"
+    }
+
+    private fun pivotSummaryMenu(dashboard: Boolean) {
+        val rangeInput = EditText(this).apply { hint = "Data range e.g. A1:D100"; setSingleLine(true); setText(selectedRangeLabel ?: selected) }
+        AlertDialog.Builder(this).setTitle(if (dashboard) "Dashboard Builder" else "Pivot Summary").setView(rangeInput)
+            .setMessage("Groups the first column and counts its values, then creates a new summary sheet.")
+            .setNegativeButton("Cancel", null).setPositiveButton("Create") { _, _ ->
+                val cells = parseCellRange(rangeInput.text.toString())
+                if (cells.isEmpty()) { status.text = "Enter a valid data range"; return@setPositiveButton }
+                val rows = cells.mapNotNull { Regex("[0-9]+").find(it)?.value?.toIntOrNull() }.distinct().sorted()
+                val columns = cells.mapNotNull { Regex("^[A-Z]+").find(it)?.value }.distinct().sortedBy { columnIndex(it) }
+                if (rows.size < 2 || columns.isEmpty()) { status.text = "Range needs a header and data rows"; return@setPositiveButton }
+                val first = columns.first(); val title = data[first + rows.first()].orEmpty().ifBlank { "Category" }
+                val counts = linkedMapOf<String, Int>()
+                rows.drop(1).forEach { row -> val value = data[first + row].orEmpty().ifBlank { "(Blank)" }; counts[value] = (counts[value] ?: 0) + 1 }
+                addSheet()
+                data["A1"] = (if (dashboard) "Dashboard • " else "Pivot Summary • ") + title
+                data["A2"] = "Category"; data["B2"] = "Count"
+                counts.entries.sortedByDescending { it.value }.forEachIndexed { index, entry -> data["A" + (index + 3)] = entry.key; data["B" + (index + 3)] = entry.value.toString() }
+                styleFor("A1").apply { bold = true; fillColor = 0xFF155E3B.toInt(); textColor = Color.WHITE }
+                listOf("A2", "B2").forEach { a -> styleFor(a).apply { bold = true; fillColor = 0xFF1B7652.toInt(); textColor = Color.WHITE; border = true } }
+                workbookRevision.incrementAndGet(); render(); status.text = (if (dashboard) "Dashboard" else "Pivot summary") + " created on " + sheetName
+            }.showProfessional()
+    }
     private fun filterMenu() {
         val selectedCol = selected.takeWhile { it.isLetter() }.ifEmpty { "A" }
         val columnInput = EditText(this).apply {
