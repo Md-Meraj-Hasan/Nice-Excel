@@ -2,7 +2,6 @@ package com.meraj.niceexcel;
 
 import android.app.Service;
 import android.content.Intent;
-import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.IBinder;
@@ -31,7 +30,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * Headless HyperFormula host in the dedicated :hyperformula process.
+ * Headless HyperFormula host in the app process.
  *
  * Startup and calculation are explicitly acknowledged. A failed WebView load,
  * JavaScript bundle, renderer, or request returns a useful error immediately
@@ -83,11 +82,10 @@ public final class HyperFormulaEngineService extends Service {
 
     @Override public void onCreate() {
         super.onCreate();
-        Log.i(TAG, "SERVICE_CREATE pid=" + android.os.Process.myPid()
-                + " sdk=" + Build.VERSION.SDK_INT);
+        Log.i(TAG, "SERVICE_CREATE pid=" + android.os.Process.myPid());
         try {
-            // Must be configured before this process creates any WebView.
-            if (Build.VERSION.SDK_INT >= 28) WebView.setDataDirectorySuffix("hyperformula");
+            // This service shares the app process, so it uses the default WebView data directory.
+            // Do not call setDataDirectorySuffix(): WebView may already be initialized by Android or an SDK.
             webView = new WebView(getApplicationContext());
             webView.getSettings().setJavaScriptEnabled(true);
             webView.getSettings().setDomStorageEnabled(false);
