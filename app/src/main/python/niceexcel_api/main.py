@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import io
+import json
 import os
 import re
 import tempfile
@@ -20,6 +21,7 @@ from openpyxl.utils import get_column_letter, range_boundaries
 from pydantic import BaseModel, Field
 from .formula_engine import calculate_cell
 from .dependency_graph import build_dependency_graph
+from .conditional_formatting import normalize_rule
 
 app = create_app(__name__)
 app.version = "0.1.0"
@@ -123,6 +125,16 @@ class CellUpdate(BaseModel):
 class UpdateCellsRequest(BaseModel):
     sheet: str = "Sheet1"
     cells: list[CellUpdate] = Field(min_items=1, max_items=5000)
+
+
+class ConditionalFormattingRequest(BaseModel):
+    sheet: str = Field(min_length=1, max_length=31)
+    rules: list[dict[str, Any]] = Field(default_factory=list, max_items=200)
+
+
+class DataValidationRequest(BaseModel):
+    sheet: str = Field(min_length=1, max_length=31)
+    rules: list[dict[str, Any]] = Field(default_factory=list, max_items=200)
 
 
 
@@ -340,9 +352,171 @@ def get_range(book_id: str, sheet: str, cell_range: str = Query(default="A1:Z50"
             item.update(calculate_cell(wb, sheet, cell.coordinate))
             row_data.append(item)
         rows.append(row_data)
-    return {"sheet": sheet, "range": cell_range, "rows": rows, "formula_engine": "Nice Excel subset evaluator"}
+    return {"sheet": sheet, "range": cell_range, "rows": rows, "formula_engine": "Nice Excel subset evaluator", "conditional_formatting": _get_conditional_rules(wb, sheet)}
 
 
+
+
+
+def _conditional_formatting_sheet(wb: Workbook):
+    name = "_NiceExcelCF"
+    if name not in wb.sheetnames:
+        ws = wb.create_sheet(name)
+        ws.sheet_state = "veryHidden"
+        ws["A1"] = "{}"
+    return wb[name]
+
+
+def _get_conditional_rules(wb: Workbook, sheet_name: str) -> list[dict[str, Any]]:
+    if "_NiceExcelCF" not in wb.sheetnames: return []
+    try:
+        doc = json.loads(str(wb["_NiceExcelCF"]["A1"].value or "{}"))
+        rules = doc.get(sheet_name, []) if isinstance(doc, dict) else []
+        return [normalize_rule(rule) for rule in rules]
+    except (ValueError, TypeError, json.JSONDecodeError): return []
+
+
+def _set_conditional_rules(wb: Workbook, sheet_name: str, rules: list[dict[str, Any]]) -> None:
+    ws = _conditional_formatting_sheet(wb)
+    try:
+        doc = json.loads(str(ws["A1"].value or "{}"))
+        if not isinstance(doc, dict): doc = {}
+    except (ValueError, TypeError, json.JSONDecodeError): doc = {}
+    doc[sheet_name] = rules
+    serialized = json.dumps(doc, ensure_ascii=False, separators=(",", ":"))
+    if len(serialized) > 30000: raise HTTPException(status_code=413, detail="Conditional-format metadata exceeds workbook limit")
+    ws["A1"] = serialized
+    ws.sheet_state = "veryHidden"
+
+
+@app.get("/workbooks/{book_id}/conditional-formatting")
+def get_conditional_formatting(book_id: str, sheet: str):
+    wb = _book(book_id)
+    _sheet(wb, sheet)
+    return {"sheet": sheet, "rules": _get_conditional_rules(wb, sheet)}
+
+
+@app.put("/workbooks/{book_id}/conditional-formatting")
+def put_conditional_formatting(book_id: str, request: ConditionalFormattingRequest):
+    wb = _book(book_id)
+    _sheet(wb, request.sheet)
+    normalized, seen = [], set()
+    try:
+        for raw in request.rules:
+            rule = normalize_rule(raw)
+            bounds = range_boundaries(rule["range"])
+            if not all(bounds) or (bounds[2]-bounds[0]+1)*(bounds[3]-bounds[1]+1) > 10000: raise ValueError("Each conditional-format range must contain at most 10,000 cells")
+            rule_id = rule["id"] or uuid.uuid4().hex
+            if rule_id in seen: raise ValueError("Conditional-format rule IDs must be unique within a sheet")
+            seen.add(rule_id); rule["id"] = rule_id; normalized.append(rule)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    _record_history(book_id)
+    _set_conditional_rules(wb, request.sheet, normalized)
+    _persist_workbook(book_id)
+    return {"sheet": request.sheet, "rules": normalized, "autosaved": True}
+
+
+
+def _validation_meta_sheet(wb: Workbook):
+    name = "_NiceExcelDV"
+    if name not in wb.sheetnames:
+        ws = wb.create_sheet(name)
+        ws.sheet_state = "veryHidden"
+        ws["A1"] = "{}"
+    return wb[name]
+
+
+def _get_validation_rules(wb: Workbook, sheet_name: str) -> list[dict[str, Any]]:
+    if "_NiceExcelDV" not in wb.sheetnames:
+        return []
+    try:
+        doc = json.loads(str(wb["_NiceExcelDV"]["A1"].value or "{}"))
+        return doc.get(sheet_name, []) if isinstance(doc, dict) else []
+    except (ValueError, TypeError, json.JSONDecodeError):
+        return []
+
+
+def _set_validation_rules(wb: Workbook, sheet_name: str, rules: list[dict[str, Any]]) -> None:
+    ws = _validation_meta_sheet(wb)
+    try:
+        doc = json.loads(str(ws["A1"].value or "{}"))
+        if not isinstance(doc, dict): doc = {}
+    except (ValueError, TypeError, json.JSONDecodeError):
+        doc = {}
+    doc[sheet_name] = rules
+    serialized = json.dumps(doc, ensure_ascii=False, separators=(",", ":"))
+    if len(serialized) > 30000:
+        raise HTTPException(status_code=413, detail="Data-validation metadata exceeds workbook limit")
+    ws["A1"] = serialized
+    ws.sheet_state = "veryHidden"
+
+
+def _validate_entry(value: Any, rule: dict[str, Any]) -> str | None:
+    if value is None or str(value) == "":
+        return None
+    kind = rule.get("type")
+    if kind == "list":
+        allowed = [str(x).casefold() for x in rule.get("values", [])]
+        return None if str(value).casefold() in allowed else "Choose one of: " + ", ".join(map(str, rule.get("values", [])))
+    if kind in {"whole", "decimal"}:
+        try: number = float(value)
+        except (TypeError, ValueError): return "Enter a valid " + kind + " number"
+        if kind == "whole" and not number.is_integer(): return "Enter a whole number"
+        try:
+            first = float(rule.get("value"))
+            second = float(rule.get("value2")) if rule.get("value2") is not None else None
+        except (TypeError, ValueError): return "Validation rule has an invalid numeric limit"
+        op = rule.get("operator", "between")
+        if op == "between" and second is not None and not min(first, second) <= number <= max(first, second): return f"Value must be between {first:g} and {second:g}"
+        if op == "greaterThan" and not number > first: return f"Value must be greater than {first:g}"
+        if op == "lessThan" and not number < first: return f"Value must be less than {first:g}"
+        if op == "equal" and number != first: return f"Value must equal {first:g}"
+    if kind == "date":
+        from datetime import date, datetime
+        try: datetime.fromisoformat(str(value)[:10])
+        except ValueError: return "Enter a date in YYYY-MM-DD format"
+    return None
+
+
+@app.get("/workbooks/{book_id}/data-validation")
+def get_data_validation(book_id: str, sheet: str):
+    wb = _book(book_id)
+    _sheet(wb, sheet)
+    return {"sheet": sheet, "rules": _get_validation_rules(wb, sheet)}
+
+
+@app.put("/workbooks/{book_id}/data-validation")
+def put_data_validation(book_id: str, request: DataValidationRequest):
+    wb = _book(book_id)
+    _sheet(wb, request.sheet)
+    normalized = []
+    try:
+        for raw in request.rules:
+            if not isinstance(raw, dict): raise ValueError("Each validation rule must be an object")
+            cell_range = str(raw.get("range", "")).strip().upper()
+            bounds = range_boundaries(cell_range)
+            if not all(bounds) or (bounds[2]-bounds[0]+1)*(bounds[3]-bounds[1]+1) > 10000: raise ValueError("Validation range must be bounded and contain at most 10,000 cells")
+            kind = str(raw.get("type", ""))
+            if kind not in {"list", "whole", "decimal", "date"}: raise ValueError("Validation type must be list, whole, decimal, or date")
+            item = {"range": cell_range, "type": kind}
+            if kind == "list":
+                values = raw.get("values")
+                if not isinstance(values, list) or not values or len(values) > 100: raise ValueError("Dropdown list needs 1–100 values")
+                item["values"] = [str(v)[:255] for v in values]
+            else:
+                op = str(raw.get("operator", "between"))
+                if op not in {"between", "greaterThan", "lessThan", "equal"}: raise ValueError("Unsupported validation operator")
+                item.update({"operator": op, "value": raw.get("value"), "value2": raw.get("value2")})
+                if item["value"] is None: raise ValueError("Validation rule requires a first limit")
+                if op == "between" and item["value2"] is None: raise ValueError("Between validation requires a second limit")
+            normalized.append(item)
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    _record_history(book_id)
+    _set_validation_rules(wb, request.sheet, normalized)
+    _persist_workbook(book_id)
+    return {"sheet": request.sheet, "rules": normalized, "autosaved": True}
 
 
 @app.post("/workbooks/{book_id}/formula-preview")
@@ -366,6 +540,16 @@ def preview_formula(book_id: str, request: FormulaPreviewRequest):
 def update_cells(book_id: str, request: UpdateCellsRequest):
     wb = _book(book_id)
     ws = _sheet(wb, request.sheet)
+    for item in request.cells:
+        for rule in _get_validation_rules(wb, request.sheet):
+            try:
+                bounds = range_boundaries(rule.get('range', ''))
+                col, row = range_boundaries(item.cell + ':' + item.cell)[:2]
+                if bounds[0] <= col <= bounds[2] and bounds[1] <= row <= bounds[3]:
+                    message = _validate_entry(item.value, rule)
+                    if message: raise HTTPException(status_code=422, detail=f'{item.cell}: {message}')
+            except HTTPException: raise
+            except Exception: continue
     _record_history(book_id)
     for item in request.cells:
         ws[item.cell.upper()] = _safe_value(item.value)
