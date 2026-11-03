@@ -88,6 +88,21 @@ const regression = HyperFormula.buildFromSheets({
 }, { licenseKey: 'gpl-v3' });
 const boolSheet = regression.getSheetId('BooleanTests');
 const boolValue = (row, col) => regression.getCellValue({ sheet: boolSheet, row, col });
+const hSheet = regression.getSheetId('HLookupTests');
+const vSheet = regression.getSheetId('VLookupTests');
+regression.setCellContents({ sheet: hSheet, row: 1, col: 12 }, [
+  ['Q1', 'Q2', 'Q3'],
+  ['Jan', 'Feb', 'Mar'],
+  [100, 200, 300],
+]);
+regression.setCellContents({ sheet: hSheet, row: 0, col: 0 }, [['=HLOOKUP("Q2",M2:O4,3,FALSE)']]);
+regression.setCellContents({ sheet: vSheet, row: 1, col: 12 }, [
+  ['A', 100],
+  ['B', 200],
+  ['C', 300],
+  ['D', 400],
+]);
+regression.setCellContents({ sheet: vSheet, row: 0, col: 0 }, [['=VLOOKUP("B",M2:N5,2,FALSE)']]);
 const regressionResults = {
   andBareTrue: boolValue(0, 0),
   orBareFalse: boolValue(0, 1),
