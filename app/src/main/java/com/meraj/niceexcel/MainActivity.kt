@@ -96,7 +96,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
             Color.WHITE -> Color.BLACK
             Color.rgb(245,247,249) -> Color.rgb(11,16,32)
             Color.rgb(232,240,235), Color.rgb(227,244,234), Color.rgb(236,246,239) -> Color.rgb(18,26,43)
-            Color.rgb(225,242,232), Color.rgb(224,232,239), Color.rgb(213,229,218) -> Color.rgb(25,37,56)
+            Color.rgb(225,242,232), Color.rgb(224,232,239), Color.rgb(213,229,218), Color.rgb(231,237,233) -> Color.rgb(25,37,56)
             else -> themedColor(color)
         }
     }
