@@ -138,3 +138,21 @@ def test_web_filter_can_explicitly_choose_columns_through_z():
         assert "Choose the worksheet column to filter" in html
         assert "columnNumber(column)>COLS" in html
         assert ".grid td.table-cell{border-right:1px solid var(--accent);border-bottom:1px solid var(--accent)}" in html
+
+ 
+def test_web_table_outer_bottom_and_right_edges_are_emphasized_without_thickening_inner_grid():
+    for path in [
+        ROOT / "backend" / "niceexcel_api" / "static" / "index.html",
+        ROOT / "app" / "src" / "main" / "assets" / "niceexcel_index.html",
+    ]:
+        html = path.read_text(encoding="utf-8")
+        assert ".grid td.table-cell.table-edge-right{border-right:2px solid var(--accent)!important}" in html
+        assert ".grid td.table-cell.table-edge-bottom{border-bottom:2px solid var(--accent)!important}" in html
+        assert "td.classList.add('table-edge-bottom')" in html
+        assert "td.classList.add('table-edge-right')" in html
+
+def test_native_black_theme_formula_bar_and_grid_headers_use_high_contrast_text():
+    native = (ROOT / "app" / "src" / "main" / "java" / "com" / "meraj" / "niceexcel" / "MainActivity.kt").read_text(encoding="utf-8")
+    assert "setTextColor(if (darkMode) Color.WHITE else themedColor(Color.rgb(17,94,57)))" in native
+    assert 'text="ƒx ▾"; textSize=12f; setTextColor(if (darkMode) Color.WHITE' in native
+    assert "if (darkMode) Color.WHITE else dayPalettes" in native

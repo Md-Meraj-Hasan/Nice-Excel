@@ -411,11 +411,11 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         toolScroll.visibility = android.view.View.GONE
 
         val formulaBar=LinearLayout(this).apply { orientation=LinearLayout.HORIZONTAL; gravity=Gravity.CENTER_VERTICAL; setPadding(dp(6),dp(4),dp(6),dp(4)); setBackgroundColor(themedSurface(Color.rgb(255,255,255))) }
-        cellName=TextView(this).apply { text=selected; textSize=14f; typeface=Typeface.DEFAULT_BOLD; gravity=Gravity.CENTER; setTextColor(themedColor(Color.rgb(17,94,57))); setPadding(dp(10),dp(11),dp(10),dp(11)); setBackgroundColor(themedSurface(Color.rgb(225,242,232))) }
+        cellName=TextView(this).apply { text=selected; textSize=14f; typeface=Typeface.DEFAULT_BOLD; gravity=Gravity.CENTER; setTextColor(if (darkMode) Color.WHITE else themedColor(Color.rgb(17,94,57))); setPadding(dp(10),dp(11),dp(10),dp(11)); setBackgroundColor(themedSurface(Color.rgb(225,242,232))) }
         formulaBar.addView(cellName)
-        formula=EditText(this).apply { setSingleLine(true); textSize=14f; hint="Enter value or formula"; inputType=InputType.TYPE_CLASS_TEXT; setPadding(dp(8),dp(3),dp(8),dp(3)); setBackgroundColor(themedSurface(Color.WHITE)); setTextColor(themedCellTextColor(Color.rgb(24,32,39))); setHintTextColor(if (darkMode) Color.rgb(150,165,185) else Color.rgb(126,143,133)); setText(data[selected].orEmpty()); setOnEditorActionListener { _,_,_ -> applyFormula(); true } }
+        formula=EditText(this).apply { setSingleLine(true); textSize=14f; hint="Enter value or formula"; inputType=InputType.TYPE_CLASS_TEXT; setPadding(dp(8),dp(3),dp(8),dp(3)); setBackgroundColor(themedSurface(Color.WHITE)); setTextColor(if (darkMode) Color.WHITE else themedCellTextColor(Color.rgb(24,32,39))); setHintTextColor(if (darkMode) Color.rgb(205,215,230) else Color.rgb(126,143,133)); setText(data[selected].orEmpty()); setOnEditorActionListener { _,_,_ -> applyFormula(); true } }
         formulaBar.addView(formula,LinearLayout.LayoutParams(0,-2,1f))
-        formulaBar.addView(TextView(this).apply { text="ƒx ▾"; textSize=12f; setTextColor(themedColor(Color.rgb(17,94,57))); setPadding(dp(7),dp(10),dp(7),dp(10)); setOnClickListener { formulaPickerMenu() } })
+        formulaBar.addView(TextView(this).apply { text="ƒx ▾"; textSize=12f; setTextColor(if (darkMode) Color.WHITE else themedColor(Color.rgb(17,94,57))); setPadding(dp(7),dp(10),dp(7),dp(10)); setOnClickListener { formulaPickerMenu() } })
         root.addView(formulaBar)
 
         // Keep the column letters and worksheet row 1 outside the vertical scroller.
@@ -1509,7 +1509,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
             gravity = if (header || key == null) Gravity.CENTER else Gravity.CENTER_VERTICAL or Gravity.START
             setPadding(dp(3), 0, dp(3), 0)
             val st = if (key != null) sheetStyles[key] else null
-            setTextColor(if(header) themedColor(Color.rgb(55,67,77)) else themedCellTextColor(st?.textColor ?: Color.rgb(24,32,39)))
+            setTextColor(if (header) { if (darkMode) Color.WHITE else dayPalettes[dayPaletteIndex.coerceIn(dayPalettes.indices)].ink } else themedCellTextColor(st?.textColor ?: Color.rgb(24,32,39)))
             textSize = st?.fontSize ?: 13f
             typeface = Typeface.create(Typeface.DEFAULT, (if (st?.bold == true || header) Typeface.BOLD else Typeface.NORMAL) or (if (st?.italic == true) Typeface.ITALIC else Typeface.NORMAL))
             paint.isUnderlineText = st?.underline == true
@@ -1683,7 +1683,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         val st = if (address != null) sheetStyles[address] else null
         val isSelected = address != null && (address == selected || address in selectedRangeCells)
         val fill = when {
-            header -> themedSurface(Color.rgb(224, 232, 239))
+            header -> if (darkMode) Color.rgb(24, 34, 50) else dayPalettes[dayPaletteIndex.coerceIn(dayPalettes.indices)].light
             isSelected -> if (darkMode) dayPalettes[dayPaletteIndex.coerceIn(dayPalettes.indices)].primary else dayPalettes[dayPaletteIndex.coerceIn(dayPalettes.indices)].highlight
             st != null -> if (darkMode && st.fillColor == Color.WHITE) Color.BLACK else st.fillColor
             else -> themedSurface(Color.WHITE)
