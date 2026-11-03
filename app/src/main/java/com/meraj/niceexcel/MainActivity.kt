@@ -1225,7 +1225,28 @@ class MainActivity : Activity() {
         return max(if (row in wrappedRows) 2 else 1, explicitLines).coerceIn(1, 6)
     }
 
-    private fun rowHeightPx(row: Int): Int = if (rowLineCount(row) == 1) 24 else 24 * rowLineCount(row) + 4
+    private fun rowLineCountForEdit(row: Int, editedAddress: String, editedValue: String): Int {
+        var lines = if (row in wrappedRows) 2 else 1
+        data.forEach { (address, value) ->
+            val match = cellAddressRowPattern.matchEntire(address) ?: return@forEach
+            if (match.groupValues[1].toIntOrNull() != row || address == editedAddress) return@forEach
+            lines = max(lines, value.count { it == '\n' } + 1)
+        }
+        if (cellAddressRowPattern.matchEntire(editedAddress)?.groupValues?.get(1)?.toIntOrNull() == row) {
+            lines = max(lines, editedValue.count { it == '\n' } + 1)
+        }
+        return lines.coerceIn(1, 6)
+    }
+
+    private fun rowHeightPx(row: Int): Int {
+        val lines = rowLineCount(row)
+        return if (lines == 1) 24 else 24 * lines + 4
+    }
+
+    private fun rowHeightPxForEdit(row: Int, address: String, value: String): Int {
+        val lines = rowLineCountForEdit(row, address, value)
+        return if (lines == 1) 24 else 24 * lines + 4
+    }
 
     /**
      * Display value used only inside the grid. In double-line mode, split at the first
@@ -1253,7 +1274,7 @@ class MainActivity : Activity() {
             setHorizontallyScrolling(false)
             // Preserve complete glyph ascenders/descenders and use consistent line spacing.
             // Without font padding Android can clip the lower line on some device fonts.
-            includeFontPadding = true
+            includeFontPadding = false
             setLineSpacing(0f, 1.0f)
             gravity = if (header || key == null) Gravity.CENTER else Gravity.CENTER_VERTICAL or Gravity.START
             setPadding(dp(3), 0, dp(3), 0)
@@ -1514,7 +1535,10 @@ class MainActivity : Activity() {
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
             setHorizontallyScrolling(false)
             gravity = Gravity.TOP or Gravity.START
-            setPadding(dp(3), 0, dp(3), 0)
+            // Match grid text metrics; default EditText font padding leaves excess vertical gap.
+            includeFontPadding = false
+            setLineSpacing(0f, 1.0f)
+            setPadding(dp(3), dp(1), dp(3), dp(1))
             setBackgroundColor(Color.rgb(207, 239, 220))
             imeOptions = (if (text.toString().trimStart().startsWith("=")) android.view.inputmethod.EditorInfo.IME_ACTION_DONE else android.view.inputmethod.EditorInfo.IME_ACTION_NONE) or android.view.inputmethod.EditorInfo.IME_FLAG_NO_EXTRACT_UI
             minHeight = dp(18)
@@ -1531,26 +1555,29 @@ class MainActivity : Activity() {
         editor.addTextChangedListener(object : android.text.TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
-                // Let the editing cell grow as the user adds more lines so the caret
-                // remains visible instead of being clipped by the original row height.
-                // Only explicit newlines should enlarge a row. editor.lineCount also
-                // counts soft-wrapped visual lines and caused false row-height growth.
-                val lineCount = (editor.text.count { it == '\n' } + 1).coerceIn(1, 6)
-                val wantedHeight = dp(if (lineCount == 1) 24 else 24 * lineCount + 4)
+                // Keep the entire row at the height required by its tallest cell.
+                // Include the live editor value, not only the previously saved workbook data.
+                val row = cellAddressRowPattern.matchEntire(address)
+                    ?.groupValues?.get(1)?.toIntOrNull() ?: return
+                val wantedHeight = dp(rowHeightPxForEdit(row, address, editor.text.toString()))
                 val current = editor.layoutParams
                 if (current != null && current.height != wantedHeight) {
                     current.height = wantedHeight
                     editor.layoutParams = current
                 }
                 val rowView = parent
-                if (rowView != null && rowView.layoutParams.height != wantedHeight) {
-                    rowView.layoutParams = rowView.layoutParams.apply { height = wantedHeight }
+                if (rowView != null) {
+                    if (rowView.layoutParams.height != wantedHeight) {
+                        rowView.layoutParams = rowView.layoutParams.apply { height = wantedHeight }
+                    }
+                    rowView.minimumHeight = wantedHeight
                     for (i in 0 until rowView.childCount) {
                         val child = rowView.getChildAt(i)
                         if (child !== editor && child.layoutParams.height != wantedHeight) {
                             child.layoutParams = child.layoutParams.apply { height = wantedHeight }
                         }
                     }
+                    rowView.requestLayout()
                 }
             }
             override fun afterTextChanged(s: android.text.Editable?) {}
