@@ -610,7 +610,7 @@ DayPalette("Black", Color.rgb(25,25,25), Color.rgb(238,238,238), Color.rgb(20,20
             "Data" -> listOf(
                 "Sort column A → Z" to { sortColumn() },
                 "Filter column…" to { filterMenu() },
-                "Clear filter" to { filterColumn = null; filterText = null; refreshFilterVisibility() },
+                "Clear filter" to { filterColumn = null; filterText = null; filterCriteria.clear(); refreshFilterVisibility() },
                 "Find / Replace…" to { findReplaceMenu() },
                 "Workbook data range info" to { val used = usedRange(); status.text = "Used range: A1:${colName(used.second)}${used.first}" }
             )
@@ -2887,71 +2887,113 @@ DayPalette("Black", Color.rgb(25,25,25), Color.rgb(238,238,238), Color.rgb(20,20
     }
 
     private fun tableMenu() {
-        val opts = arrayOf(
+        val rangeInput = EditText(this).apply {
+            hint = "Range e.g. A1:D20"
+            setSingleLine(true)
+            setText(selectedRangeLabel ?: run {
+                val used = usedRange()
+                "A1:${colName(used.second)}${used.first}"
+            })
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS
+        }
+        val panel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(8), dp(20), dp(8))
+            addView(TextView(this@MainActivity).apply {
+                text = "Choose the exact range for table formatting. Both rows and columns are included."
+                textSize = 13f
+            })
+            addView(rangeInput, LinearLayout.LayoutParams(-1, -2))
+        }
+        val actions = arrayOf(
             "Format first row as heading",
-            "Apply table style to selected row",
-            "Apply THICK borders to used data range",
-            "Remove table styling",
+            "Apply table style to selected range",
+            "Apply THICK borders to selected range",
+            "Remove table styling from selected range",
             "Clear first-row heading"
         )
-        AlertDialog.Builder(this).setTitle("Table and borders").setItems(opts) { _, i ->
-            val affected = linkedSetOf<String>()
-            val row = Regex("[A-Z]+([0-9]+)").matchEntire(selected)?.groupValues?.get(1)?.toIntOrNull() ?: 1
-            when (i) {
-                0 -> {
-                    tableHeaderRow = row
-                    val lastCol = usedRange().second
-                    for (c in 0..lastCol) {
-                        val a = "${colName(c)}$row"; affected.add(a); val st = styleFor(a)
-                        st.bold = true; st.fillColor = 0xFF1B5E20.toInt(); st.textColor = themedColor(Color.WHITE); st.border = true
+        AlertDialog.Builder(this).setTitle("Table and borders")
+            .setView(panel)
+            .setItems(actions) { _, which ->
+                val range = rangeInput.text.toString().trim().uppercase(Locale.ROOT)
+                val cells = parseCellRange(range)
+                if (cells.isEmpty()) { status.text = "Invalid range. Example: A1:D20"; return@setItems }
+                applyTableRangeAction(which, cells, range)
+            }
+            .setNegativeButton("Cancel", null)
+            .showProfessional()
+    }
+
+    private fun applyTableRangeAction(action: Int, cells: List<String>, range: String) {
+        val affected = linkedSetOf<String>()
+        val rows = cells.mapNotNull { Regex("[0-9]+").find(it)?.value?.toIntOrNull() }.distinct().sorted()
+        val columns = cells.mapNotNull { Regex("^[A-Z]+").find(it)?.value }.distinct().sortedBy { columnIndex(it) }
+        if (rows.isEmpty() || columns.isEmpty()) { status.text = "Invalid table range"; return }
+        val headerRow = rows.first()
+        when (action) {
+            0 -> {
+                tableHeaderRow = headerRow
+                columns.forEachIndexed { index, col ->
+                    val address = "${col}$headerRow"; affected.add(address)
+                    styleFor(address).apply {
+                        bold = true; fillColor = 0xFF1B5E20.toInt()
+                        textColor = themedColor(Color.WHITE); border = true
                     }
-                    status.text = "Row $row formatted as table heading"
                 }
-                1 -> {
-                    val lastCol = usedRange().second
-                    for (c in 0..lastCol) {
-                        val a = "${colName(c)}$row"; affected.add(a); val st = styleFor(a)
-                        st.fillColor = if (c % 2 == 0) 0xFFE8F5E9.toInt() else themedColor(Color.WHITE); st.border = true
+                status.text = "Header applied to ${columns.first()}${headerRow}:${columns.last()}${headerRow}"
+            }
+            1 -> {
+                cells.forEach { address ->
+                    affected.add(address)
+                    val row = Regex("[0-9]+").find(address)?.value?.toIntOrNull() ?: headerRow
+                    val col = Regex("^[A-Z]+").find(address)?.value ?: columns.first()
+                    val st = styleFor(address)
+                    st.border = true
+                    if (row == headerRow) {
+                        st.bold = true; st.fillColor = 0xFF1B5E20.toInt(); st.textColor = themedColor(Color.WHITE)
+                    } else {
+                        st.fillColor = if ((columnIndex(col) + row) % 2 == 0) 0xFFE8F5E9.toInt() else themedColor(Color.WHITE)
                     }
                 }
-                2 -> {
-                    val (lastRow, lastCol) = usedRange()
-                    for (r in 1..lastRow) for (c in 0..lastCol) {
-                        val address = "${colName(c)}$r"
-                        affected.add(address)
-                        val st = styleFor(address)
-                        st.border = true
-                        st.thickBorder = true
-                    }
-                    status.text = "Thick borders applied to used range A1:${colName(lastCol)}$lastRow"
+                tableHeaderRow = headerRow
+                status.text = "Table style applied to $range"
+            }
+            2 -> {
+                cells.forEach { address ->
+                    affected.add(address)
+                    styleFor(address).apply { border = true; thickBorder = true }
                 }
-                3 -> {
-                    affected.addAll(sheetStyles.keys)
-                    sheetStyles.values.forEach { st -> st.border = false; st.thickBorder = false }
-                    sheetStyles.clear(); tableHeaderRow = null
-                    status.text = "Table styling removed"
-                }
-                4 -> {
-                    val headingRow = tableHeaderRow ?: row
-                    val lastCol = usedRange().second
-                    for (c in 0..lastCol) {
-                        val address = "${colName(c)}$headingRow"
-                        affected.add(address)
-                        val st = sheetStyles[address] ?: continue
-                        st.bold = false
+                status.text = "Thick row and column borders applied to $range"
+            }
+            3 -> {
+                cells.forEach { address ->
+                    affected.add(address)
+                    sheetStyles[address]?.let { st ->
+                        st.border = false; st.thickBorder = false; st.bold = false
                         st.fillColor = themedColor(Color.WHITE)
                         st.textColor = themedColor(Color.rgb(24, 32, 39))
-                        st.border = false
-                        st.thickBorder = false
-                        st.alignment = Gravity.CENTER_VERTICAL or Gravity.START
                         if (st == CellStyle()) sheetStyles.remove(address)
                     }
-                    tableHeaderRow = null
-                    status.text = "Heading formatting cleared for row $headingRow"
                 }
+                if (tableHeaderRow in rows) tableHeaderRow = null
+                status.text = "Table styling removed from $range"
             }
-            refreshStyledCells(affected)
-        }.showProfessional()
+            4 -> {
+                columns.forEach { col ->
+                    val address = "${col}$headerRow"; affected.add(address)
+                    sheetStyles[address]?.let { st ->
+                        st.bold = false; st.fillColor = themedColor(Color.WHITE)
+                        st.textColor = themedColor(Color.rgb(24, 32, 39))
+                        st.border = false; st.thickBorder = false
+                        if (st == CellStyle()) sheetStyles.remove(address)
+                    }
+                }
+                if (tableHeaderRow == headerRow) tableHeaderRow = null
+                status.text = "Heading cleared for $range"
+            }
+        }
+        workbookRevision.incrementAndGet()
+        refreshStyledCells(affected)
     }
 
     /** Returns the last used row and column (zero-based column), including formula cells. */
@@ -3080,6 +3122,7 @@ DayPalette("Black", Color.rgb(25,25,25), Color.rgb(238,238,238), Color.rgb(20,20
     private fun clearAdvancedFilters() {
         filterColumn = null
         filterText = null
+        filterCriteria.clear()
         for (i in 0 until grid.childCount) {
             val rowView = grid.getChildAt(i) as? LinearLayout ?: continue
             rowView.visibility = android.view.View.VISIBLE
@@ -3119,58 +3162,48 @@ DayPalette("Black", Color.rgb(25,25,25), Color.rgb(238,238,238), Color.rgb(20,20
             }.showProfessional()
     }
     private fun filterMenu() {
-        val selectedCol = selected.takeWhile { it.isLetter() }.ifEmpty { "A" }
+        val selectedColumn = Regex("^([A-Z]+)[0-9]+$").matchEntire(selected)
+            ?.groupValues?.get(1)?.uppercase(Locale.ROOT) ?: "A"
         val columnInput = EditText(this).apply {
-            hint = "Column letter, e.g. A, B, D"
-            setSingleLine(true)
-            // Always target the currently selected cell's column. Reusing the previous
-            // filter column here made it appear that filters on later columns were ignored.
-            setText(selectedCol)
-            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS
+            hint = "Column letter (A, D, AA, AB...)"
+            setSingleLine(true); setText(selectedColumn)
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS
         }
         val queryInput = EditText(this).apply {
-            hint = "Text contains… (blank clears filter)"
+            hint = "Contains text (blank removes this column filter)"
             setSingleLine(true)
-            setText(filterText.orEmpty())
+            setText(filterCriteria[columnInput.text.toString().uppercase(Locale.ROOT)] ?: filterText.orEmpty())
         }
-        val content = LinearLayout(this).apply {
+        val panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(20), dp(4), dp(20), dp(4))
             addView(TextView(this@MainActivity).apply {
-                text = "Filter column (use the column containing your data, e.g. D for City):"
+                text = "Add or update a filter for any column. Existing filters on other columns remain active."
                 textSize = 13f
-                setTextColor(themedColor(Color.rgb(45, 65, 54)))
             })
             addView(columnInput, LinearLayout.LayoutParams(-1, -2))
-            addView(TextView(this@MainActivity).apply {
-                text = "Show rows where the selected column contains:"
-                textSize = 13f
-                setTextColor(themedColor(Color.rgb(45, 65, 54)))
-                setPadding(0, dp(10), 0, 0)
-            })
             addView(queryInput, LinearLayout.LayoutParams(-1, -2))
         }
-        AlertDialog.Builder(this)
-            .setTitle("Filter rows")
-            .setView(content)
+        AlertDialog.Builder(this).setTitle("Filter rows")
+            .setView(panel)
             .setPositiveButton("Apply") { _, _ ->
-                val col = columnInput.text.toString().trim().uppercase(Locale.ROOT)
+                val rawCol = columnInput.text.toString().trim().uppercase(Locale.ROOT)
                 val q = queryInput.text.toString().trim()
-                if (q.isEmpty()) {
-                    filterColumn = null
-                    filterText = null
-                } else if (!Regex("^[A-Z]{1,3}$").matches(col) || columnIndex(col) !in 0 until colLimit) {
-                    status.text = "Invalid column. Enter a visible column from A to ${colNameFromIndex(colLimit - 1)}."
+                if (!Regex("^[A-Z]{1,3}$").matches(rawCol) || columnIndex(rawCol) !in 0 until colLimit) {
+                    status.text = "Invalid column. Available: A to ${colNameFromIndex(colLimit - 1)}."
                     return@setPositiveButton
-                } else {
-                    filterColumn = colNameFromIndex(columnIndex(col))
-                    filterText = q
                 }
+                val col = colNameFromIndex(columnIndex(rawCol))
+                if (q.isEmpty()) filterCriteria.remove(col) else filterCriteria[col] = q
+                filterColumn = filterCriteria.keys.lastOrNull()
+                filterText = filterColumn?.let { filterCriteria[it] }
                 refreshFilterVisibility()
             }
-            .setNeutralButton("Clear filter") { _, _ ->
-                filterColumn = null
-                filterText = null
+            .setNeutralButton("Clear this column") { _, _ ->
+                val rawCol = columnInput.text.toString().trim().uppercase(Locale.ROOT)
+                if (Regex("^[A-Z]{1,3}$").matches(rawCol)) filterCriteria.remove(colNameFromIndex(columnIndex(rawCol)))
+                filterColumn = filterCriteria.keys.lastOrNull()
+                filterText = filterColumn?.let { filterCriteria[it] }
                 refreshFilterVisibility()
             }
             .setNegativeButton("Cancel", null)
@@ -3493,6 +3526,7 @@ DayPalette("Black", Color.rgb(25,25,25), Color.rgb(238,238,238), Color.rgb(20,20
                 selectedRangeLabel = null
                 filterColumn = null
                 filterText = null
+                filterCriteria.clear()
                 tableHeaderRow = null
                 render()
                 cellName.text = selected
