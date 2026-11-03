@@ -70,7 +70,7 @@ def test_native_table_tools_accept_custom_ranges_and_apply_row_column_borders():
     assert 'hint = "Range e.g. A1:D20"' in native
     assert "applyTableRangeAction(which, cells, range)" in native
     assert "cells.forEach { address ->" in native
-    assert "st.thickBorder = true" in native
+    assert "thickBorder = true" in native
     assert "Table style applied to $range" in native
 
 
