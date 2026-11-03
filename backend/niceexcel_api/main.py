@@ -370,7 +370,7 @@ def get_range(book_id: str, sheet: str, cell_range: str = Query(default="A1:Z50"
             item.update(calculate_cell(wb, sheet, cell.coordinate))
             row_data.append(item)
         rows.append(row_data)
-    return {"sheet": sheet, "range": cell_range, "rows": rows, "formula_engine": "Nice Excel subset evaluator"}
+    return {"sheet": sheet, "range": cell_range, "rows": rows, "formula_engine": "Nice Excel subset evaluator", "conditional_formatting": _get_conditional_rules(wb, sheet)}
 
 
 
