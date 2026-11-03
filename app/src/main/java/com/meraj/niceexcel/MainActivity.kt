@@ -188,7 +188,8 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        nightTheme = getPreferences(MODE_PRIVATE).getBoolean("night_theme", false)\n        dayPaletteIndex = getPreferences(MODE_PRIVATE).getInt("day_palette_index", 0).coerceIn(dayPalettes.indices)
+        nightTheme = getPreferences(MODE_PRIVATE).getBoolean("night_theme", false)
+        dayPaletteIndex = getPreferences(MODE_PRIVATE).getInt("day_palette_index", 0).coerceIn(dayPalettes.indices)
         window.statusBarColor = themedColor(themedColor(Color.rgb(17, 94, 57)))
         window.navigationBarColor = themedColor(themedColor(Color.rgb(20, 30, 40)))
         if (!restoreLastWorkbook()) {
@@ -641,8 +642,8 @@ class MainActivity : Activity() {
                 add((if (nightTheme) "Switch to Day Theme" else "Switch to Night Theme") to { toggleNightTheme() })
                 if (!nightTheme) add("Choose Day Colour • ${dayPalettes[dayPaletteIndex].name}" to { chooseDayPalette() })
                 add("Refresh current sheet formulas" to { refreshCurrentSheetFormulas() })
-                "Workbook info" to { status.text = "\${sheets.size} sheet(s) • $rowCount rows • Offline workbook" }
-            )
+                add("Workbook info" to { status.text = "${sheets.size} sheet(s) • $rowCount rows • Offline workbook" })
+            }
             else -> listOf(
                 "Workbook info" to { status.text = "${sheets.size} sheet(s) • $rowCount rows • Offline workbook" }
             )
