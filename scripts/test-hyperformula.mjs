@@ -1,6 +1,34 @@
 import assert from 'node:assert/strict';
 import { HyperFormula } from 'hyperformula';
 
+function normalizeFormulaBooleans(value) {
+  if (typeof value !== 'string' || value.charAt(0) !== '=') return value;
+  let output = '', token = '', inString = false;
+  const flush = () => {
+    if (token) {
+      const upper = token.toUpperCase();
+      output += upper === 'TRUE' ? 'TRUE()' : upper === 'FALSE' ? 'FALSE()' : token;
+      token = '';
+    }
+  };
+  for (let i = 0; i < value.length; i++) {
+    const ch = value[i];
+    if (inString) {
+      output += ch;
+      if (ch === '"') {
+        if (value[i + 1] === '"') output += value[++i];
+        else inString = false;
+      }
+      continue;
+    }
+    if (ch === '"') { flush(); output += ch; inString = true; continue; }
+    if (/[A-Za-z0-9_.]/.test(ch)) { token += ch; continue; }
+    flush(); output += ch;
+  }
+  flush();
+  return output;
+}
+
 const hf = HyperFormula.buildFromSheets({
   Sheet1: [
     ['ID', 'Item', 'Price'],
@@ -70,9 +98,9 @@ assert.equal(compatibility.getCellValue({ sheet: testSheet, row: 13, col: 3 }), 
 // separate sheets because the user's two sample ranges overlap at M2:N4.
 const regression = HyperFormula.buildFromSheets({
   BooleanTests: [
-    ['=AND(TRUE,TRUE,1=1)', '=OR(FALSE,FALSE,2=2)', '=NOT(FALSE)'],
+    [normalizeFormulaBooleans('=AND(TRUE,TRUE,1=1)'), normalizeFormulaBooleans('=OR(FALSE,FALSE,2=2)'), normalizeFormulaBooleans('=NOT(FALSE)')],
     ['=AND(TRUE(),TRUE(),1=1)', '=OR(FALSE(),FALSE(),2=2)', '=NOT(FALSE())'],
-    ['=TRUE', '=FALSE', '=TRUE()'],
+    [normalizeFormulaBooleans('=TRUE'), normalizeFormulaBooleans('=FALSE'), '=TRUE()'],
   ],
   HLookupTests: [
     [],
@@ -95,14 +123,16 @@ regression.setCellContents({ sheet: hSheet, row: 1, col: 12 }, [
   ['Jan', 'Feb', 'Mar'],
   [100, 200, 300],
 ]);
-regression.setCellContents({ sheet: hSheet, row: 0, col: 0 }, [['=HLOOKUP("Q2",M2:O4,3,FALSE)']]);
+regression.setCellContents({ sheet: hSheet, row: 0, col: 0 }, [[normalizeFormulaBooleans('=HLOOKUP("Q2",M2:O4,3,FALSE)')]]);
 regression.setCellContents({ sheet: vSheet, row: 1, col: 12 }, [
   ['A', 100],
   ['B', 200],
   ['C', 300],
   ['D', 400],
 ]);
-regression.setCellContents({ sheet: vSheet, row: 0, col: 0 }, [['=VLOOKUP("B",M2:N5,2,FALSE)']]);
+regression.setCellContents({ sheet: vSheet, row: 0, col: 0 }, [[normalizeFormulaBooleans('=VLOOKUP("B",M2:N5,2,FALSE)')]]);
+assert.equal(normalizeFormulaBooleans('="FALSE"'), '="FALSE"', 'quoted boolean-looking text is preserved');
+assert.equal(normalizeFormulaBooleans('=TRUEVALUE'), '=TRUEVALUE', 'longer identifiers are preserved');
 const regressionResults = {
   andBareTrue: boolValue(0, 0),
   orBareFalse: boolValue(0, 1),
