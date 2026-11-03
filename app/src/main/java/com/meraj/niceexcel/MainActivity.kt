@@ -1996,10 +1996,6 @@ DayPalette("Black", Color.rgb(25,25,25), Color.rgb(238,238,238), Color.rgb(20,20
         )
         if (formulas.isEmpty()) return
 
-        formulas.forEach { (formulaSheet, address, _) ->
-            val prefix = "$formulaSheet|$address|"
-            formulaDisplayCache.keys.removeAll { it.startsWith(prefix) }
-        }
         try {
             backgroundExecutor.execute {
                 val results = linkedMapOf<String, Pair<String, String>>()
@@ -2045,17 +2041,28 @@ DayPalette("Black", Color.rgb(25,25,25), Color.rgb(238,238,238), Color.rgb(20,20
                     val cacheKey = "$formulaSheet|$address|$raw|${st?.numberFormat ?: "General"}"
                     val formulaKey = "$formulaSheet!${address.uppercase(Locale.US)}"
                     val hyperFormulaValue = formulaResults[formulaKey]
-                    val rendered = if (hyperFormulaValue == null) {
-                        "#ENGINE!"
-                    } else {
-                        val number = hyperFormulaValue.toDoubleOrNull()
-                        if (number != null) formatNumber(number, st?.numberFormat ?: "General", hyperFormulaValue)
-                        else hyperFormulaValue
+                    if (hyperFormulaValue == null) {
+                        // A missing engine response is not an Excel formula error.
+                        // Keep the last successful cached value (if any) instead of
+                        // replacing it with a synthetic #ENGINE! result that can make
+                        // workbook status/check columns report a false failure.
+                        Log.w(
+                            "NiceExcel-Formula",
+                            "HYPERFORMULA_RESULT_MISSING sheet=$formulaSheet cell=$address formula=${raw.take(180)} retainingLastKnownValue=true"
+                        )
+                        return@forEach
                     }
-                    val resultSource = if (hyperFormulaValue == null) "HYPERFORMULA_MISSING" else "HYPERFORMULA"
+                    val number = hyperFormulaValue.toDoubleOrNull()
+                    val rendered = if (number != null) {
+                        formatNumber(number, st?.numberFormat ?: "General", hyperFormulaValue)
+                    } else {
+                        // Genuine HyperFormula values, including Excel errors such as
+                        // #DIV/0! and #VALUE!, must pass through unchanged.
+                        hyperFormulaValue
+                    }
                     Log.i(
                         "NiceExcel-Formula",
-                        "FORMULA_VALUE sheet=$formulaSheet cell=$address source=$resultSource formula=${raw.take(180)} result=${rendered.take(180)}"
+                        "FORMULA_VALUE sheet=$formulaSheet cell=$address source=HYPERFORMULA formula=${raw.take(180)} result=${rendered.take(180)}"
                     )
                     results["$formulaSheet!$address"] = cacheKey to rendered
                 }
@@ -2077,16 +2084,20 @@ DayPalette("Black", Color.rgb(25,25,25), Color.rgb(238,238,238), Color.rgb(20,20
                         formulaDisplayCache[result.first] = result.second
                         if (formulaSheet == sheetName) cellViews[address]?.text = result.second
                     }
-                    val oldSpillKeys = formulaSpillCache.keys.toList()
-                    formulaSpillCache.clear()
-                    formulaSpillCache.putAll(spillResults)
-                    (oldSpillKeys + formulaSpillCache.keys).toSet().forEach { spillKey ->
-                        val splitAt = spillKey.lastIndexOf('!')
-                        if (splitAt <= 0) return@forEach
-                        val spillSheet = spillKey.substring(0, splitAt)
-                        val spillAddress = spillKey.substring(splitAt + 1)
-                        if (spillSheet == sheetName && data[spillAddress].isNullOrEmpty()) {
-                            cellViews[spillAddress]?.text = formulaSpillCache[spillKey].orEmpty()
+                    if (hyperFormulaCalculation != null) {
+                        // Replace spill cache only after a successful engine response.
+                        // A runtime failure must not erase previously calculated FILTER cells.
+                        val oldSpillKeys = formulaSpillCache.keys.toList()
+                        formulaSpillCache.clear()
+                        formulaSpillCache.putAll(spillResults)
+                        (oldSpillKeys + formulaSpillCache.keys).toSet().forEach { spillKey ->
+                            val splitAt = spillKey.lastIndexOf('!')
+                            if (splitAt <= 0) return@forEach
+                            val spillSheet = spillKey.substring(0, splitAt)
+                            val spillAddress = spillKey.substring(splitAt + 1)
+                            if (spillSheet == sheetName && data[spillAddress].isNullOrEmpty()) {
+                                cellViews[spillAddress]?.text = formulaSpillCache[spillKey].orEmpty()
+                            }
                         }
                     }
                 }
