@@ -141,7 +141,7 @@ class MainActivity : Activity() {
         styles["Sheet1"] = mutableMapOf()
         styles["Sheet2"] = mutableMapOf()
         styles["Sheet3"] = mutableMapOf()
-        val defaultWidths = List(colLimit) { c -> max(28, minOf(360, colName(c).length * 7 + 18)) }
+        val defaultWidths = List(colLimit) { c -> autoFitWidth(colName(c).length) }
         columnWidthsBySheet["Sheet1"] = defaultWidths
         columnWidthsBySheet["Sheet2"] = defaultWidths
         columnWidthsBySheet["Sheet3"] = defaultWidths
@@ -659,7 +659,7 @@ class MainActivity : Activity() {
                 sheets["Sheet1"] = mutableMapOf(); styles["Sheet1"] = mutableMapOf()
                 sheets["Sheet2"] = mutableMapOf(); styles["Sheet2"] = mutableMapOf()
                 sheets["Sheet3"] = mutableMapOf(); styles["Sheet3"] = mutableMapOf()
-                val defaultWidths = List(colLimit) { c -> max(28, minOf(360, colName(c).length * 7 + 18)) }
+                val defaultWidths = List(colLimit) { c -> autoFitWidth(colName(c).length) }
                 columnWidthsBySheet["Sheet1"] = defaultWidths
                 columnWidthsBySheet["Sheet2"] = defaultWidths
                 columnWidthsBySheet["Sheet3"] = defaultWidths
@@ -816,7 +816,7 @@ class MainActivity : Activity() {
             addresses.add(candidate to row)
             longest = max(longest, longestLineLength(gridDisplay(candidate)))
         }
-        val widthPx = dp(max(28, minOf(360, longest * 7 + 18)))
+        val widthPx = dp(autoFitWidth(longest))
         if (columnHeader.childCount > column + 1) {
             val header = columnHeader.getChildAt(column + 1)
             header.layoutParams = (header.layoutParams ?: LinearLayout.LayoutParams(widthPx, dp(24))).apply { width = widthPx }
@@ -833,7 +833,7 @@ class MainActivity : Activity() {
             view.ellipsize = if (view.maxLines == 2) null else android.text.TextUtils.TruncateAt.END
             applyCellBackground(view, cellAddress, false)
         }
-        lastColumnWidths = lastColumnWidths.toMutableList().also { if (column < it.size) it[column] = max(28, minOf(360, longest * 7 + 18)) }
+        lastColumnWidths = lastColumnWidths.toMutableList().also { if (column < it.size) it[column] = autoFitWidth(longest) }
         columnWidthsBySheet[sheetName] = lastColumnWidths
         applyMergedCellPresentation()
     }
@@ -853,7 +853,7 @@ class MainActivity : Activity() {
                 )
             }
         }
-        val columnWidths = longestByColumn.map { max(28, minOf(360, it * 7 + 18)) }
+        val columnWidths = longestByColumn.map { autoFitWidth(it) }
         lastColumnWidths = columnWidths
         columnWidthsBySheet[sheetName] = columnWidths
 
@@ -1065,7 +1065,7 @@ class MainActivity : Activity() {
             }
         }
         val columnWidths = longestByColumn.map { longest ->
-            max(28, minOf(360, longest * 7 + 18))
+            autoFitWidth(longest)
         }
         lastColumnWidths = columnWidths
         columnWidthsBySheet[sheetName] = columnWidths
@@ -1182,6 +1182,16 @@ class MainActivity : Activity() {
     private fun longestLineLength(value: String): Int =
         value.split('\n').maxOfOrNull { it.trimEnd('\r').length } ?: 0
 
+    /**
+     * Keep exactly 26 worksheet columns (A:Z), but never impose a maximum width.
+     * The width grows from the longest line's character count. Saturate only at the
+     * platform integer limit to avoid arithmetic overflow on pathological cell text.
+     */
+    private fun autoFitWidth(characterCount: Int): Int {
+        val width = characterCount.toLong() * 7L + 18L
+        return max(28, width.coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
+    }
+
     private fun calculatedColumnWidth(column: Int): Int {
         val name = colName(column)
         val longest = data.entries.asSequence()
@@ -1189,7 +1199,7 @@ class MainActivity : Activity() {
             .map { longestLineLength(gridDisplay(it.key)) }
             .maxOrNull() ?: name.length
         // Three-character default; auto-expand by one character-space per extra character.
-        return max(28, minOf(360, longest * 7 + 18))
+        return autoFitWidth(longest)
     }
 
     /** Row height follows explicit newlines in cell values, while preserving the existing
@@ -2132,7 +2142,7 @@ class MainActivity : Activity() {
         styles[name]=mutableMapOf()
         mergedRangesBySheet.remove(name)
         wrappedRowsBySheet[name]=mutableSetOf()
-        columnWidthsBySheet[name] = List(colLimit) { c -> max(28, minOf(360, (colName(c).length * 7 + 18))) }
+        columnWidthsBySheet[name] = List(colLimit) { c -> autoFitWidth(colName(c).length) }
         sheetName=name; selected="A1"
         lastColumnWidths = columnWidthsBySheet[name]!!
         val fast = refreshSheetInPlaceFast()
