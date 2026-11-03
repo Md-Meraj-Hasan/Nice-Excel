@@ -2923,8 +2923,9 @@ class MainActivity : Activity() {
             .setItems(arrayOf("Excel workbook (.xlsx)", "CSV file (.csv)")) { _, which ->
                 val i = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
                     addCategory(Intent.CATEGORY_OPENABLE)
-                    type = if (which == 0) "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" else "text/*"
-                    putExtra(Intent.EXTRA_MIME_TYPES, if (which == 0) arrayOf("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/octet-stream", "application/zip") else arrayOf("text/csv", "text/plain", "application/octet-stream"))
+                    // CSV providers may label files as text/csv, application/csv or octet-stream.
+                    type = if (which == 0) "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" else "*/*"
+                    putExtra(Intent.EXTRA_MIME_TYPES, if (which == 0) arrayOf("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/octet-stream", "application/zip") else arrayOf("text/csv", "text/comma-separated-values", "application/csv", "text/plain", "application/octet-stream"))
                 }
                 startActivityForResult(i, if (which == 0) 14 else 12)
             }.setNegativeButton("Cancel", null).showProfessional()
@@ -2933,6 +2934,7 @@ class MainActivity : Activity() {
         AlertDialog.Builder(this).setTitle("Save workbook")
             .setItems(arrayOf("Excel workbook (.xlsx)", "CSV file (.csv)")) { _, which ->
                 val xlsx = which == 0
+                if (!xlsx) pendingCsv = buildCsvContent()
                 val i = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
                     addCategory(Intent.CATEGORY_OPENABLE)
                     type = if (xlsx) "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" else "text/csv"
@@ -2985,15 +2987,25 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun saveCsv() {
-        pendingCsv=(1..rowCount).joinToString("\n") { r ->
-            (0 until colLimit).joinToString(",") { c ->
-                val raw=data["${colName(c)}$r"].orEmpty().replace("\"","\"\"")
-                if(raw.contains(",")||raw.contains("\"")||raw.contains("\n")) "\"$raw\"" else raw
+    private fun buildCsvContent(): String {
+        // Snapshot the active worksheet before the Android save picker opens.
+        return (1..rowCount).joinToString("\r\n") { r ->
+            (0 until colLimit).joinToString(",") { col ->
+                val raw = data["${colName(col)}$r"].orEmpty()
+                val escaped = raw.replace("\"", "\"\"")
+                if (raw.contains(",") || raw.contains("\"") || raw.contains("\n") || raw.contains("\r")) "\"$escaped\"" else escaped
             }
         }
-        val i=Intent(Intent.ACTION_CREATE_DOCUMENT).apply { addCategory(Intent.CATEGORY_OPENABLE); type="text/csv"; putExtra(Intent.EXTRA_TITLE,"${sheetName}.csv") }
-        startActivityForResult(i,11)
+    }
+
+    private fun saveCsv() {
+        pendingCsv = buildCsvContent()
+        val i = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "text/csv"
+            putExtra(Intent.EXTRA_TITLE, "${sheetName}.csv")
+        }
+        startActivityForResult(i, 11)
     }
     @Deprecated("Deprecated")
     override fun onActivityResult(requestCode:Int,resultCode:Int,intent:Intent?) {
@@ -3001,8 +3013,15 @@ class MainActivity : Activity() {
         if(resultCode!=RESULT_OK||intent?.data==null) return
         try {
             if(requestCode==11) {
-                contentResolver.openOutputStream(intent.data!!)?.use { it.write(pendingCsv.toByteArray(Charsets.UTF_8)) }
-                status.text="CSV saved"
+                val destination = contentResolver.openOutputStream(intent.data!!, "wt")
+                    ?: error("Could not open the selected CSV save destination")
+                destination.use { output ->
+                    // UTF-8 BOM helps Excel display non-English text correctly.
+                    output.write(byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte()))
+                    output.write(pendingCsv.toByteArray(Charsets.UTF_8))
+                    output.flush()
+                }
+                status.text = "CSV saved • $sheetName.csv"
             } else if(requestCode==13) {
                 saveXlsxWithCalc(intent.data!!)
             } else if(requestCode==12) {
