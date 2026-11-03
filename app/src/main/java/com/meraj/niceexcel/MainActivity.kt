@@ -641,6 +641,7 @@ class MainActivity : Activity() {
             "View" -> buildList {
                 add((if (nightTheme) "Switch to Day Theme" else "Switch to Night Theme") to { toggleNightTheme() })
                 if (!nightTheme) add("Choose Day Colour • ${dayPalettes[dayPaletteIndex].name}" to { chooseDayPalette() })
+                add("Refresh cells grid" to { refreshCurrentSheetGrid() })
                 add("Refresh current sheet formulas" to { refreshCurrentSheetFormulas() })
                 add("Workbook info" to { status.text = "${sheets.size} sheet(s) • $rowCount rows • Offline workbook" })
             }
@@ -1618,13 +1619,21 @@ class MainActivity : Activity() {
             .showProfessional()
     }
 
+    private fun themedCellFill(color: Int): Int {
+        if (!nightTheme) return color
+        return when (color) {
+            Color.WHITE, Color.rgb(255,255,255), Color.rgb(245,247,249), Color.rgb(232,245,233),
+            Color.rgb(232,240,235), Color.rgb(227,244,234), Color.rgb(236,246,239), Color.rgb(225,242,232) -> Color.rgb(37,43,51)
+            else -> color
+        }
+    }
     private fun applyCellBackground(view: TextView, address: String?, header: Boolean) {
         val st = if (address != null) sheetStyles[address] else null
         val isSelected = address != null && (address == selected || address in selectedRangeCells)
         val fill = when {
             header -> themedColor(Color.rgb(224, 232, 239))
             isSelected -> themedColor(Color.rgb(207, 239, 220))
-            st != null -> st.fillColor
+            st != null -> themedCellFill(st.fillColor)
             else -> themedColor(Color.WHITE)
         }
         val strokeColor = when {
@@ -1961,6 +1970,28 @@ class MainActivity : Activity() {
     }
 
     /** User-triggered refresh: clear this sheet's displayed results and recalculate the workbook. */
+    private fun refreshCurrentSheetGrid() {
+        val keepSheet = sheetName
+        val keepCell = selected
+        cachedExplicitLineCountsByRow = null
+        if (!refreshSheetInPlaceFast()) render()
+        sheetName = keepSheet
+        selected = keepCell
+        cellName.text = keepCell
+        formula.setText(sheets[keepSheet]?.get(keepCell).orEmpty())
+        selectedCellView = cellViews[keepCell]
+        selectedCellView?.let { applyCellBackground(it, keepCell, false) }
+        grid.requestLayout(); grid.invalidate()
+        headerHorizontal.post {
+            val x = bodyHorizontal.scrollX
+            headerHorizontal.scrollTo(x, 0)
+            frozenRowHorizontal.scrollTo(x, 0)
+            bodyHorizontal.requestLayout()
+        }
+        headerHorizontal.requestLayout(); frozenRowHorizontal.requestLayout(); bodyHorizontal.requestLayout()
+        status.text = "Cells grid refreshed • $keepSheet"
+        Toast.makeText(this, "Cells grid refreshed", Toast.LENGTH_SHORT).show()
+    }
     private fun refreshCurrentSheetFormulas() {
         val targetSheet = sheetName
         val formulaCells = sheets[targetSheet].orEmpty().filterValues { it.trimStart().startsWith("=") }
