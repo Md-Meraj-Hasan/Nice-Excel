@@ -60,17 +60,18 @@ class _FlaskApp(Flask):
                             args[name] = path_values[name]
                             continue
                         default = param.default
+                        annotation = hints.get(name, param.annotation)
                         if isinstance(default, _Query):
                             args[name] = flask_request.args.get(default.alias or name, default.default)
-                        elif param.annotation is UploadFile or name == "file":
+                        elif annotation is UploadFile or name == "file":
                             storage = flask_request.files.get(name) or next(iter(flask_request.files.values()), None)
                             if storage is None:
                                 raise HTTPException(400, "Required uploaded file is missing")
                             args[name] = UploadFile(storage)
-                        elif name in ("request",) or (inspect.isclass(param.annotation) and hasattr(param.annotation, "parse_obj")):
+                        elif name == "request" or (inspect.isclass(annotation) and hasattr(annotation, "parse_obj")):
                             if body_cache is None:
                                 body_cache = flask_request.get_json(silent=True) or {}
-                            model = hints.get(name, param.annotation)
+                            model = annotation
                             # Plain dictionary payloads (for example history-batch's
                             # {"actions": ["undo", "redo"]}) are already decoded JSON.
                             # They must not be sent through Pydantic's parse_obj().
@@ -100,6 +101,13 @@ class _FlaskApp(Flask):
 
 def create_app(import_name):
     app = _FlaskApp(import_name)
+
+    # Adapter HTTP errors can also be raised by ordinary Flask routes such as
+    # the static-file fallback, not only by handlers registered through _route.
+    @app.errorhandler(HTTPException)
+    def handle_adapter_http_exception(exc):
+        return jsonify({"detail": exc.detail}), exc.status_code
+
     return app
 
 def FileResponse(path, media_type=None, filename=None, background=None):
