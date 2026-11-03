@@ -156,3 +156,21 @@ def test_native_black_theme_formula_bar_and_grid_headers_use_high_contrast_text(
     assert "setTextColor(if (darkMode) Color.WHITE else themedColor(Color.rgb(17,94,57)))" in native
     assert 'text="ƒx ▾"; textSize=12f; setTextColor(if (darkMode) Color.WHITE' in native
     assert "if (darkMode) Color.WHITE else dayPalettes" in native
+
+ 
+def test_web_smart_table_filters_support_not_equal_to_in_both_clients():
+    for path in [
+        ROOT / "backend" / "niceexcel_api" / "static" / "index.html",
+        ROOT / "app" / "src" / "main" / "assets" / "niceexcel_index.html",
+    ]:
+        html = path.read_text(encoding="utf-8")
+        assert '<option value="not-equals">Not equal to</option>' in html
+        assert "f.mode==='not-equals'&&actual===needle" in html
+        assert "['contains','equals','not-equals'].includes(f.mode)" in html
+
+def test_native_filters_support_not_equal_to_operator():
+    native = (ROOT / "app" / "src" / "main" / "java" / "com" / "meraj" / "niceexcel" / "MainActivity.kt").read_text(encoding="utf-8")
+    assert 'private val filterOperators = linkedMapOf<String, String>()' in native
+    assert 'listOf("Contains", "Not equal to")' in native
+    assert 'filterOperators[col] == "notEqual"' in native
+    assert 'filterOperators[col] = if (operatorInput.selectedItemPosition == 1) "notEqual" else "contains"' in native
