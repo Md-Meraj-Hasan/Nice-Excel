@@ -397,14 +397,14 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(7), dp(4), dp(7), dp(4))
-            setBackgroundColor(themedColor(Color.rgb(232, 240, 235)))
+            setBackgroundColor(themedSurface(Color.rgb(232, 240, 235)))
         }
         toolScroll.addView(ribbonTools, android.widget.FrameLayout.LayoutParams(-2, dp(42)))
         root.addView(toolScroll, LinearLayout.LayoutParams(-1, dp(44)))
         toolScroll.visibility = android.view.View.GONE
 
         val formulaBar=LinearLayout(this).apply { orientation=LinearLayout.HORIZONTAL; gravity=Gravity.CENTER_VERTICAL; setPadding(dp(6),dp(4),dp(6),dp(4)); setBackgroundColor(themedSurface(Color.rgb(255,255,255))) }
-        cellName=TextView(this).apply { text=selected; textSize=14f; typeface=Typeface.DEFAULT_BOLD; gravity=Gravity.CENTER; setTextColor(themedColor(Color.rgb(17,94,57))); setPadding(dp(10),dp(11),dp(10),dp(11)); setBackgroundColor(themedColor(Color.rgb(225,242,232))) }
+        cellName=TextView(this).apply { text=selected; textSize=14f; typeface=Typeface.DEFAULT_BOLD; gravity=Gravity.CENTER; setTextColor(themedColor(Color.rgb(17,94,57))); setPadding(dp(10),dp(11),dp(10),dp(11)); setBackgroundColor(themedSurface(Color.rgb(225,242,232))) }
         formulaBar.addView(cellName)
         formula=EditText(this).apply { setSingleLine(true); textSize=14f; hint="Enter value or formula"; inputType=InputType.TYPE_CLASS_TEXT; setPadding(dp(8),dp(3),dp(8),dp(3)); setBackgroundColor(themedSurface(Color.WHITE)); setText(data[selected].orEmpty()); setOnEditorActionListener { _,_,_ -> applyFormula(); true } }
         formulaBar.addView(formula,LinearLayout.LayoutParams(0,-2,1f))
@@ -478,7 +478,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         }
         sheetTabsScroll.addView(sheetTabs)
         root.addView(sheetTabsScroll, LinearLayout.LayoutParams(-1, -2))
-        status=TextView(this).apply { text="Ready • Offline workbook"; textSize=12f; setTextColor(themedColor(Color.WHITE)); setPadding(dp(10),dp(7),dp(10),dp(7)); setBackgroundColor(themedColor(Color.rgb(20,30,40))) }
+        status=TextView(this).apply { text="Ready • Offline workbook"; textSize=12f; setTextColor(themedColor(Color.WHITE)); setPadding(dp(10),dp(7),dp(10),dp(7)); setBackgroundColor(if (darkMode) Color.rgb(5,9,18) else Color.rgb(20,30,40)) }
         root.addView(status)
         setContentView(root)
         // Save inline edits when the keyboard is dismissed (including Android navigation Back).
@@ -723,7 +723,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                 setTextColor(if (isEmphasis) themedColor(Color.rgb(25, 74, 132)) else themedColor(Color.rgb(35, 70, 50)))
                 setPadding(dp(10), dp(6), dp(10), dp(6))
                 background = roundedToolbarBackground(
-                    if (isEmphasis) themedColor(Color.rgb(219, 234, 254)) else themedColor(Color.WHITE),
+                    if (isEmphasis) themedSurface(Color.rgb(219, 234, 254)) else themedSurface(Color.WHITE),
                     if (isEmphasis) themedColor(Color.rgb(147, 197, 253)) else themedColor(Color.rgb(204, 218, 209)),
                     9
                 )
@@ -1086,7 +1086,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         cellViews.forEach { (address, view) ->
             view.text = gridDisplay(address)
             val st = sheetStyles[address]
-            view.setTextColor(st?.textColor ?: themedColor(Color.rgb(24, 32, 39)))
+            view.setTextColor(themedCellTextColor(st?.textColor ?: Color.rgb(24, 32, 39)))
             view.textSize = st?.fontSize ?: 13f
             view.typeface = Typeface.create(
                 Typeface.DEFAULT,
@@ -1151,7 +1151,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
             // addresses and touching every TextView property when most are already default.
             if (blankSheet) {
                 if (view.text.isNotEmpty()) view.text = ""
-                if (view.currentTextColor != themedColor(Color.rgb(24, 32, 39))) view.setTextColor(themedColor(Color.rgb(24, 32, 39)))
+                if (view.currentTextColor != themedCellTextColor(Color.rgb(24, 32, 39))) view.setTextColor(themedCellTextColor(Color.rgb(24, 32, 39)))
                 if (view.textSize != 13f) view.textSize = 13f
                 if (view.typeface?.style != Typeface.NORMAL) view.typeface = Typeface.DEFAULT
                 if (view.paint.isUnderlineText) view.paint.isUnderlineText = false
@@ -1167,7 +1167,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
             val text = gridDisplay(address)
             if (view.text.toString() != text) view.text = text
             val st = sheetStyles[address]
-            val textColor = st?.textColor ?: themedColor(Color.rgb(24, 32, 39))
+            val textColor = themedCellTextColor(st?.textColor ?: Color.rgb(24, 32, 39))
             if (view.currentTextColor != textColor) view.setTextColor(textColor)
             val textSize = st?.fontSize ?: 13f
             if (view.textSize != textSize) view.textSize = textSize
@@ -1566,7 +1566,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
             val t=TextView(this).apply {
                 text=name; textSize=13f; gravity=Gravity.CENTER; setPadding(dp(15),dp(9),dp(15),dp(9))
                 setTextColor(if(name==sheetName) themedColor(Color.WHITE) else themedColor(Color.rgb(35,70,50)))
-                setBackgroundColor(if(name==sheetName) themedColor(Color.rgb(17,94,57)) else themedColor(Color.rgb(213,229,218)))
+                setBackgroundColor(if(name==sheetName) themedColor(Color.rgb(17,94,57)) else themedSurface(Color.rgb(213,229,218)))
                 setOnClickListener {
                     if (sheetName == name) return@setOnClickListener
 
@@ -3036,7 +3036,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                     if (row == headerRow) {
                         st.bold = true; st.fillColor = dayPalettes[dayPaletteIndex.coerceIn(dayPalettes.indices)].primary; st.textColor = themedColor(Color.WHITE)
                     } else {
-                        st.fillColor = if ((columnIndex(col) + row) % 2 == 0) 0xFFE8F5E9.toInt() else themedColor(Color.WHITE)
+                        st.fillColor = if (darkMode) Color.rgb(18,26,43) else if ((columnIndex(col) + row) % 2 == 0) 0xFFE8F5E9.toInt() else themedSurface(Color.WHITE)
                     }
                 }
                 tableHeaderRow = headerRow
@@ -3054,8 +3054,8 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                     affected.add(address)
                     sheetStyles[address]?.let { st ->
                         st.border = false; st.thickBorder = false; st.bold = false
-                        st.fillColor = themedColor(Color.WHITE)
-                        st.textColor = themedColor(Color.rgb(24, 32, 39))
+                        st.fillColor = themedSurface(Color.WHITE)
+                        st.textColor = themedCellTextColor(Color.rgb(24, 32, 39))
                         if (st == CellStyle()) sheetStyles.remove(address)
                     }
                 }
@@ -3066,8 +3066,8 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                 columns.forEach { col ->
                     val address = "${col}$headerRow"; affected.add(address)
                     sheetStyles[address]?.let { st ->
-                        st.bold = false; st.fillColor = themedColor(Color.WHITE)
-                        st.textColor = themedColor(Color.rgb(24, 32, 39))
+                        st.bold = false; st.fillColor = themedSurface(Color.WHITE)
+                        st.textColor = themedCellTextColor(Color.rgb(24, 32, 39))
                         st.border = false; st.thickBorder = false
                         if (st == CellStyle()) sheetStyles.remove(address)
                     }
