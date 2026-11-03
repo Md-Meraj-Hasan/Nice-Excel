@@ -851,7 +851,7 @@ DayPalette("Black", Color.rgb(25,25,25), Color.rgb(238,238,238), Color.rgb(20,20
         val columnValues = criteria.mapValues { (col, _) ->
             (2..rowLimit).associateWith { row -> data["${col}$row"].orEmpty() }
         }
-        status.text = if (query.isNullOrEmpty()) "Clearing filter…" else "Applying filter…"
+        status.text = if (criteria.isEmpty()) "Clearing filters…" else "Applying filters…"
         try {
             backgroundExecutor.execute {
                 try {
@@ -2975,7 +2975,7 @@ DayPalette("Black", Color.rgb(25,25,25), Color.rgb(238,238,238), Color.rgb(20,20
                         if (st == CellStyle()) sheetStyles.remove(address)
                     }
                 }
-                if (tableHeaderRow in rows) tableHeaderRow = null
+                if (tableHeaderRow?.let { it in rows } == true) tableHeaderRow = null
                 status.text = "Table styling removed from $range"
             }
             4 -> {
