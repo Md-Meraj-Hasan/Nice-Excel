@@ -51,6 +51,8 @@ def test_native_advanced_ribbon_exposes_and_wires_advanced_tools():
         "Dashboard Builder…",
     ]:
         assert label in native, f"missing native Advanced tool: {label}"
+    manifest = (ROOT / "app" / "src" / "main" / "java" / "com" / "meraj" / "niceexcel" / "AndroidManifest.xml").read_text(encoding="utf-8")
+    assert 'android:name=".FlaskActivity" android:exported="false"' in manifest
     for handler in [
         "startActivity(Intent(this, FlaskActivity::class.java))",
         "conditionalFormattingMenu()",
