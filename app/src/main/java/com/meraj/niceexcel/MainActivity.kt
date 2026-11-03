@@ -191,22 +191,90 @@ class MainActivity : Activity() {
         nightTheme = getPreferences(MODE_PRIVATE).getBoolean("night_theme", false)\n        dayPaletteIndex = getPreferences(MODE_PRIVATE).getInt("day_palette_index", 0).coerceIn(dayPalettes.indices)
         window.statusBarColor = themedColor(themedColor(Color.rgb(17, 94, 57)))
         window.navigationBarColor = themedColor(themedColor(Color.rgb(20, 30, 40)))
-        sheets["Sheet1"] = mutableMapOf(
-            "A1" to "Item", "B1" to "Qty", "C1" to "Price", "D1" to "Total",
-            "A2" to "Notebook", "B2" to "3", "C2" to "12.5", "D2" to "=B2*C2",
-            "A3" to "Pen", "B3" to "5", "C3" to "2", "D3" to "=B3*C3",
-            "A4" to "Grand Total", "D4" to "=SUM(D2:D3)"
-        )
-        sheets["Sheet2"] = mutableMapOf()
-        sheets["Sheet3"] = mutableMapOf()
-        styles["Sheet1"] = mutableMapOf()
-        styles["Sheet2"] = mutableMapOf()
-        styles["Sheet3"] = mutableMapOf()
-        val defaultWidths = List(colLimit) { c -> autoFitWidth(colName(c).length) }
-        columnWidthsBySheet["Sheet1"] = defaultWidths
-        columnWidthsBySheet["Sheet2"] = defaultWidths
-        columnWidthsBySheet["Sheet3"] = defaultWidths
+        if (!restoreLastWorkbook()) {
+            sheets["Sheet1"] = mutableMapOf(
+                "A1" to "Item", "B1" to "Qty", "C1" to "Price", "D1" to "Total",
+                "A2" to "Notebook", "B2" to "3", "C2" to "12.5", "D2" to "=B2*C2",
+                "A3" to "Pen", "B3" to "5", "C3" to "2", "D3" to "=B3*C3",
+                "A4" to "Grand Total", "D4" to "=SUM(D2:D3)"
+            )
+            sheets["Sheet2"] = mutableMapOf()
+            sheets["Sheet3"] = mutableMapOf()
+            styles["Sheet1"] = mutableMapOf()
+            styles["Sheet2"] = mutableMapOf()
+            styles["Sheet3"] = mutableMapOf()
+            val defaultWidths = List(colLimit) { c -> autoFitWidth(colName(c).length) }
+            columnWidthsBySheet["Sheet1"] = defaultWidths
+            columnWidthsBySheet["Sheet2"] = defaultWidths
+            columnWidthsBySheet["Sheet3"] = defaultWidths
+        }
         buildUi()
+    }
+
+    private fun lastWorkbookFile() = java.io.File(filesDir, "niceexcel_last_session.xlsx")
+
+    /** Restore the last locally autosaved workbook before showing the demo workbook. */
+    private fun restoreLastWorkbook(): Boolean {
+        val file = lastWorkbookFile()
+        if (!file.isFile || file.length() <= 0L) return false
+        return try {
+            val restored = file.inputStream().use { XlsxCodec.read(it) }
+            if (restored.sheets.isEmpty()) return false
+            sheets.clear(); sheets.putAll(restored.sheets)
+            styles.clear(); styles.putAll(restored.styles)
+            mergedRangesBySheet.clear()
+            restored.mergedRanges.forEach { (name, ranges) -> mergedRangesBySheet[name] = ranges.toMutableList() }
+            reportingMetadata = restored.reportingMetadata
+            sheetName = getPreferences(MODE_PRIVATE).getString("last_session_sheet", null)
+                ?.takeIf { restored.sheets.containsKey(it) } ?: restored.sheets.keys.first()
+            selected = getPreferences(MODE_PRIVATE).getString("last_session_cell", "A1") ?: "A1"
+            val lastRow = sheets.values.flatMap { it.keys }
+                .mapNotNull { Regex("[A-Z]+([0-9]+)").matchEntire(it)?.groupValues?.get(1)?.toIntOrNull() }
+                .maxOrNull() ?: 50
+            val lastMergeRow = mergedRangesBySheet.values.flatten().flatMap { it.split(":") }
+                .mapNotNull { Regex("[A-Z]+([0-9]+)").matchEntire(it)?.groupValues?.get(1)?.toIntOrNull() }
+                .maxOrNull() ?: 50
+            rowCount = max(50, max(lastRow, lastMergeRow))
+            val widths = List(colLimit) { c -> autoFitWidth(colName(c).length) }
+            sheets.keys.forEach { name -> columnWidthsBySheet[name] = widths }
+            true
+        } catch (error: Exception) {
+            Log.e("NiceExcel", "Last workbook recovery failed", error)
+            false
+        }
+    }
+
+    /** Atomic internal autosave; this is independent of the user's original file. */
+    private fun persistLastWorkbook() {
+        if (sheets.isEmpty()) return
+        try {
+            activeInlineCommit?.invoke()
+            val snapshotSheets = sheets.mapValues { it.value.toMap() }
+            val snapshotStyles = styles.mapValues { (_, values) -> values.mapValues { it.value.copy() } }
+            val snapshotMerges = mergedRangesBySheet.mapValues { it.value.toList() }
+            val temp = java.io.File(filesDir, "niceexcel_last_session.tmp")
+            java.io.FileOutputStream(temp).use { output ->
+                XlsxCodec.write(output, snapshotSheets, snapshotStyles, reportingMetadata, snapshotMerges)
+                output.fd.sync()
+            }
+            val target = lastWorkbookFile()
+            if (!temp.renameTo(target)) {
+                temp.copyTo(target, overwrite = true)
+                temp.delete()
+            }
+            getPreferences(MODE_PRIVATE).edit()
+                .putString("last_session_sheet", sheetName)
+                .putString("last_session_cell", selected)
+                .apply()
+        } catch (error: Exception) {
+            Log.e("NiceExcel", "Local workbook autosave failed", error)
+        }
+    }
+
+    override fun onStop() {
+        // Save a recovery copy even when Android removes the app from recent tasks.
+        persistLastWorkbook()
+        super.onStop()
     }
 
     private fun buildUi() {
