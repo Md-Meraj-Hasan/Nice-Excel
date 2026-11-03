@@ -812,8 +812,11 @@ class MainActivity : Activity() {
             val match = cellAddressRowPattern.matchEntire(address) ?: return@forEach
             val column = columnIndex(match.groupValues[1])
             val row = match.groupValues[2].toIntOrNull() ?: return@forEach
-            if (column in 0 until colLimit && row !in wrappedRows) {
-                longestByColumn[column] = max(longestByColumn[column], gridDisplay(address).length)
+            if (column in 0 until colLimit) {
+                longestByColumn[column] = max(
+                    longestByColumn[column],
+                    longestLineLength(gridDisplay(address))
+                )
             }
         }
         val columnWidths = longestByColumn.map { max(28, minOf(360, it * 7 + 18)) }
@@ -1020,8 +1023,10 @@ class MainActivity : Activity() {
             val match = cellAddressPattern.matchEntire(address) ?: return@forEach
             val column = columnIndex(match.groupValues[1])
             val row = match.groupValues[2].toIntOrNull() ?: return@forEach
-            if (column in 0 until colLimit && row !in wrappedRows) {
-                val shownLength = gridDisplay(address).length
+            if (column in 0 until colLimit) {
+                // Multiline cells still participate in auto-fit. Measure the longest
+                // individual line, not the combined text including newline characters.
+                val shownLength = longestLineLength(gridDisplay(address))
                 if (shownLength > longestByColumn[column]) longestByColumn[column] = shownLength
             }
         }
@@ -1120,7 +1125,7 @@ class MainActivity : Activity() {
         val match = Regex("^([A-Z]+)(\\d+)$").matchEntire(address) ?: return false
         val col = columnIndex(match.groupValues[1])
         val currentWidth = lastColumnWidths.getOrNull(col) ?: return false
-        if (editedText.length * 7 + 18 > currentWidth) return false
+        if (longestLineLength(editedText) * 7 + 18 > currentWidth) return false
         val editedView = cellViews[address] ?: return false
         editedView.text = editedText
         var requiresLayout = false
@@ -1130,7 +1135,7 @@ class MainActivity : Activity() {
             val formulaText = gridDisplay(formulaAddress)
             val formulaMatch = Regex("^([A-Z]+)(\\d+)$").matchEntire(formulaAddress) ?: return@forEach
             val formulaCol = columnIndex(formulaMatch.groupValues[1])
-            if (formulaText.length * 7 + 18 > (lastColumnWidths.getOrNull(formulaCol) ?: 0)) {
+            if (longestLineLength(formulaText) * 7 + 18 > (lastColumnWidths.getOrNull(formulaCol) ?: 0)) {
                 requiresLayout = true
             } else {
                 cellViews[formulaAddress]?.text = formulaText
@@ -1139,11 +1144,15 @@ class MainActivity : Activity() {
         return !requiresLayout
     }
 
+    /** Width is based on the longest visible line in a cell, including multiline cells. */
+    private fun longestLineLength(value: String): Int =
+        value.split('\n').maxOfOrNull { it.trimEnd('\r').length } ?: 0
+
     private fun calculatedColumnWidth(column: Int): Int {
         val name = colName(column)
         val longest = data.entries.asSequence()
             .filter { it.key.startsWith(name) && it.key.drop(name.length).toIntOrNull() != null }
-            .map { gridDisplay(it.key).length }
+            .map { longestLineLength(gridDisplay(it.key)) }
             .maxOrNull() ?: name.length
         // Three-character default; auto-expand by one character-space per extra character.
         return max(28, minOf(360, longest * 7 + 18))
