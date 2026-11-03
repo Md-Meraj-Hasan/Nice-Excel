@@ -51,16 +51,16 @@ class MainActivity : Activity() {
         val soft: Int, val border: Int, val light: Int, val accent: Int, val gridLine: Int, val highlight: Int
     )
     private val dayPalettes = listOf(
-DayPalette("Green", Color.rgb(17,94,57), Color.rgb(209,250,229), Color.rgb(6,78,59), Color.rgb(227,244,234), Color.rgb(204,218,209), Color.rgb(213,229,218), Color.rgb(21,93,66), Color.rgb(17,94,57), Color.rgb(209,250,229)),
-DayPalette("Ocean Blue", Color.rgb(30,86,150), Color.rgb(219,234,254), Color.rgb(30,64,115), Color.rgb(230,240,255), Color.rgb(190,210,238), Color.rgb(214,228,247), Color.rgb(37,99,235), Color.rgb(30,86,150), Color.rgb(219,234,254)),
-DayPalette("Royal Purple", Color.rgb(105,55,150), Color.rgb(237,224,255), Color.rgb(76,29,120), Color.rgb(245,237,255), Color.rgb(215,196,238), Color.rgb(230,215,246), Color.rgb(126,58,180), Color.rgb(105,55,150), Color.rgb(237,224,255)),
-DayPalette("Teal", Color.rgb(0,105,105), Color.rgb(204,251,241), Color.rgb(17,78,78), Color.rgb(224,247,244), Color.rgb(180,222,216), Color.rgb(205,232,228), Color.rgb(13,148,136), Color.rgb(0,105,105), Color.rgb(204,251,241)),
-DayPalette("Sunset Orange", Color.rgb(180,83,9), Color.rgb(255,237,213), Color.rgb(124,45,18), Color.rgb(255,244,230), Color.rgb(240,205,174), Color.rgb(247,224,202), Color.rgb(234,120,35), Color.rgb(180,83,9), Color.rgb(255,237,213)),
-DayPalette("Ruby Red", Color.rgb(159,35,55), Color.rgb(255,228,230), Color.rgb(136,19,35), Color.rgb(255,239,240), Color.rgb(239,190,196), Color.rgb(247,215,219), Color.rgb(190,45,65), Color.rgb(159,35,55), Color.rgb(255,228,230)),
-DayPalette("Rose Pink", Color.rgb(157,45,105), Color.rgb(252,231,243), Color.rgb(131,24,85), Color.rgb(253,242,248), Color.rgb(235,195,218), Color.rgb(246,218,235), Color.rgb(219,39,119), Color.rgb(157,45,105), Color.rgb(252,231,243)),
-DayPalette("Indigo", Color.rgb(67,56,150), Color.rgb(224,231,255), Color.rgb(49,46,129), Color.rgb(238,240,255), Color.rgb(194,199,239), Color.rgb(216,220,248), Color.rgb(79,70,229), Color.rgb(67,56,150), Color.rgb(224,231,255)),
-DayPalette("Earth Brown", Color.rgb(120,72,38), Color.rgb(245,230,211), Color.rgb(92,51,23), Color.rgb(250,242,232), Color.rgb(225,204,180), Color.rgb(238,222,202), Color.rgb(161,98,50), Color.rgb(120,72,38), Color.rgb(245,230,211)),
-DayPalette("Slate Gray", Color.rgb(71,85,105), Color.rgb(226,232,240), Color.rgb(51,65,85), Color.rgb(241,245,249), Color.rgb(203,213,225), Color.rgb(222,229,238), Color.rgb(100,116,139), Color.rgb(71,85,105), Color.rgb(226,232,240)),
+DayPalette("Green", Color.rgb(17,94,57), Color.rgb(209,250,229), Color.rgb(6,78,59), Color.rgb(227,244,234), Color.rgb(204,218,209), Color.rgb(213,229,218), Color.rgb(21,93,66), Color.rgb(220,228,222), Color.rgb(209,250,229)),
+DayPalette("Ocean Blue", Color.rgb(30,86,150), Color.rgb(219,234,254), Color.rgb(30,64,115), Color.rgb(230,240,255), Color.rgb(190,210,238), Color.rgb(214,228,247), Color.rgb(37,99,235), Color.rgb(214,224,239), Color.rgb(219,234,254)),
+DayPalette("Royal Purple", Color.rgb(105,55,150), Color.rgb(237,224,255), Color.rgb(76,29,120), Color.rgb(245,237,255), Color.rgb(215,196,238), Color.rgb(230,215,246), Color.rgb(126,58,180), Color.rgb(226,216,237), Color.rgb(237,224,255)),
+DayPalette("Teal", Color.rgb(0,105,105), Color.rgb(204,251,241), Color.rgb(17,78,78), Color.rgb(224,247,244), Color.rgb(180,222,216), Color.rgb(205,232,228), Color.rgb(13,148,136), Color.rgb(211,229,225), Color.rgb(204,251,241)),
+DayPalette("Sunset Orange", Color.rgb(180,83,9), Color.rgb(255,237,213), Color.rgb(124,45,18), Color.rgb(255,244,230), Color.rgb(240,205,174), Color.rgb(247,224,202), Color.rgb(234,120,35), Color.rgb(239,222,205), Color.rgb(255,237,213)),
+DayPalette("Ruby Red", Color.rgb(159,35,55), Color.rgb(255,228,230), Color.rgb(136,19,35), Color.rgb(255,239,240), Color.rgb(239,190,196), Color.rgb(247,215,219), Color.rgb(190,45,65), Color.rgb(239,216,219), Color.rgb(255,228,230)),
+DayPalette("Rose Pink", Color.rgb(157,45,105), Color.rgb(252,231,243), Color.rgb(131,24,85), Color.rgb(253,242,248), Color.rgb(235,195,218), Color.rgb(246,218,235), Color.rgb(219,39,119), Color.rgb(239,220,232), Color.rgb(252,231,243)),
+DayPalette("Indigo", Color.rgb(67,56,150), Color.rgb(224,231,255), Color.rgb(49,46,129), Color.rgb(238,240,255), Color.rgb(194,199,239), Color.rgb(216,220,248), Color.rgb(79,70,229), Color.rgb(219,221,241), Color.rgb(224,231,255)),
+DayPalette("Earth Brown", Color.rgb(120,72,38), Color.rgb(245,230,211), Color.rgb(92,51,23), Color.rgb(250,242,232), Color.rgb(225,204,180), Color.rgb(238,222,202), Color.rgb(161,98,50), Color.rgb(235,224,210), Color.rgb(245,230,211)),
+DayPalette("Slate Gray", Color.rgb(71,85,105), Color.rgb(226,232,240), Color.rgb(51,65,85), Color.rgb(241,245,249), Color.rgb(203,213,225), Color.rgb(222,229,238), Color.rgb(100,116,139), Color.rgb(222,228,235), Color.rgb(226,232,240)),
 DayPalette("Black", Color.rgb(25,25,25), Color.rgb(238,238,238), Color.rgb(20,20,20), Color.rgb(250,250,250), Color.rgb(205,205,205), Color.rgb(225,225,225), Color.rgb(45,45,45), Color.rgb(0,0,0), Color.rgb(220,220,220)),
     )
     private fun themedColor(color: Int): Int {
@@ -1604,12 +1604,13 @@ DayPalette("Black", Color.rgb(25,25,25), Color.rgb(238,238,238), Color.rgb(20,20
             else -> themedColor(Color.WHITE)
         }
         val palette = dayPalettes[dayPaletteIndex.coerceIn(dayPalettes.indices)]
-        val strokeColor = if (isSelected) palette.primary else palette.gridLine
-        val strokeWidth = when {
-            isSelected -> 1
-            st?.border == true && st.thickBorder -> 2
-            else -> 1
+        val isTableBorder = st?.border == true && st.thickBorder
+        val strokeColor = when {
+            isSelected -> palette.primary
+            isTableBorder -> palette.primary
+            else -> palette.gridLine
         }
+        val strokeWidth = if (isSelected || isTableBorder) 2 else 1
         val signature = "$fill|$strokeColor|$strokeWidth"
         if (appliedCellBackgrounds[view] == signature) return
         view.background = android.graphics.drawable.GradientDrawable().apply {
@@ -2823,8 +2824,18 @@ DayPalette("Black", Color.rgb(25,25,25), Color.rgb(238,238,238), Color.rgb(20,20
     }
 
     private fun chooseColor(title: String, apply: (Int) -> Unit) {
-        val names = arrayOf("Black", "White", "Red", "Orange", "Yellow", "Green", "Blue", "Purple", "Gray", "Light blue")
-        val colors = intArrayOf(Color.BLACK, themedColor(Color.WHITE), Color.RED, 0xFFFF9800.toInt(), Color.YELLOW, 0xFF2E7D32.toInt(), Color.BLUE, 0xFF7B1FA2.toInt(), Color.GRAY, 0xFFBBDEFB.toInt())
+        val names = arrayOf(
+            "Deep • Blue", "Deep • Orange", "Deep • Gray", "Deep • Gold", "Deep • Sky Blue",
+            "Deep • Green", "Deep • Navy", "Deep • Brown", "Deep • Charcoal", "Deep • Mustard",
+            "Light • Blue", "Light • Orange", "Light • Gray", "Light • Gold", "Light • Sky Blue",
+            "Light • Green", "Light • Periwinkle", "Light • Peach", "Light • Silver", "Light • Yellow"
+        )
+        val colors = intArrayOf(
+            0xFF4472C4.toInt(), 0xFFED7D31.toInt(), 0xFFA5A5A5.toInt(), 0xFFFFC000.toInt(), 0xFF5B9BD5.toInt(),
+            0xFF70AD47.toInt(), 0xFF264478.toInt(), 0xFF9E480E.toInt(), 0xFF636363.toInt(), 0xFF997300.toInt(),
+            0xFFD9E2F3.toInt(), 0xFFFCE4D6.toInt(), 0xFFEDEDED.toInt(), 0xFFFFF2CC.toInt(), 0xFFDDEBF7.toInt(),
+            0xFFE2F0D9.toInt(), 0xFFB4C7E7.toInt(), 0xFFF4B183.toInt(), 0xFFD9D9D9.toInt(), 0xFFFFE699.toInt()
+        )
         AlertDialog.Builder(this).setTitle(title).setItems(names) { _, which -> apply(colors[which]); status.text = "$title applied" }.showProfessional()
     }
 
