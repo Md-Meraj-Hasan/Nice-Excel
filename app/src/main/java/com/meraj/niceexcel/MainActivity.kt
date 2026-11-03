@@ -42,6 +42,7 @@ class MainActivity : Activity() {
     private var filterColumn: String? = null
     private var filterText: String? = null
     private val filterCriteria = linkedMapOf<String, String>()
+    private val filterOperators = linkedMapOf<String, String>()
     private var tableHeaderRow: Int? = null
     private var sheetName = "Sheet1"
     private var selected = "A1"
@@ -926,7 +927,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                     val headerLimit = tableHeaderRow ?: 1
                     val visibleRows = (2..rowLimit).filter { row ->
                         row <= headerLimit || criteria.all { (col, query) ->
-                            columnValues[col]?.get(row).orEmpty().contains(query, ignoreCase = true)
+                            if (filterOperators[col] == "notEqual") !columnValues[col]?.get(row).orEmpty().equals(query, ignoreCase = true) else columnValues[col]?.get(row).orEmpty().contains(query, ignoreCase = true)
                         }
                     }.toSet()
                     mainHandler.post {
@@ -2225,6 +2226,10 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
 
     /** Fill a destination range by detecting a numeric/text series or copying formulas with relative references. */
     private fun autoFillDialog() {
+        val operatorInput = Spinner(this).apply {
+            adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, listOf("Contains", "Not equal to"))
+            setSelection(if (filterOperators[selectedColumn] == "notEqual") 1 else 0)
+        }
         val panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(20), dp(8), dp(20), dp(4))
@@ -3216,6 +3221,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         filterColumn = null
         filterText = null
         filterCriteria.clear()
+        filterOperators.clear()
         for (i in 0 until grid.childCount) {
             val rowView = grid.getChildAt(i) as? LinearLayout ?: continue
             rowView.visibility = android.view.View.VISIBLE
@@ -3263,7 +3269,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS
         }
         val queryInput = EditText(this).apply {
-            hint = "Contains text (blank removes this column filter)"
+            hint = "Value to compare (blank removes this column filter)"
             setSingleLine(true)
             setText(filterCriteria[columnInput.text.toString().uppercase(Locale.ROOT)] ?: filterText.orEmpty())
         }
@@ -3275,6 +3281,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                 textSize = 13f
             })
             addView(columnInput, LinearLayout.LayoutParams(-1, -2))
+            addView(operatorInput, LinearLayout.LayoutParams(-1, -2))
             addView(queryInput, LinearLayout.LayoutParams(-1, -2))
         }
         AlertDialog.Builder(this).setTitle("Filter rows")
@@ -3287,14 +3294,14 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                     return@setPositiveButton
                 }
                 val col = colNameFromIndex(columnIndex(rawCol))
-                if (q.isEmpty()) filterCriteria.remove(col) else filterCriteria[col] = q
+                if (q.isEmpty()) { filterCriteria.remove(col); filterOperators.remove(col) } else { filterCriteria[col] = q; filterOperators[col] = if (operatorInput.selectedItemPosition == 1) "notEqual" else "contains" }
                 filterColumn = filterCriteria.keys.lastOrNull()
                 filterText = filterColumn?.let { filterCriteria[it] }
                 refreshFilterVisibility()
             }
             .setNeutralButton("Clear this column") { _, _ ->
                 val rawCol = columnInput.text.toString().trim().uppercase(Locale.ROOT)
-                if (Regex("^[A-Z]{1,3}$").matches(rawCol)) filterCriteria.remove(colNameFromIndex(columnIndex(rawCol)))
+                if (Regex("^[A-Z]{1,3}$").matches(rawCol)) { val col = colNameFromIndex(columnIndex(rawCol)); filterCriteria.remove(col); filterOperators.remove(col) }
                 filterColumn = filterCriteria.keys.lastOrNull()
                 filterText = filterColumn?.let { filterCriteria[it] }
                 refreshFilterVisibility()
