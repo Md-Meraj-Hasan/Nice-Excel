@@ -134,6 +134,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
             .setTitle("Choose Day Mode Colour")
             .setSingleChoiceItems(names, dayPaletteIndex) { dialog, which ->
                 dayPaletteIndex = which
+                darkMode = dayPalettes[which].name.equals("Black", ignoreCase = true)
                 getPreferences(MODE_PRIVATE).edit().putInt("day_palette_index", which).apply()
                 getSharedPreferences("niceexcel_theme", MODE_PRIVATE).edit()
                     .putInt("day_palette_index", which)
