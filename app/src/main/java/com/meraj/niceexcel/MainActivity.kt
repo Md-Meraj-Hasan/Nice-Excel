@@ -101,12 +101,19 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         }
     }
 
-    private fun themedCellTextColor(color: Int): Int =
-        if (darkMode && color == Color.rgb(24,32,39)) Color.rgb(235,241,250) else themedColor(color)
+    private fun themedCellTextColor(color: Int): Int {
+        if (!darkMode) return themedColor(color)
+        // Existing workbooks may store explicit dark font colours. On a black
+        // sheet those colours become invisible, so lift only low-luminance text.
+        val luminance = (Color.red(color) * 299 + Color.green(color) * 587 + Color.blue(color) * 114) / 1000
+        return if (luminance < 145) Color.rgb(235,241,250) else color
+    }
 
     private fun updateSystemBars() {
-        window.statusBarColor = dayPalettes[dayPaletteIndex.coerceIn(dayPalettes.indices)].primary
-        window.navigationBarColor = if (darkMode) Color.rgb(5,9,18) else Color.rgb(20,30,40)
+        // Black Theme must override the selected day-palette accent.
+        window.statusBarColor = if (darkMode) Color.BLACK
+            else dayPalettes[dayPaletteIndex.coerceIn(dayPalettes.indices)].primary
+        window.navigationBarColor = if (darkMode) Color.BLACK else Color.rgb(20,30,40)
         window.decorView.systemUiVisibility = 0
     }
 
@@ -406,7 +413,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         val formulaBar=LinearLayout(this).apply { orientation=LinearLayout.HORIZONTAL; gravity=Gravity.CENTER_VERTICAL; setPadding(dp(6),dp(4),dp(6),dp(4)); setBackgroundColor(themedSurface(Color.rgb(255,255,255))) }
         cellName=TextView(this).apply { text=selected; textSize=14f; typeface=Typeface.DEFAULT_BOLD; gravity=Gravity.CENTER; setTextColor(themedColor(Color.rgb(17,94,57))); setPadding(dp(10),dp(11),dp(10),dp(11)); setBackgroundColor(themedSurface(Color.rgb(225,242,232))) }
         formulaBar.addView(cellName)
-        formula=EditText(this).apply { setSingleLine(true); textSize=14f; hint="Enter value or formula"; inputType=InputType.TYPE_CLASS_TEXT; setPadding(dp(8),dp(3),dp(8),dp(3)); setBackgroundColor(themedSurface(Color.WHITE)); setText(data[selected].orEmpty()); setOnEditorActionListener { _,_,_ -> applyFormula(); true } }
+        formula=EditText(this).apply { setSingleLine(true); textSize=14f; hint="Enter value or formula"; inputType=InputType.TYPE_CLASS_TEXT; setPadding(dp(8),dp(3),dp(8),dp(3)); setBackgroundColor(themedSurface(Color.WHITE)); setTextColor(themedCellTextColor(Color.rgb(24,32,39))); setHintTextColor(if (darkMode) Color.rgb(150,165,185) else Color.rgb(126,143,133)); setText(data[selected].orEmpty()); setOnEditorActionListener { _,_,_ -> applyFormula(); true } }
         formulaBar.addView(formula,LinearLayout.LayoutParams(0,-2,1f))
         formulaBar.addView(TextView(this).apply { text="ƒx ▾"; textSize=12f; setTextColor(themedColor(Color.rgb(17,94,57))); setPadding(dp(7),dp(10),dp(7),dp(10)); setOnClickListener { formulaPickerMenu() } })
         root.addView(formulaBar)
@@ -1688,15 +1695,15 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
             isTableBorder -> palette.primary
             else -> if (darkMode) Color.rgb(65,82,106) else palette.gridLine
         }
-        val strokeWidth = if (isSelected || isTableBorder) 2 else 1
+        // Table borders are drawn as a 1-physical-pixel hairline. Each cell
+        // paints its own four edges; using a dp-scaled 2dp stroke on both
+        // neighbours made shared edges look like thick doubled separators.
+        val strokeWidth = if (isSelected) dp(2) else if (isTableBorder) 1 else dp(1)
         val signature = "$fill|$strokeColor|$strokeWidth"
         if (appliedCellBackgrounds[view] == signature) return
         view.background = android.graphics.drawable.GradientDrawable().apply {
             setColor(fill)
-            // Use density-scaled strokes for every grid edge. A raw 1px stroke
-            // is thinner than 1dp on most phones and can land on fractional physical
-            // pixels while scrolling, making adjacent cell borders look broken.
-            setStroke(dp(strokeWidth), strokeColor)
+            setStroke(strokeWidth, strokeColor)
         }
         appliedCellBackgrounds[view] = signature
     }
@@ -1754,6 +1761,8 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
             setSingleLine(false)
             textSize = cell.textSize / resources.displayMetrics.scaledDensity
             setText(data[address].orEmpty())
+            setTextColor(themedCellTextColor(Color.rgb(24,32,39)))
+            setHintTextColor(if (darkMode) Color.rgb(150,165,185) else Color.rgb(126,143,133))
             setSelection(text.length)
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
             setHorizontallyScrolling(false)

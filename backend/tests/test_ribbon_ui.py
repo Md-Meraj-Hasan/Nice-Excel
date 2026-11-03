@@ -96,6 +96,19 @@ def test_web_and_android_webview_quick_filters_support_multiple_columns():
         assert "quickFilters=[]" in html
 
 
+def test_native_black_theme_keeps_existing_cell_formula_and_inline_editor_text_readable():
+    native = (ROOT / "app" / "src" / "main" / "java" / "com" / "meraj" / "niceexcel" / "MainActivity.kt").read_text(encoding="utf-8")
+    assert "if (luminance < 145) Color.rgb(235,241,250) else color" in native
+    assert "setTextColor(themedCellTextColor(Color.rgb(24,32,39)))" in native
+    assert "setHintTextColor(if (darkMode) Color.rgb(150,165,185)" in native
+
+
+def test_native_table_borders_use_hairline_instead_of_double_dp_strokes():
+    native = (ROOT / "app" / "src" / "main" / "java" / "com" / "meraj" / "niceexcel" / "MainActivity.kt").read_text(encoding="utf-8")
+    assert "else if (isTableBorder) 1 else dp(1)" in native
+    assert "using a dp-scaled 2dp stroke on both" in native
+
+
 def test_native_black_theme_uses_dark_cells_and_persists_palette_for_web_activity():
     native = (ROOT / "app" / "src" / "main" / "java" / "com" / "meraj" / "niceexcel" / "MainActivity.kt").read_text(encoding="utf-8")
     flask = (ROOT / "app" / "src" / "main" / "java" / "com" / "meraj" / "niceexcel" / "FlaskActivity.kt").read_text(encoding="utf-8")
@@ -103,7 +116,9 @@ def test_native_black_theme_uses_dark_cells_and_persists_palette_for_web_activit
     assert "Color.BLACK" in native and "Color.rgb(65,82,106)" in native
     assert 'putBoolean("dark_mode", darkMode)' in native
     assert 'getSharedPreferences("niceexcel_theme", MODE_PRIVATE)' in flask
-    assert "window.statusBarColor = systemAccent" in flask
+    assert 'window.statusBarColor = if (blackTheme) Color.BLACK else systemAccent' in flask
+    assert 'window.statusBarColor = if (darkMode) Color.BLACK' in native
+    assert 'window.navigationBarColor = if (darkMode) Color.BLACK' in native
 
 
 def test_native_filters_match_displayed_formula_results_in_any_column():
