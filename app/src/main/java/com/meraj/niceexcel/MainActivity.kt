@@ -678,7 +678,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
             "Data" -> listOf(
                 "Sort column A → Z" to { sortColumn() },
                 "Filter column…" to { filterMenu() },
-                "Clear filter" to { filterColumn = null; filterText = null; filterCriteria.clear(); refreshFilterVisibility() },
+                "Clear filter" to { filterColumn = null; filterText = null; filterCriteria.clear(); filterOperators.clear(); refreshFilterVisibility() },
                 "Find / Replace…" to { findReplaceMenu() },
                 "Workbook data range info" to { val used = usedRange(); status.text = "Used range: A1:${colName(used.second)}${used.first}" }
             )
@@ -915,8 +915,9 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         val criteria = filterCriteria.toMap().ifEmpty {
             if (filterColumn != null && filterText != null) mapOf(filterColumn!! to filterText!!) else emptyMap()
         }
+        val capturedOperators = filterOperators.toMap()
         val rowLimit = rowCount
-        // Snapshot every active column criterion; workers never read mutable workbook maps.
+        // Snapshot every active column criterion and operator; workers never read mutable filter maps.
         val columnValues = criteria.mapValues { (col, _) ->
             (2..rowLimit).associateWith { row -> gridDisplay("${col}$row") }
         }
@@ -927,7 +928,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                     val headerLimit = tableHeaderRow ?: 1
                     val visibleRows = (2..rowLimit).filter { row ->
                         row <= headerLimit || criteria.all { (col, query) ->
-                            run { val cell = columnValues[col]?.get(row).orEmpty(); when (filterOperators[col]) { "equal" -> cell.equals(query, ignoreCase = true); "notEqual" -> cell.isNotBlank() && !cell.equals(query, ignoreCase = true); "blank" -> cell.isBlank(); else -> cell.contains(query, ignoreCase = true) } }
+                            run { val cell = columnValues[col]?.get(row).orEmpty(); when (capturedOperators[col]) { "equal" -> cell.equals(query, ignoreCase = true); "notEqual" -> cell.isNotBlank() && !cell.equals(query, ignoreCase = true); "blank" -> cell.isBlank(); else -> cell.contains(query, ignoreCase = true) } }
                         }
                     }.toSet()
                     mainHandler.post {
@@ -938,7 +939,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                             workbookRevision.get() != capturedRevision ||
                             filterCriteria.toMap().ifEmpty {
                                 if (filterColumn != null && filterText != null) mapOf(filterColumn!! to filterText!!) else emptyMap()
-                            } != criteria) return@post
+                            } != criteria || filterOperators.toMap() != capturedOperators) return@post
                         if (columnValues.any { (col, values) ->
                                 values.any { (row, value) -> gridDisplay("${col}$row") != value }
                             }) return@post
@@ -2226,8 +2227,8 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
 
     /** Fill a destination range by detecting a numeric/text series or copying formulas with relative references. */
     private fun autoFillDialog() {
-        val operatorInput = Spinner(this).apply {
-            adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, listOf("Equal", "Not equal", "Blank"))
+        val operatorInput = android.widget.Spinner(this).apply {
+            adapter = android.widget.ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, listOf("Equal", "Not equal", "Blank"))
             setSelection(when (filterOperators[selectedColumn]) { "notEqual" -> 1; "blank" -> 2; else -> 0 })
         }
         val panel = LinearLayout(this).apply {
