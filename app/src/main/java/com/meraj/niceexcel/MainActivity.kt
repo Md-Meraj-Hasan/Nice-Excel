@@ -2227,10 +2227,6 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
 
     /** Fill a destination range by detecting a numeric/text series or copying formulas with relative references. */
     private fun autoFillDialog() {
-        val operatorInput = android.widget.Spinner(this).apply {
-            adapter = android.widget.ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, listOf("Equal", "Not equal", "Blank"))
-            setSelection(when (filterOperators[selectedColumn]) { "notEqual" -> 1; "blank" -> 2; else -> 0 })
-        }
         val panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(20), dp(8), dp(20), dp(4))
@@ -3268,6 +3264,10 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
             hint = "Column letter (A, D, AA, AB...)"
             setSingleLine(true); setText(selectedColumn)
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS
+        }
+        val operatorInput = android.widget.Spinner(this).apply {
+            adapter = android.widget.ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, listOf("Equal", "Not equal", "Blank"))
+            setSelection(when (filterOperators[selectedColumn]) { "notEqual" -> 1; "blank" -> 2; else -> 0 })
         }
         val queryInput = EditText(this).apply {
             hint = "Value to compare (Blank option needs no value)"
