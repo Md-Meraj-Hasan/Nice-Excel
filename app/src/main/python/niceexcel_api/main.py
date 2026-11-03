@@ -218,7 +218,7 @@ def _book(book_id: str) -> Workbook:
 
 
 def _sheet(wb: Workbook, name: str):
-    if name not in wb.sheetnames:
+    if name in {"_NiceExcelCF", "_NiceExcelDV"} or name not in wb.sheetnames:
         raise HTTPException(status_code=404, detail=f"Worksheet not found: {name}")
     return wb[name]
 
@@ -241,7 +241,7 @@ def _new_session(wb: Workbook) -> dict[str, Any]:
     book_id = str(uuid.uuid4())
     _workbooks[book_id] = wb
     _persist_workbook(book_id)
-    return {"workbook_id": book_id, "sheets": wb.sheetnames}
+    return {"workbook_id": book_id, "sheets": [n for n in wb.sheetnames if n not in {"_NiceExcelCF", "_NiceExcelDV"}]}
 
 
 def _cell_json(cell) -> dict[str, Any]:
@@ -324,7 +324,7 @@ def workbook_info(book_id: str):
             {"name": ws.title, "max_row": ws.max_row, "max_column": ws.max_column,
              "freeze_panes": str(ws.freeze_panes) if ws.freeze_panes else None,
              "merged_ranges": [str(r) for r in ws.merged_cells.ranges]}
-            for ws in wb.worksheets
+            for ws in wb.worksheets if ws.title not in {"_NiceExcelCF", "_NiceExcelDV"}
         ],
         "active_sheet": wb.active.title,
         "formula_calculation": "limited_nice_excel_subset_evaluator",
