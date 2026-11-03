@@ -21,7 +21,7 @@
     const flush = () => {
       if (token) {
         const upper = token.toUpperCase();
-        output += upper === 'TRUE' ? 'TRUE()' : upper === 'FALSE' ? 'FALSE()' : token;
+        output += upper === 'TRUE' && value[i] !== '(' ? 'TRUE()' : upper === 'FALSE' && value[i] !== '(' ? 'FALSE()' : token;
         token = '';
       }
     };
