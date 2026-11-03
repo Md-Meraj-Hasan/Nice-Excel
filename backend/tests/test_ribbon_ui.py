@@ -156,3 +156,20 @@ def test_native_black_theme_formula_bar_and_grid_headers_use_high_contrast_text(
     assert "setTextColor(if (darkMode) Color.WHITE else themedColor(Color.rgb(17,94,57)))" in native
     assert 'text="ƒx ▾"; textSize=12f; setTextColor(if (darkMode) Color.WHITE' in native
     assert "if (darkMode) Color.WHITE else dayPalettes" in native
+
+ 
+def test_smart_table_filter_has_exact_equal_not_equal_blank_modes():
+    for path in [
+        ROOT / "backend" / "niceexcel_api" / "static" / "index.html",
+        ROOT / "app" / "src" / "main" / "assets" / "niceexcel_index.html",
+    ]:
+        html = path.read_text(encoding="utf-8")
+        assert '<option value="equals">Equal</option><option value="not-equals">Not equal</option><option value="blank">Blank</option>' in html
+        assert "f.mode==='not-equals'&&(!value||actual===needle)" in html
+
+def test_native_filter_has_equal_not_equal_blank_modes():
+    native = (ROOT / "app" / "src" / "main" / "java" / "com" / "meraj" / "niceexcel" / "MainActivity.kt").read_text(encoding="utf-8")
+    assert 'listOf("Equal", "Not equal", "Blank")' in native
+    assert '"equal" -> cell.equals(query, ignoreCase = true)' in native
+    assert '"notEqual" -> cell.isNotBlank() && !cell.equals(query, ignoreCase = true)' in native
+    assert '"blank" -> cell.isBlank()' in native
