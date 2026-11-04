@@ -3,7 +3,9 @@ name: Build NiceExcel APK (HyperFormula GPLv3)
 on:
   workflow_dispatch:
   push:
-    branches: [main, master, 'feature/**']
+    branches: [main, master, 'feature/**', 'fix/**']
+  pull_request:
+    types: [opened, synchronize, reopened]
 
 permissions:
   contents: read
