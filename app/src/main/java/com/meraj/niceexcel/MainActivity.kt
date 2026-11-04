@@ -809,7 +809,8 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                 "Table tools…" to { tableMenu() },
                 "Shapes…" to { showNativeShapesMenu() },
                 "Symbols…" to { showSymbolPickerMenu() },
-                "AI Auto Fill…" to { autoFillDialog() }
+                "AI Auto Fill…" to { autoFillDialog() },
+                "Clear formatting" to { clearFormattingSelection() }
             )
             "Format" -> listOf(
                 "Cells… (selected cell only)" to { formattingMenu(forceCell = true) },
@@ -817,14 +818,16 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                 "Font size…" to { chooseFontSize() },
                 "Alignment…" to { chooseAlignmentForTargets(listOf(selected), selected) },
                 "Number format…" to { chooseNumberFormat() },
-                "Table styles…" to { tableMenu() }
+                "Table styles…" to { tableMenu() },
+                "Clear formatting" to { clearFormattingSelection() }
             )
             "Data" -> listOf(
                 "Sort column A → Z" to { sortColumn() },
                 "Filter column…" to { filterMenu() },
                 "Clear filter" to { filterColumn = null; filterText = null; filterCriteria.clear(); filterAllColumns = false; refreshFilterVisibility() },
                 "Find / Replace…" to { findReplaceMenu() },
-                "Workbook data range info" to { val used = usedRange(); status.text = "Used range: A1:${colName(used.second)}${used.first}" }
+                "Workbook data range info" to { val used = usedRange(); status.text = "Used range: A1:${colName(used.second)}${used.first}" },
+                "Clear formatting" to { clearFormattingSelection() }
             )
             "Advanced" -> listOf(
                 "Open Full Advanced Tools (Web)" to { startActivity(Intent(this, FlaskActivity::class.java)) },
@@ -834,15 +837,17 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                 "Filter by Cell Colour" to { filterByCellColour() },
                 "Clear Advanced Filters" to { clearAdvancedFilters() },
                 "Pivot Summary…" to { pivotSummaryMenu(false) },
-                "Dashboard Builder…" to { pivotSummaryMenu(true) }
+                "Dashboard Builder…" to { pivotSummaryMenu(true) },
+                "Clear formatting" to { clearFormattingSelection() }
             )
-            "Formula" -> listOf("Insert function…" to { formulaPickerMenu() }, "Formula help" to { formulaHelp() }, "Formula examples" to { formulaHelp() })
+            "Formula" -> listOf("Insert function…" to { formulaPickerMenu() }, "Formula help" to { formulaHelp() }, "Formula examples" to { formulaHelp() }, "Clear formatting" to { clearFormattingSelection() })
             "View" -> buildList {
                 add("Choose Colour • ${dayPalettes[dayPaletteIndex].name}" to { chooseDayPalette() })
                 add(if (darkMode) "Switch to Day Theme" to { toggleDarkTheme() } else "Switch to Black Theme" to { toggleDarkTheme() })
                 add("Refresh cells grid" to { refreshCurrentSheetGrid() })
                 add("Refresh current sheet formulas" to { refreshCurrentSheetFormulas() })
                 add("Workbook info" to { status.text = "${sheets.size} sheet(s) • $rowCount rows • Offline workbook" })
+                add("Clear formatting" to { clearFormattingSelection() })
             }
             else -> listOf(
                 "Workbook info" to { status.text = "${sheets.size} sheet(s) • $rowCount rows • Offline workbook" }
@@ -892,6 +897,19 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
         clipboard.setPrimaryClip(android.content.ClipData.newPlainText("$sheetName!$selected", data[selected].orEmpty()))
         status.text = "Copied $sheetName!$selected"
+    }
+
+    private fun clearFormattingSelection() {
+        val targets = selectedRangeCells.toList().ifEmpty { listOf(selected) }
+        val label = selectedRangeLabel ?: selected
+        AlertDialog.Builder(this).setTitle("Clear formatting")
+            .setMessage("Remove formatting from $label? Cell contents and formulas will remain unchanged.")
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Clear") { _, _ ->
+                targets.forEach { sheetStyles.remove(it) }
+                refreshStyledCells(targets)
+                status.text = "Formatting cleared: $label"
+            }.showProfessional()
     }
 
     private fun clearSelectedCell() {
