@@ -1706,7 +1706,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         // Table borders are drawn as a 1-physical-pixel hairline. Each cell
         // paints its own four edges; using a dp-scaled 2dp stroke on both
         // neighbours made shared edges look like thick doubled separators.
-        val strokeWidth = if (isSelected) dp(2) else if (isTableBorder) 1 else dp(1)
+        val strokeWidth = if (isSelected || isTableBorder) dp(2) else dp(1)
         val signature = "$fill|$strokeColor|$strokeWidth"
         if (appliedCellBackgrounds[view] == signature) return
         view.background = android.graphics.drawable.GradientDrawable().apply {
@@ -3033,6 +3033,20 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         dialog.show()
     }
 
+    private fun tableHeaderTextColor(background: Int): Int {
+        val luminance = (Color.red(background) * 299 + Color.green(background) * 587 + Color.blue(background) * 114) / 1000
+        return if (luminance >= 150) Color.rgb(24, 32, 39) else Color.WHITE
+    }
+
+    private fun tableStripeColor(headerColor: Int): Int {
+        // A subtle 90% white tint derived from the selected header color.
+        return Color.rgb(
+            (Color.red(headerColor) * 0.10 + 255 * 0.90).toInt(),
+            (Color.green(headerColor) * 0.10 + 255 * 0.90).toInt(),
+            (Color.blue(headerColor) * 0.10 + 255 * 0.90).toInt()
+        )
+    }
+
     private fun applyTableRangeAction(action: Int, cells: List<String>, range: String, customColor: Int? = null) {
         val affected = linkedSetOf<String>()
         val rows = cells.mapNotNull { Regex("[0-9]+").find(it)?.value?.toIntOrNull() }.distinct().sorted()
@@ -3046,7 +3060,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                     val address = "${col}$headerRow"; affected.add(address)
                     styleFor(address).apply {
                         bold = true; fillColor = customColor ?: dayPalettes[dayPaletteIndex.coerceIn(dayPalettes.indices)].primary
-                        textColor = Color.WHITE; border = true; thickBorder = true
+                        textColor = tableHeaderTextColor(fillColor); border = true; thickBorder = true
                     }
                 }
                 status.text = "Header applied to ${columns.first()}${headerRow}:${columns.last()}${headerRow}"
@@ -3060,9 +3074,12 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                     st.border = true
                     st.thickBorder = true
                     if (row == headerRow) {
-                        st.bold = true; st.fillColor = customColor ?: dayPalettes[dayPaletteIndex.coerceIn(dayPalettes.indices)].primary; st.textColor = Color.WHITE; st.thickBorder = true
+                        st.bold = true
+                        st.fillColor = customColor ?: dayPalettes[dayPaletteIndex.coerceIn(dayPalettes.indices)].primary
+                        st.textColor = tableHeaderTextColor(st.fillColor)
+                        st.thickBorder = true
                     } else {
-                        st.fillColor = if (darkMode) Color.rgb(18,26,43) else if ((columnIndex(col) + row) % 2 == 0) 0xFFE8F5E9.toInt() else themedSurface(Color.WHITE)
+                        st.fillColor = if (darkMode) Color.rgb(18,26,43) else if ((row - headerRow) % 2 == 1) tableStripeColor(customColor ?: dayPalettes[dayPaletteIndex.coerceIn(dayPalettes.indices)].primary) else Color.WHITE
                     }
                 }
                 tableHeaderRow = headerRow
