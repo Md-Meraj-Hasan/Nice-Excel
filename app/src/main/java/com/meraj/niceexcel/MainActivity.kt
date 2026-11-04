@@ -1541,6 +1541,13 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                     }
 
                     select(key)
+                    val tappedRow = Regex("^[A-Z]+([0-9]+)$").matchEntire(key)?.groupValues?.get(1)?.toIntOrNull()
+                    if (tableHeaderRow != null && tappedRow == tableHeaderRow) {
+                        lastTapAddress = null
+                        lastTapAt = 0L
+                        filterMenu()
+                        return@setOnClickListener
+                    }
                     if (keyboardAlreadyOpen || isDoubleTap) {
                         lastTapAddress = null
                         lastTapAt = 0L
@@ -3017,7 +3024,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         dialog.show()
     }
 
-    private fun applyTableRangeAction(action: Int, cells: List<String>, range: String) {
+    private fun applyTableRangeAction(action: Int, cells: List<String>, range: String, customColor: Int? = null) {
         val affected = linkedSetOf<String>()
         val rows = cells.mapNotNull { Regex("[0-9]+").find(it)?.value?.toIntOrNull() }.distinct().sorted()
         val columns = cells.mapNotNull { Regex("^[A-Z]+").find(it)?.value }.distinct().sortedBy { columnIndex(it) }
@@ -3029,8 +3036,8 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                 columns.forEachIndexed { index, col ->
                     val address = "${col}$headerRow"; affected.add(address)
                     styleFor(address).apply {
-                        bold = true; fillColor = dayPalettes[dayPaletteIndex.coerceIn(dayPalettes.indices)].primary
-                        textColor = themedColor(Color.WHITE); border = true
+                        bold = true; fillColor = customColor ?: dayPalettes[dayPaletteIndex.coerceIn(dayPalettes.indices)].primary
+                        textColor = Color.WHITE; border = true; thickBorder = true
                     }
                 }
                 status.text = "Header applied to ${columns.first()}${headerRow}:${columns.last()}${headerRow}"
@@ -3042,8 +3049,9 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                     val col = Regex("^[A-Z]+").find(address)?.value ?: columns.first()
                     val st = styleFor(address)
                     st.border = true
+                    st.thickBorder = true
                     if (row == headerRow) {
-                        st.bold = true; st.fillColor = dayPalettes[dayPaletteIndex.coerceIn(dayPalettes.indices)].primary; st.textColor = themedColor(Color.WHITE)
+                        st.bold = true; st.fillColor = customColor ?: dayPalettes[dayPaletteIndex.coerceIn(dayPalettes.indices)].primary; st.textColor = Color.WHITE; st.thickBorder = true
                     } else {
                         st.fillColor = if (darkMode) Color.rgb(18,26,43) else if ((columnIndex(col) + row) % 2 == 0) 0xFFE8F5E9.toInt() else themedSurface(Color.WHITE)
                     }
