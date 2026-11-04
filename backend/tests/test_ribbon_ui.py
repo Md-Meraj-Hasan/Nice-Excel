@@ -191,3 +191,24 @@ def test_black_theme_table_borders_use_contrast_safe_grid_colors():
         html = path.read_text(encoding="utf-8")
         assert ".grid td.table-cell{border-right:1px solid var(--line);border-bottom:1px solid var(--line)}" in html
         assert ".grid td.table-cell.table-outline{box-shadow:inset 0 0 0 2px var(--line)}" in html
+
+
+
+def test_native_table_style_uses_contrast_safe_header_and_row_banding():
+    native = (ROOT / "app" / "src" / "main" / "java" / "com" / "meraj" / "niceexcel" / "MainActivity.kt").read_text(encoding="utf-8")
+    assert "private fun tableHeaderTextColor(background: Int)" in native
+    assert "private fun tableStripeColor(headerColor: Int)" in native
+    assert "tableHeaderTextColor(st.fillColor)" in native
+    assert "(row - headerRow) % 2 == 1" in native
+    assert "isSelected || isTableBorder) dp(2)" in native
+
+
+def test_web_smart_table_header_text_contrasts_with_selected_fill():
+    for path in [
+        ROOT / "backend" / "niceexcel_api" / "static" / "index.html",
+        ROOT / "app" / "src" / "main" / "assets" / "niceexcel_index.html",
+    ]:
+        html = path.read_text(encoding="utf-8")
+        assert "function readableTableHeaderColor(td)" in html
+        assert "td.style.color=readableTableHeaderColor(td)" in html
+        assert ".grid td.table-cell.table-header-cell{font-weight:700}" in html
