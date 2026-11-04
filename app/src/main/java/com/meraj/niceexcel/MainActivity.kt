@@ -661,6 +661,10 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                 "AI Auto Fill…" to { autoFillDialog() }
             )
             "Format" -> listOf(
+                "Font color…" to { chooseNativeCellColor(font = true) },
+                "Cell fill…" to { chooseNativeCellColor(font = false) },
+                "Bold" to { toggleNativeSelectedStyle("bold") },
+                "Italic" to { toggleNativeSelectedStyle("italic") },
                 "Table styles…" to { tableMenu() }
             )
             "Data" -> listOf(
@@ -1591,6 +1595,29 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
     private fun addOneRow() = addRows(1)
 
     /** Add rows at the end in one operation, rendering at most once for a batch. */
+    private fun chooseNativeCellColor(font: Boolean) {
+        val colors = linkedMapOf(
+            "Black" to "#000000", "White" to "#FFFFFF", "Red" to "#E53935",
+            "Orange" to "#F57C00", "Yellow" to "#FBC02D", "Green" to "#43A047",
+            "Blue" to "#1E88E5", "Purple" to "#8E24AA", "Gray" to "#757575"
+        )
+        val names = colors.keys.toTypedArray()
+        AlertDialog.Builder(this).setTitle(if (font) "Font color" else "Cell fill")
+            .setItems(names) { _, which ->
+                val color = android.graphics.Color.parseColor(colors[names[which]]!!)
+                val previous = cellStyles[selected] ?: CellStyle()
+                cellStyles[selected] = if (font) previous.copy(fontColor = color) else previous.copy(fillColor = color)
+                renderVisibleCell(selected)
+                status.text = (if (font) "Font color" else "Cell fill") + " updated for $selected"
+            }.setNegativeButton("Cancel", null).show()
+    }
+
+    private fun toggleNativeSelectedStyle(which: String) {
+        val previous = cellStyles[selected] ?: CellStyle()
+        cellStyles[selected] = if (which == "bold") previous.copy(bold = !previous.bold) else previous.copy(italic = !previous.italic)
+        renderVisibleCell(selected)
+        status.text = which + " updated for $selected"
+    }
     private fun showSymbolPickerMenu() {
         val symbols = linkedMapOf(
             "Currency" to listOf("₹","$","€","£","¥","₩","₽","₺","₫","฿","₱","₦"),
