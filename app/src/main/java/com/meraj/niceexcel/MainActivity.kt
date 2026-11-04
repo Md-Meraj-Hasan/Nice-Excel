@@ -906,7 +906,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
             .setMessage("Remove formatting from $label? Cell contents and formulas will remain unchanged.")
             .setNegativeButton("Cancel", null)
             .setPositiveButton("Clear") { _, _ ->
-                targets.forEach { sheetStyles.remove(it) }
+                targets.forEach { sheetStyles.remove(it); pendingStyles[it] = CellStyle() }
                 refreshStyledCells(targets)
                 status.text = "Formatting cleared: $label"
             }.showProfessional()
