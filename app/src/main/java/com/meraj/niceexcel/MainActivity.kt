@@ -1604,20 +1604,28 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         val names = colors.keys.toTypedArray()
         AlertDialog.Builder(this).setTitle(if (font) "Font color" else "Cell fill")
             .setItems(names) { _, which ->
-                val color = android.graphics.Color.parseColor(colors[names[which]]!!)
-                val previous = cellStyles[selected] ?: CellStyle()
-                cellStyles[selected] = if (font) previous.copy(fontColor = color) else previous.copy(fillColor = color)
-                renderVisibleCell(selected)
+                val style = styleFor(selected)
+                if (font) style.textColor = android.graphics.Color.parseColor(colors[names[which]]!!)
+                else style.fillColor = android.graphics.Color.parseColor(colors[names[which]]!!)
+                cellViews[selected]?.let { view ->
+                    view.setTextColor(themedCellTextColor(style.textColor))
+                    applyCellBackground(view, selected, false)
+                }
                 status.text = (if (font) "Font color" else "Cell fill") + " updated for $selected"
             }.setNegativeButton("Cancel", null).show()
     }
 
     private fun toggleNativeSelectedStyle(which: String) {
-        val previous = cellStyles[selected] ?: CellStyle()
-        cellStyles[selected] = if (which == "bold") previous.copy(bold = !previous.bold) else previous.copy(italic = !previous.italic)
-        renderVisibleCell(selected)
-        status.text = which + " updated for $selected"
+        val style = styleFor(selected)
+        if (which == "bold") style.bold = !style.bold else style.italic = !style.italic
+        cellViews[selected]?.let { view ->
+            view.typeface = Typeface.create(Typeface.DEFAULT,
+                (if (style.bold) Typeface.BOLD else Typeface.NORMAL) or
+                (if (style.italic) Typeface.ITALIC else Typeface.NORMAL))
+        }
+        status.text = "$which updated for $selected"
     }
+
     private fun showSymbolPickerMenu() {
         val symbols = linkedMapOf(
             "Currency" to listOf("₹","$","€","£","¥","₩","₽","₺","₫","฿","₱","₦"),
