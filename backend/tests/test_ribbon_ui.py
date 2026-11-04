@@ -92,7 +92,11 @@ def test_web_and_android_webview_quick_filters_support_multiple_columns():
         html = path.read_text(encoding="utf-8")
         assert "let quickFilters=[]" in html
         assert "for(const f of quickFilters)" in html
-        assert "quickFilters.push({column,text:q.trim()})" in html
+        # The touch-friendly dialog trims input before adding a per-column
+        # criterion, while preserving any other selected column criteria.
+        assert "const q=valueInput.value.trim()" in html
+        assert "quickFilters=quickFilters.filter(f=>f.column!==column)" in html
+        assert "quickFilters.push({column,text:q})" in html
         assert "quickFilters=[]" in html
 
 
@@ -135,8 +139,13 @@ def test_web_filter_can_explicitly_choose_columns_through_z():
         html = path.read_text(encoding="utf-8")
         assert "const COLS=26, ROWS=40;" in html
         assert "range=A1:Z40" in html
-        assert "Choose the worksheet column to filter" in html
-        assert "columnNumber(column)>COLS" in html
+        # Filter column selection is now an in-app dialog (not prompt()).
+        # It offers every worksheet column through Z and labels columns
+        # with their first-row heading when available.
+        assert "function openColumnFilterDialog()" in html
+        assert "niceExcelFilterColumn" in html
+        assert "for(let c=1;c<=COLS;c++)" in html
+        assert "Filter worksheet column" in html
         assert ".grid td.table-cell{border-right:1px solid var(--accent);border-bottom:1px solid var(--accent)}" in html
 
  
