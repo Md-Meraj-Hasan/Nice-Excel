@@ -1758,10 +1758,13 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
             else -> if (darkMode) Color.rgb(65,82,106) else palette.gridLine
         }
         val strokeWidth = if (isSelected || isTableBorder) dp(2) else dp(1)
-        val edges = if (isTableBorder && !isSelected && address != null) tableBorderEdges(address) else booleanArrayOf(true, true, true, true)
+        // Keep single-edge ownership even while a table range is selected.
+        // Selection changes the border color, not the geometry; otherwise the
+        // selected GradientDrawable would restore four strokes per cell.
+        val edges = if (isTableBorder && address != null) tableBorderEdges(address) else booleanArrayOf(true, true, true, true)
         val signature = "$fill|$strokeColor|$strokeWidth|${edges.joinToString("")}"
         if (appliedCellBackgrounds[view] == signature) return
-        view.background = if (isTableBorder && !isSelected) {
+        view.background = if (isTableBorder) {
             CellBorderDrawable(fill, strokeColor, strokeWidth.toFloat(), edges)
         } else {
             android.graphics.drawable.GradientDrawable().apply {
