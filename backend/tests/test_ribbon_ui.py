@@ -201,6 +201,10 @@ def test_native_table_style_uses_contrast_safe_header_and_row_banding():
     assert "tableHeaderTextColor(st.fillColor)" in native
     assert "(row - headerRow) % 2 == 1" in native
     assert "isSelected || isTableBorder) dp(2)" in native
+    assert "val colorPresets = listOf(" in native
+    assert "Header color — choose a preset or enter a HEX color" in native
+    assert "if ((row - headerRow) % 2 == 1)" in native
+    assert "if (darkMode) Color.rgb(" in native
 
 
 def test_web_smart_table_header_text_contrasts_with_selected_fill():
