@@ -156,3 +156,16 @@ def test_native_black_theme_formula_bar_and_grid_headers_use_high_contrast_text(
     assert "setTextColor(if (darkMode) Color.WHITE else themedColor(Color.rgb(17,94,57)))" in native
     assert 'text="ƒx ▾"; textSize=12f; setTextColor(if (darkMode) Color.WHITE' in native
     assert "if (darkMode) Color.WHITE else dayPalettes" in native
+
+
+def test_native_shows_live_used_rows_columns_and_last_cell_in_footer():
+    native = (ROOT / "app" / "src" / "main" / "java" / "com" / "meraj" / "niceexcel" / "MainActivity.kt").read_text(encoding="utf-8")
+    assert 'private lateinit var rangeInfo: TextView' in native
+    assert 'rangeInfo.text = "Used: $lastRow rows • $usedColumns columns (A:${colName(lastColumnIndex)}) • $lastCell"' in native
+    assert 'updateUsedRangeInfo()' in native
+
+def test_native_large_sheet_rendering_uses_bounded_frame_batches_and_smooth_scroll():
+    native = (ROOT / "app" / "src" / "main" / "java" / "com" / "meraj" / "niceexcel" / "MainActivity.kt").read_text(encoding="utf-8")
+    assert 'val lastRow = minOf(rowCount, firstRow + 3)' in native
+    assert 'isSmoothScrollingEnabled = true' in native
+    assert 'isNestedScrollingEnabled = false' in native
