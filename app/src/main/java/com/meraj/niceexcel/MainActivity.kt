@@ -2008,12 +2008,10 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         val addressParts = address?.let { Regex("^([A-Z]+)([0-9]+)$").matchEntire(it) }
         val columnIndexForBorder = addressParts?.groupValues?.get(1)?.let { columnIndex(it) } ?: -1
         val rowForBorder = addressParts?.groupValues?.get(2)?.toIntOrNull() ?: -1
-        // Thick-border ranges draw each shared separator once: the left/top cell owns
-        // its right/bottom inner edge. The outside perimeter stays a 1px hairline.
-        val thickRight = st?.thickBorder == true && columnIndexForBorder in 0 until (colLimit - 1) &&
-            sheetStyles["${colName(columnIndexForBorder + 1)}$rowForBorder"]?.thickBorder == true
-        val thickBottom = st?.thickBorder == true && rowForBorder > 0 &&
-            sheetStyles["${colName(columnIndexForBorder)}${rowForBorder + 1}"]?.thickBorder == true
+        // Keep shared separators thick and also thicken the outer right/bottom edges.
+        // The left/top edge is drawn when the adjacent cell is not part of the thick range.
+        val thickRight = st?.thickBorder == true
+        val thickBottom = st?.thickBorder == true
         val signature = "$fill|$strokeColor|$strokeWidth|$address|$thickRight|$thickBottom"
         if (appliedCellBackgrounds[view] == signature) return
         if (st?.thickBorder == true && address != null) {
