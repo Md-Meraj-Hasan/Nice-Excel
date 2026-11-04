@@ -3141,7 +3141,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                     val address = "${col}$headerRow"; affected.add(address)
                     styleFor(address).apply {
                         bold = true; fillColor = customColor ?: dayPalettes[dayPaletteIndex.coerceIn(dayPalettes.indices)].primary
-                        textColor = tableHeaderTextColor(fillColor); border = true; thickBorder = true
+                        border = true; thickBorder = true
                     }
                 }
                 status.text = "Header applied to ${columns.first()}${headerRow}:${columns.last()}${headerRow}"
@@ -3157,7 +3157,6 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                     if (row == headerRow) {
                         st.bold = true
                         st.fillColor = customColor ?: dayPalettes[dayPaletteIndex.coerceIn(dayPalettes.indices)].primary
-                        st.textColor = tableHeaderTextColor(st.fillColor)
                         st.thickBorder = true
                     } else {
                         st.fillColor = if ((row - headerRow) % 2 == 1) {
