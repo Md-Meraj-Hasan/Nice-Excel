@@ -661,8 +661,6 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                 "AI Auto Fill…" to { autoFillDialog() }
             )
             "Format" -> listOf(
-                "Font color…" to { chooseNativeCellColor(font = true) },
-                "Cell fill…" to { chooseNativeCellColor(font = false) },
                 "Bold" to { toggleNativeSelectedStyle("bold") },
                 "Italic" to { toggleNativeSelectedStyle("italic") },
                 "Table styles…" to { tableMenu() }
@@ -1595,37 +1593,6 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
     private fun addOneRow() = addRows(1)
 
     /** Add rows at the end in one operation, rendering at most once for a batch. */
-    private fun chooseNativeCellColor(font: Boolean) {
-        val colors = linkedMapOf(
-            "Black" to "#000000", "White" to "#FFFFFF", "Red" to "#E53935",
-            "Orange" to "#F57C00", "Yellow" to "#FBC02D", "Green" to "#43A047",
-            "Blue" to "#1E88E5", "Purple" to "#8E24AA", "Gray" to "#757575"
-        )
-        val names = colors.keys.toTypedArray()
-        AlertDialog.Builder(this).setTitle(if (font) "Font color" else "Cell fill")
-            .setItems(names) { _, which ->
-                val style = styleFor(selected)
-                if (font) style.textColor = android.graphics.Color.parseColor(colors[names[which]]!!)
-                else style.fillColor = android.graphics.Color.parseColor(colors[names[which]]!!)
-                cellViews[selected]?.let { view ->
-                    view.setTextColor(themedCellTextColor(style.textColor))
-                    applyCellBackground(view, selected, false)
-                }
-                status.text = (if (font) "Font color" else "Cell fill") + " updated for $selected"
-            }.setNegativeButton("Cancel", null).show()
-    }
-
-    private fun toggleNativeSelectedStyle(which: String) {
-        val style = styleFor(selected)
-        if (which == "bold") style.bold = !style.bold else style.italic = !style.italic
-        cellViews[selected]?.let { view ->
-            view.typeface = Typeface.create(Typeface.DEFAULT,
-                (if (style.bold) Typeface.BOLD else Typeface.NORMAL) or
-                (if (style.italic) Typeface.ITALIC else Typeface.NORMAL))
-        }
-        status.text = "$which updated for $selected"
-    }
-
     private fun showSymbolPickerMenu() {
         val symbols = linkedMapOf(
             "Currency" to listOf("₹","$","€","£","¥","₩","₽","₺","₫","฿","₱","₦"),
