@@ -3837,6 +3837,10 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         "Number (2 decimals)" -> String.format(Locale.US, "%.2f", value)
         "Percentage" -> String.format(Locale.US, "%.2f%%", value * 100.0)
         "Currency" -> String.format(Locale.US, "$%.2f", value)
+        "Date (text display)", "Date" -> java.text.SimpleDateFormat("yyyy-MM-dd", Locale.US).format(java.util.Date(((value - 25569.0) * 86400000.0).toLong()))
+        "Time" -> java.text.SimpleDateFormat("HH:mm:ss", Locale.US).format(java.util.Date(((value - Math.floor(value)) * 86400000.0).toLong()))
+        "Date & Time" -> java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US).format(java.util.Date(((value - 25569.0) * 86400000.0).toLong()))
+        "Scientific" -> String.format(Locale.US, "%.2E", value)
         else -> if (value % 1.0 == 0.0) value.toLong().toString() else String.format(Locale.US, "%.4f", value)
     }
 
