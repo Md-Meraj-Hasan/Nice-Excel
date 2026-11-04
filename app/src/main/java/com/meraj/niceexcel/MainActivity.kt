@@ -42,6 +42,7 @@ class MainActivity : Activity() {
     private var filterColumn: String? = null
     private var filterText: String? = null
     private val filterCriteria = linkedMapOf<String, String>()
+    private var filterAllColumns = false
     private var tableHeaderRow: Int? = null
     private var sheetName = "Sheet1"
     private var selected = "A1"
@@ -653,8 +654,6 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
             )
             "Insert" -> listOf(
                 "Insert 10 rows at selection" to { addRows(10) },
-                "Insert 20 rows at selection" to { addRows(20) },
-                "Insert 50 rows at selection" to { addRows(50) },
                 "Table tools…" to { tableMenu() },
                 "Shapes…" to { showNativeShapesMenu() },
                 "Symbols…" to { showSymbolPickerMenu() },
@@ -666,7 +665,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
             "Data" -> listOf(
                 "Sort column A → Z" to { sortColumn() },
                 "Filter column…" to { filterMenu() },
-                "Clear filter" to { filterColumn = null; filterText = null; filterCriteria.clear(); refreshFilterVisibility() },
+                "Clear filter" to { filterColumn = null; filterText = null; filterCriteria.clear(); filterAllColumns = false; refreshFilterVisibility() },
                 "Find / Replace…" to { findReplaceMenu() },
                 "Workbook data range info" to { val used = usedRange(); status.text = "Used range: A1:${colName(used.second)}${used.first}" }
             )
@@ -699,7 +698,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
             "Clear selected cell" to "Clear",  "Paste range from clipboard" to "Paste Range",
              "Table tools…" to "Table",
             
-            "Insert 10 rows at selection" to "＋ 10 Rows", "Insert 20 rows at selection" to "＋ 20 Rows", "Insert 50 rows at selection" to "＋ 50 Rows", "Table tools…" to "Table", "Shapes…" to "Shapes", "Symbols…" to "Symbols", "AI Auto Fill…" to "AI-Fill", "Table styles…" to "Styles",
+            "Insert 10 rows at selection" to "＋ 10 Rows", "Table tools…" to "Table", "Shapes…" to "Shapes", "Symbols…" to "Symbols", "AI Auto Fill…" to "AI-Fill", "Table styles…" to "Styles",
             "Sort column A → Z" to "Sort A→Z", "Filter column…" to "Filter", "Clear filter" to "Clear filter", "Find / Replace…" to "Find",
             "Workbook data range info" to "Range info", "Open Full Advanced Tools (Web)" to "Full Tools", "Conditional Formatting…" to "Conditional", "Data Validation…" to "Validation", "Data Cleaning…" to "Clean Data", "Filter by Cell Colour" to "Filter Colour", "Clear Advanced Filters" to "Clear Filters", "Pivot Summary…" to "Pivot", "Dashboard Builder…" to "Dashboard", "Insert function…" to "ƒx Insert", "Formula help" to "ƒx Help",
             "Workbook info" to "Info", "Refresh current sheet formulas" to "↻ Refresh"
@@ -1271,7 +1270,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         columnWidthsBySheet[sheetName] = columnWidths
         for(c in 0 until colLimit) {
             val headerCell = makeCell(colName(c),columnWidths[c],true,null)
-            headerCell.setOnClickListener { selectColumn(c) }
+            headerCell.setOnClickListener { if (filterAllColumns) showColumnFilterDialog(colName(c)) else selectColumn(c) }
             header.addView(headerCell)
         }
         frozenRowHorizontal.visibility = android.view.View.VISIBLE
@@ -1719,7 +1718,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
             else -> themedSurface(Color.WHITE)
         }
         val palette = dayPalettes[dayPaletteIndex.coerceIn(dayPalettes.indices)]
-        val isTableBorder = st?.border == true && st.thickBorder
+        val isTableBorder = st?.border == true
         val strokeColor = when {
             isSelected -> palette.primary
             isTableBorder -> palette.primary
@@ -1728,7 +1727,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         // Table borders are drawn as a 1-physical-pixel hairline. Each cell
         // paints its own four edges; using a dp-scaled 2dp stroke on both
         // neighbours made shared edges look like thick doubled separators.
-        val strokeWidth = if (isSelected) dp(2) else if (isTableBorder) 1 else dp(1)
+        val strokeWidth = if (isSelected) dp(2) else if (st?.thickBorder == true) dp(2) else if (isTableBorder) 1 else dp(1)
         val signature = "$fill|$strokeColor|$strokeWidth"
         if (appliedCellBackgrounds[view] == signature) return
         view.background = android.graphics.drawable.GradientDrawable().apply {
@@ -3033,7 +3032,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                         rangeInput.error = "Use a valid range such as A1:D20"
                     } else {
                         dialog.dismiss()
-                        applyTableRangeAction(index, cells, range)
+                        if (index == 1) chooseNativeTableStyle(cells, range) else applyTableRangeAction(index, cells, range)
                     }
                 }
             }
@@ -3047,7 +3046,19 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         dialog.show()
     }
 
-    private fun applyTableRangeAction(action: Int, cells: List<String>, range: String) {
+    private fun chooseNativeTableStyle(cells: List<String>, range: String) {
+        val styles = listOf(
+            "Blue" to "#1F4E78", "Green" to "#217346", "Purple" to "#7030A0",
+            "Orange" to "#C65911", "Teal" to "#0F6B78", "Gray" to "#595959",
+            "Dark" to "#263746", "Light Blue" to "#4472C4"
+        )
+        AlertDialog.Builder(this).setTitle("Choose table colour")
+            .setItems(styles.map { it.first }.toTypedArray()) { _, which ->
+                applyTableRangeAction(1, cells, range, styles[which].second)
+            }.setNegativeButton("Cancel", null).showProfessional()
+    }
+
+    private fun applyTableRangeAction(action: Int, cells: List<String>, range: String, tableHeaderHex: String? = null) {
         val affected = linkedSetOf<String>()
         val rows = cells.mapNotNull { Regex("[0-9]+").find(it)?.value?.toIntOrNull() }.distinct().sorted()
         val columns = cells.mapNotNull { Regex("^[A-Z]+").find(it)?.value }.distinct().sortedBy { columnIndex(it) }
@@ -3066,16 +3077,22 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                 status.text = "Header applied to ${columns.first()}${headerRow}:${columns.last()}${headerRow}"
             }
             1 -> {
+                val headerColor = Color.parseColor(tableHeaderHex ?: "#217346")
+                fun tint(component: Int, amount: Float): Int = (component * (1f - amount) + 255f * amount).toInt().coerceIn(0, 255)
+                val lightColor = Color.rgb(tint(Color.red(headerColor), 0.88f), tint(Color.green(headerColor), 0.88f), tint(Color.blue(headerColor), 0.88f))
+                val lighterColor = Color.rgb(tint(Color.red(headerColor), 0.94f), tint(Color.green(headerColor), 0.94f), tint(Color.blue(headerColor), 0.94f))
                 cells.forEach { address ->
                     affected.add(address)
                     val row = Regex("[0-9]+").find(address)?.value?.toIntOrNull() ?: headerRow
                     val col = Regex("^[A-Z]+").find(address)?.value ?: columns.first()
                     val st = styleFor(address)
                     st.border = true
+                    st.thickBorder = row == headerRow || row == rows.last() || col == columns.first() || col == columns.last()
                     if (row == headerRow) {
-                        st.bold = true; st.fillColor = dayPalettes[dayPaletteIndex.coerceIn(dayPalettes.indices)].primary; st.textColor = themedColor(Color.WHITE)
+                        st.bold = true; st.fillColor = headerColor; st.textColor = Color.WHITE
                     } else {
-                        st.fillColor = if (darkMode) Color.rgb(18,26,43) else if ((columnIndex(col) + row) % 2 == 0) 0xFFE8F5E9.toInt() else themedSurface(Color.WHITE)
+                        st.fillColor = if (darkMode) Color.rgb(18,26,43) else if ((row - headerRow) % 2 == 0) lighterColor else lightColor
+                        st.textColor = themedCellTextColor(Color.rgb(24, 32, 39))
                     }
                 }
                 tableHeaderRow = headerRow
@@ -3285,46 +3302,39 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
             }.showProfessional()
     }
     private fun filterMenu() {
-        val selectedColumn = Regex("^([A-Z]+)[0-9]+$").matchEntire(selected)
-            ?.groupValues?.get(1)?.uppercase(Locale.ROOT) ?: "A"
-        val columnInput = EditText(this).apply {
-            hint = "Column letter (A, D, AA, AB...)"
-            setSingleLine(true); setText(selectedColumn)
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS
-        }
+        val choices = arrayOf("All Columns — tap any heading to filter", "Specific Column — choose one column")
+        AlertDialog.Builder(this).setTitle("Choose filter scope")
+            .setItems(choices) { _, which ->
+                if (which == 0) {
+                    filterAllColumns = true
+                    status.text = "All Columns filter mode enabled · tap a column heading"
+                } else {
+                    filterAllColumns = false
+                    val current = Regex("^([A-Z]+)[0-9]+$").matchEntire(selected)?.groupValues?.get(1) ?: "A"
+                    showColumnFilterDialog(current)
+                }
+            }.setNegativeButton("Cancel", null).showProfessional()
+    }
+
+    private fun showColumnFilterDialog(columnName: String) {
+        val col = columnName.uppercase(Locale.ROOT)
         val queryInput = EditText(this).apply {
             hint = "Contains text (blank removes this column filter)"
             setSingleLine(true)
-            setText(filterCriteria[columnInput.text.toString().uppercase(Locale.ROOT)] ?: filterText.orEmpty())
+            setText(filterCriteria[col].orEmpty())
         }
-        val panel = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(4), dp(20), dp(4))
-            addView(TextView(this@MainActivity).apply {
-                text = "Add or update a filter for any column. Existing filters on other columns remain active."
-                textSize = 13f
-            })
-            addView(columnInput, LinearLayout.LayoutParams(-1, -2))
-            addView(queryInput, LinearLayout.LayoutParams(-1, -2))
-        }
-        AlertDialog.Builder(this).setTitle("Filter rows")
-            .setView(panel)
+        AlertDialog.Builder(this).setTitle("Filter column $col")
+            .setMessage("Show rows where column $col contains this text.")
+            .setView(queryInput)
             .setPositiveButton("Apply") { _, _ ->
-                val rawCol = columnInput.text.toString().trim().uppercase(Locale.ROOT)
                 val q = queryInput.text.toString().trim()
-                if (!Regex("^[A-Z]{1,3}$").matches(rawCol) || columnIndex(rawCol) !in 0 until colLimit) {
-                    status.text = "Invalid column. Available: A to ${colNameFromIndex(colLimit - 1)}."
-                    return@setPositiveButton
-                }
-                val col = colNameFromIndex(columnIndex(rawCol))
                 if (q.isEmpty()) filterCriteria.remove(col) else filterCriteria[col] = q
                 filterColumn = filterCriteria.keys.lastOrNull()
                 filterText = filterColumn?.let { filterCriteria[it] }
                 refreshFilterVisibility()
             }
             .setNeutralButton("Clear this column") { _, _ ->
-                val rawCol = columnInput.text.toString().trim().uppercase(Locale.ROOT)
-                if (Regex("^[A-Z]{1,3}$").matches(rawCol)) filterCriteria.remove(colNameFromIndex(columnIndex(rawCol)))
+                filterCriteria.remove(col)
                 filterColumn = filterCriteria.keys.lastOrNull()
                 filterText = filterColumn?.let { filterCriteria[it] }
                 refreshFilterVisibility()
