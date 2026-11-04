@@ -168,6 +168,9 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
     private val undoHistory = mutableMapOf<String, MutableList<Map<String, String>>>()
     private val redoHistory = mutableMapOf<String, MutableList<Map<String, String>>>()
     private lateinit var grid: LinearLayout
+    private lateinit var drawingOverlay: android.view.View
+    private val nativeShapes = mutableMapOf<String, MutableList<NativeShape>>()
+    private data class NativeShape(val kind: String, val bounds: android.graphics.RectF, val color: Int)
     private lateinit var verticalScroll: ScrollView
     private lateinit var headerHorizontal: HorizontalScrollView
     private lateinit var frozenRowHorizontal: HorizontalScrollView
@@ -459,7 +462,40 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
 
         bodyHorizontal = HorizontalScrollView(this).apply { isFillViewport=false; isHorizontalScrollBarEnabled=false }
         grid=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL; clipChildren = false; clipToPadding = false }
-        bodyHorizontal.addView(grid)
+        val layer = android.widget.FrameLayout(this).apply {
+            clipChildren = false
+            addView(grid, android.widget.FrameLayout.LayoutParams(-2, -2))
+        }
+        drawingOverlay = object : android.view.View(this) {
+            private val brush = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+                style = android.graphics.Paint.Style.STROKE
+                strokeWidth = dp(2).toFloat()
+            }
+            override fun onDraw(canvas: android.graphics.Canvas) {
+                super.onDraw(canvas)
+                nativeShapes[sheetName].orEmpty().forEach { shape ->
+                    brush.color = shape.color
+                    when (shape.kind) {
+                        "Line" -> canvas.drawLine(shape.bounds.left, shape.bounds.top, shape.bounds.right, shape.bounds.bottom, brush)
+                        "Arrow" -> {
+                            canvas.drawLine(shape.bounds.left, shape.bounds.bottom, shape.bounds.right, shape.bounds.top, brush)
+                            val p = android.graphics.Path().apply {
+                                moveTo(shape.bounds.right, shape.bounds.top)
+                                lineTo(shape.bounds.right-dp(14), shape.bounds.top+dp(4))
+                                lineTo(shape.bounds.right-dp(4), shape.bounds.top+dp(14))
+                                close()
+                            }
+                            canvas.drawPath(p, brush)
+                        }
+                        "Oval / Circle" -> canvas.drawOval(shape.bounds, brush)
+                        "Rounded rectangle" -> canvas.drawRoundRect(shape.bounds, dp(10).toFloat(), dp(10).toFloat(), brush)
+                        else -> canvas.drawRect(shape.bounds, brush)
+                    }
+                }
+            }
+        }.apply { isClickable = false; isFocusable = false }
+        layer.addView(drawingOverlay, android.widget.FrameLayout.LayoutParams(-1, -1))
+        bodyHorizontal.addView(layer)
         verticalScroll=ScrollView(this).apply { isFillViewport=true; isVerticalScrollBarEnabled=true; addView(bodyHorizontal) }
         root.addView(verticalScroll,LinearLayout.LayoutParams(-1,0,1f))
         val syncScroll = { source: HorizontalScrollView, targets: List<HorizontalScrollView> ->
