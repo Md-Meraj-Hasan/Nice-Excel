@@ -137,7 +137,7 @@ def test_web_filter_can_explicitly_choose_columns_through_z():
         assert "range=A1:Z40" in html
         assert "Choose the worksheet column to filter" in html
         assert "columnNumber(column)>COLS" in html
-        assert ".grid td.table-cell{border-right:1px solid var(--accent);border-bottom:1px solid var(--accent)}" in html
+        assert ".grid td.table-cell{border-right:1px solid var(--line);border-bottom:1px solid var(--line)}" in html
 
  
 def test_web_table_outer_bottom_and_right_edges_are_emphasized_without_thickening_inner_grid():
@@ -146,8 +146,8 @@ def test_web_table_outer_bottom_and_right_edges_are_emphasized_without_thickenin
         ROOT / "app" / "src" / "main" / "assets" / "niceexcel_index.html",
     ]:
         html = path.read_text(encoding="utf-8")
-        assert ".grid td.table-cell.table-edge-right{border-right:2px solid var(--accent)!important}" in html
-        assert ".grid td.table-cell.table-edge-bottom{border-bottom:2px solid var(--accent)!important}" in html
+        assert ".grid td.table-cell.table-edge-right{border-right:2px solid var(--line)!important}" in html
+        assert ".grid td.table-cell.table-edge-bottom{border-bottom:2px solid var(--line)!important}" in html
         assert "td.classList.add('table-edge-bottom')" in html
         assert "td.classList.add('table-edge-right')" in html
 
