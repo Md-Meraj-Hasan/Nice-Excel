@@ -891,7 +891,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
             }
             view.text = text
             val st = sheetStyles[address]
-            val isTableHeader = st?.bold == true && st.border && st.thickBorder
+            val isTableHeader = isStyledTableHeader(address, st)
             val textColor = if (isTableHeader && st != null) themedCellTextColor(tableHeaderTextColor(st.fillColor))
                 else themedCellTextColor(st?.textColor ?: Color.rgb(24, 32, 39))
             view.setTextColor(textColor)
@@ -1096,7 +1096,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         cellViews.forEach { (address, view) ->
             view.text = gridDisplay(address)
             val st = sheetStyles[address]
-            val isTableHeader = st?.bold == true && st.border && st.thickBorder
+            val isTableHeader = isStyledTableHeader(address, st)
             val textColor = if (isTableHeader && st != null) themedCellTextColor(tableHeaderTextColor(st.fillColor)) else themedCellTextColor(st?.textColor ?: Color.rgb(24, 32, 39))
             view.setTextColor(textColor)
             view.textSize = st?.fontSize ?: 13f
@@ -1514,7 +1514,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
             gravity = if (header || key == null) Gravity.CENTER else Gravity.CENTER_VERTICAL or Gravity.START
             setPadding(dp(3), 0, dp(3), 0)
             val st = if (key != null) sheetStyles[key] else null
-            val isTableHeader = st?.bold == true && st.border && st.thickBorder
+            val isTableHeader = key != null && isStyledTableHeader(key, st)
             setTextColor(if (header) { if (darkMode) Color.WHITE else dayPalettes[dayPaletteIndex.coerceIn(dayPalettes.indices)].ink } else if (isTableHeader && st != null) themedCellTextColor(tableHeaderTextColor(st.fillColor)) else themedCellTextColor(st?.textColor ?: Color.rgb(24,32,39)))
             textSize = st?.fontSize ?: 13f
             typeface = Typeface.create(Typeface.DEFAULT, (if (st?.bold == true || header) Typeface.BOLD else Typeface.NORMAL) or (if (st?.italic == true) Typeface.ITALIC else Typeface.NORMAL))
@@ -1690,6 +1690,11 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                 status.text = "Cleared row $row"
             }
             .showProfessional()
+    }
+
+    private fun isStyledTableHeader(address: String, style: CellStyle?): Boolean {
+        val row = Regex("^[A-Z]+(\\d+)$").matchEntire(address)?.groupValues?.get(1)?.toIntOrNull()
+        return row != null && (row == tableHeaderRow || (style?.bold == true && style.border && style.thickBorder))
     }
 
     private fun hasThickTableBorder(address: String): Boolean {
@@ -3173,6 +3178,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                 status.text = "Table style applied to $range"
             }
             2 -> {
+                tableHeaderRow = headerRow
                 cells.forEach { address ->
                     affected.add(address)
                     styleFor(address).apply { border = true; thickBorder = true }
