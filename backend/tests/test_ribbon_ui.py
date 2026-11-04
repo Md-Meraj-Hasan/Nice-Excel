@@ -70,7 +70,7 @@ def test_native_table_tools_accept_custom_ranges_and_apply_row_column_borders():
     assert 'hint = "Enter range, e.g. A1:D20"' in native
     assert '.setView(panel)' in native
     assert 'dialog.show()' in native
-    assert 'applyTableRangeAction(index, cells, range)' in native
+    assert 'applyTableRangeAction(index, cells, range, customColor)' in native
     assert "cells.forEach { address ->" in native
     assert "thickBorder = true" in native
     assert "Table style applied to $range" in native
@@ -137,7 +137,7 @@ def test_web_filter_can_explicitly_choose_columns_through_z():
         assert "range=A1:Z40" in html
         assert "Choose the worksheet column to filter" in html
         assert "columnNumber(column)>COLS" in html
-        assert ".grid td.table-cell{border-right:1px solid var(--accent);border-bottom:1px solid var(--accent)}" in html
+        assert ".grid td.table-cell{border-right:1px solid var(--line);border-bottom:1px solid var(--line)}" in html
 
  
 def test_web_table_outer_bottom_and_right_edges_are_emphasized_without_thickening_inner_grid():
@@ -146,8 +146,8 @@ def test_web_table_outer_bottom_and_right_edges_are_emphasized_without_thickenin
         ROOT / "app" / "src" / "main" / "assets" / "niceexcel_index.html",
     ]:
         html = path.read_text(encoding="utf-8")
-        assert ".grid td.table-cell.table-edge-right{border-right:2px solid var(--accent)!important}" in html
-        assert ".grid td.table-cell.table-edge-bottom{border-bottom:2px solid var(--accent)!important}" in html
+        assert ".grid td.table-cell.table-edge-right{border-right:2px solid var(--line)!important}" in html
+        assert ".grid td.table-cell.table-edge-bottom{border-bottom:2px solid var(--line)!important}" in html
         assert "td.classList.add('table-edge-bottom')" in html
         assert "td.classList.add('table-edge-right')" in html
 
@@ -156,3 +156,38 @@ def test_native_black_theme_formula_bar_and_grid_headers_use_high_contrast_text(
     assert "setTextColor(if (darkMode) Color.WHITE else themedColor(Color.rgb(17,94,57)))" in native
     assert 'text="ƒx ▾"; textSize=12f; setTextColor(if (darkMode) Color.WHITE' in native
     assert "if (darkMode) Color.WHITE else dayPalettes" in native
+
+
+def test_smart_table_has_per_column_header_filter_popup_and_custom_color():
+    files = [
+        ROOT / "backend" / "niceexcel_api" / "static" / "index.html",
+        ROOT / "app" / "src" / "main" / "assets" / "niceexcel_index.html",
+    ]
+    for path in files:
+        html = path.read_text(encoding="utf-8")
+        for required in [
+            'id="stCustomColor"', 'id="tableHeaderFilterDialog"',
+            'id="tableHeaderFilterMode"', 'id="tableHeaderFilterValue"',
+            "openTableHeaderFilter(c,meta)", "tableFilterColumn",
+            "classList.add('table-outline')", "table-filter-trigger",
+        ]:
+            assert required in html, f"missing Smart Table feature {required} in {path}"
+
+def test_native_table_header_tap_opens_filter_and_outline_is_applied():
+    native = (ROOT / "app" / "src" / "main" / "java" / "com" / "meraj" / "niceexcel" / "MainActivity.kt").read_text(encoding="utf-8")
+    assert "if (tableHeaderRow != null && tappedRow == tableHeaderRow)" in native
+    assert "filterMenu()" in native
+    assert "st.thickBorder = true" in native
+    assert "customColorInput" in native
+
+
+def test_black_theme_table_borders_use_contrast_safe_grid_colors():
+    native = (ROOT / "app" / "src" / "main" / "java" / "com" / "meraj" / "niceexcel" / "MainActivity.kt").read_text(encoding="utf-8")
+    assert "isTableBorder -> if (darkMode) palette.accent else palette.primary" in native
+    for path in [
+        ROOT / "backend" / "niceexcel_api" / "static" / "index.html",
+        ROOT / "app" / "src" / "main" / "assets" / "niceexcel_index.html",
+    ]:
+        html = path.read_text(encoding="utf-8")
+        assert ".grid td.table-cell{border-right:1px solid var(--line);border-bottom:1px solid var(--line)}" in html
+        assert ".grid td.table-cell.table-outline{box-shadow:inset 0 0 0 2px var(--line)}" in html
