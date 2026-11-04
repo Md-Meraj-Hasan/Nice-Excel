@@ -1,6 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
-    <application android:usesCleartextTraffic="true" android:allowBackup="true" android:label="Nice Excel" android:theme="@android:style/Theme.Material.Light.NoActionBar" android:supportsRtl="true">
+    <application android:usesCleartextTraffic="true" android:allowBackup="true" android:label="NiceExcel" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher_round" android:theme="@android:style/Theme.Material.Light.NoActionBar" android:supportsRtl="true">
         <service
             android:name=".HyperFormulaEngineService"
             android:exported="false" />
