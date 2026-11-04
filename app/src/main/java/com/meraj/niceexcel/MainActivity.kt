@@ -176,6 +176,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
     private lateinit var cellName: TextView
     private lateinit var formula: EditText
     private lateinit var status: TextView
+    private lateinit var rangeInfo: TextView
     private lateinit var sheetTabs: LinearLayout
     private lateinit var ribbonTools: LinearLayout
     private var pendingCsv = ""
@@ -456,10 +457,20 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
             setMargins(0, 0, 0, 0)
         })
 
-        bodyHorizontal = HorizontalScrollView(this).apply { isFillViewport=false; isHorizontalScrollBarEnabled=false }
+        bodyHorizontal = HorizontalScrollView(this).apply {
+            isFillViewport = false
+            isHorizontalScrollBarEnabled = false
+            isNestedScrollingEnabled = false
+        }
         grid=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL; clipChildren = false; clipToPadding = false }
         bodyHorizontal.addView(grid)
-        verticalScroll=ScrollView(this).apply { isFillViewport=true; isVerticalScrollBarEnabled=true; addView(bodyHorizontal) }
+        verticalScroll=ScrollView(this).apply {
+            isFillViewport = true
+            isVerticalScrollBarEnabled = true
+            isSmoothScrollingEnabled = true
+            isNestedScrollingEnabled = false
+            addView(bodyHorizontal)
+        }
         root.addView(verticalScroll,LinearLayout.LayoutParams(-1,0,1f))
         val syncScroll = { source: HorizontalScrollView, targets: List<HorizontalScrollView> ->
             source.setOnScrollChangeListener { _, scrollX, _, _, _ ->
@@ -485,6 +496,16 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         }
         sheetTabsScroll.addView(sheetTabs)
         root.addView(sheetTabsScroll, LinearLayout.LayoutParams(-1, -2))
+        rangeInfo = TextView(this).apply {
+            text = "Used range: calculating…"
+            textSize = 11.5f
+            setTextColor(if (darkMode) Color.rgb(225, 232, 243) else themedColor(Color.rgb(55, 67, 77)))
+            setPadding(dp(10), dp(5), dp(10), dp(5))
+            setBackgroundColor(if (darkMode) Color.rgb(13, 20, 35) else themedSurface(Color.rgb(238, 243, 239)))
+            isSingleLine = true
+            ellipsize = android.text.TextUtils.TruncateAt.END
+        }
+        root.addView(rangeInfo)
         status=TextView(this).apply { text="Ready • Offline workbook"; textSize=12f; setTextColor(themedColor(Color.WHITE)); setPadding(dp(10),dp(7),dp(10),dp(7)); setBackgroundColor(if (darkMode) Color.rgb(5,9,18) else Color.rgb(20,30,40)) }
         root.addView(status)
         setContentView(root)
@@ -1251,6 +1272,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         if (canReuseGrid) {
             refreshVisibleCells()
             renderTabs()
+            updateUsedRangeInfo()
             scheduleFormulaRecalculationIfNeeded()
             Log.d("NiceExcelPerf", "render sheet=$sheetName mode=reuse ms=${SystemClock.elapsedRealtime() - perfStarted}")
             return
@@ -1307,7 +1329,8 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         renderStarted: Long
     ) {
         if (generation != renderGeneration || isFinishing || isDestroyed) return
-        val lastRow = minOf(rowCount, firstRow + 1) // two worksheet rows per frame
+        // Four rows per animation frame shortens large-sheet construction while keeping each UI task bounded.
+        val lastRow = minOf(rowCount, firstRow + 3)
         if (firstRow <= lastRow) {
             for (row in firstRow..lastRow) {
                 val rowView = createRowView(row, columnWidths)
@@ -1325,6 +1348,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         // Finalize merged-cell overlays and formula work only after all row views exist.
         applyMergedCellPresentation()
         selectedCellView = cellViews[selected]
+        updateUsedRangeInfo()
         scheduleFormulaRecalculationIfNeeded()
         Log.d(
             "NiceExcelPerf",
@@ -1380,6 +1404,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         if (longestLineLength(editedText) * 7 + 18 > currentWidth) return false
         val editedView = cellViews[address] ?: return false
         editedView.text = editedText
+        updateUsedRangeInfo()
         var requiresLayout = false
         // Re-evaluate formula cells in-place so simple dependencies stay current without
         // destroying/recreating every cell view after each Enter key press.
@@ -3090,6 +3115,14 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
     }
 
     /** Returns the last used row and column (zero-based column), including formula cells. */
+    private fun updateUsedRangeInfo() {
+        if (!::rangeInfo.isInitialized) return
+        val (lastRow, lastColumnIndex) = usedRange()
+        val usedColumns = lastColumnIndex + 1
+        val lastCell = "${colName(lastColumnIndex)}$lastRow"
+        rangeInfo.text = "Used: $lastRow rows • $usedColumns columns (A:${colName(lastColumnIndex)}) • $lastCell"
+    }
+
     private fun usedRange(): Pair<Int, Int> {
         var foundUsedCell = false
         var lastRow = 1
