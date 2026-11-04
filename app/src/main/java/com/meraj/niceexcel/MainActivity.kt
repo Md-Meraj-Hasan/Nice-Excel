@@ -661,8 +661,6 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                 "AI Auto Fill…" to { autoFillDialog() }
             )
             "Format" -> listOf(
-                "Bold" to { toggleNativeSelectedStyle("bold") },
-                "Italic" to { toggleNativeSelectedStyle("italic") },
                 "Table styles…" to { tableMenu() }
             )
             "Data" -> listOf(
