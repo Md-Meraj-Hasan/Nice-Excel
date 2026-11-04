@@ -1511,7 +1511,14 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         line.addView(rowHeader)
         for (c in 0 until colLimit) {
             val address = "${colName(c)}$row"
-            line.addView(makeCell(gridDisplay(address), columnWidths[c], false, address, rowHeight))
+            val cell = makeCell(gridDisplay(address), columnWidths[c], false, address, rowHeight)
+            // In All Columns filter mode the frozen worksheet heading row is also
+            // a filter target; tapping a heading opens that column's input dialog.
+            if (row == 1 && filterAllColumns) {
+                cell.isClickable = true
+                cell.setOnClickListener { showColumnFilterDialog(colName(c)) }
+            }
+            line.addView(cell)
         }
         return line
     }
@@ -3632,9 +3639,18 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                         headerCell.isFocusable = true
                         headerCell.setOnClickListener { showColumnFilterDialog(colName(column)) }
                     }
+                    // Bind the visible worksheet heading cells (row 1) as well as
+                    // the A/B/C column-letter strip. Users commonly tap the actual
+                    // table headings to open each column's filter input.
+                    for (column in 0 until minOf(colLimit, frozenFirstRow.childCount - 1)) {
+                        val headingCell = frozenFirstRow.getChildAt(column + 1)
+                        headingCell.isClickable = true
+                        headingCell.setOnClickListener { showColumnFilterDialog(colName(column)) }
+                    }
                     columnHeader.invalidate()
+                    frozenFirstRow.invalidate()
                     headerHorizontal.invalidate()
-                    status.text = "All Columns filter mode enabled · tap a column heading"
+                    status.text = "All Columns filter mode enabled · tap a heading or column letter"
                 } else {
                     filterAllColumns = false
                     val current = Regex("^([A-Z]+)[0-9]+$").matchEntire(selected)?.groupValues?.get(1) ?: "A"
