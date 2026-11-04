@@ -3129,7 +3129,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         val actions = arrayOf(
             "Text color", "Cell fill color", "Text alignment", "Bold on/off",
             "Italic on/off", "Underline on/off", "Font size", "Number format",
-            "Cell borders on/off", "Clear formatting", "Clear cell contents now"
+            "Cell borders on/off", "Clear formatting"
         )
         AlertDialog.Builder(this)
             .setTitle("Range $rangeLabel · ${cells.size} cells")
@@ -3185,14 +3185,6 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                     }
                     8 -> { cells.forEach { val st = pendingStyles.getValue(it); st.border = !st.border }; continueEditing("Borders toggled") }
                     9 -> { cells.forEach { pendingStyles[it] = CellStyle() }; continueEditing("Clear formatting selected") }
-                    10 -> {
-                        // Content clearing is intentionally immediate; only format changes are staged.
-                        cells.forEach { data.remove(it) }
-                        formulaDisplayCache.clear()
-                        if (selected in cells) formula.setText("")
-                        refreshStyledCells(cells)
-                        status.text = "Contents cleared for $rangeLabel"
-                    }
                 }
             }
             .setPositiveButton("Apply") { _, _ ->
@@ -3225,7 +3217,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         val targetLabel = if (forceCell) selected else (selectedRangeLabel ?: selected)
         val options = arrayOf(
             "Bold on/off", "Italic on/off", "Underline on/off", "Font size", "Text color", "Cell fill color",
-            "Alignment", "Number format", "Cell borders", "Clear formatting", "Clear cell", "Find / replace"
+            "Alignment", "Number format", "Cell borders", "Clear formatting", "Find / replace"
         )
         AlertDialog.Builder(this).setTitle("Format $targetLabel").setItems(options) { _, which ->
             val targets = if (rangeCells.isNotEmpty()) rangeCells else listOf(selected)
@@ -3241,8 +3233,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                 7 -> if (rangeCells.isNotEmpty()) chooseRangeNumberFormat(targetLabel, targets) else chooseNumberFormat()
                 8 -> { targets.forEach { styleFor(it).border = !styleFor(it).border }; refresh("Borders updated") }
                 9 -> { targets.forEach { sheetStyles.remove(it) }; refresh("Formatting cleared") }
-                10 -> { if (rangeCells.isNotEmpty()) { targets.forEach { data.remove(it) }; formulaDisplayCache.clear(); formula.setText(""); refresh("Contents cleared") } else { putCell(selected, ""); formula.setText(""); render(); status.text = "Cell cleared: $selected" } }
-                11 -> findReplaceMenu()
+                10 -> findReplaceMenu()
             }
         }.showProfessional()
     }
