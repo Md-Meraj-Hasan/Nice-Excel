@@ -293,6 +293,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
             mergedRangesBySheet.clear()
             restored.mergedRanges.forEach { (name, ranges) -> mergedRangesBySheet[name] = ranges.toMutableList() }
             reportingMetadata = restored.reportingMetadata
+            restoreNativeShapesFromMetadata()
             sheetName = getPreferences(MODE_PRIVATE).getString("last_session_sheet", null)
                 ?.takeIf { restored.sheets.containsKey(it) } ?: restored.sheets.keys.first()
             selected = getPreferences(MODE_PRIVATE).getString("last_session_cell", "A1") ?: "A1"
@@ -322,7 +323,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
             val snapshotMerges = mergedRangesBySheet.mapValues { it.value.toList() }
             val temp = java.io.File(filesDir, "niceexcel_last_session.tmp")
             java.io.FileOutputStream(temp).use { output ->
-                XlsxCodec.write(output, snapshotSheets, snapshotStyles, reportingMetadata, snapshotMerges)
+                XlsxCodec.write(output, snapshotSheets, snapshotStyles, metadataForSave(), snapshotMerges)
                 output.fd.sync()
             }
             val target = lastWorkbookFile()
@@ -556,6 +557,10 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
             }
             override fun performClick(): Boolean { super.performClick(); return true }
         }.apply { isClickable = true; isFocusable = true }
+        drawingOverlay.setOnLongClickListener {
+            selectedNativeShape?.let { showNativeShapeOptions(it) }
+            true
+        }
         layer.addView(drawingOverlay, android.widget.FrameLayout.LayoutParams(-1, -1))
         bodyHorizontal.addView(layer)
         verticalScroll=ScrollView(this).apply { isFillViewport=true; isVerticalScrollBarEnabled=true; addView(bodyHorizontal) }
@@ -1700,12 +1705,89 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         val col = columnIndex(match?.groupValues?.get(1) ?: "A")
         val row = match?.groupValues?.get(2)?.toIntOrNull() ?: 1
         val left = (48 + (0 until col).sumOf { lastColumnWidths.getOrElse(it) { dp(64) } } + dp(8)).toFloat()
-        val top = (dp(24) + (1 until row).sumOf { dp(rowHeightPx(it)) } + dp(8)).toFloat()
+        val top = ((2 until row).sumOf { dp(rowHeightPx(it)) } + dp(8)).toFloat()
         val rect = android.graphics.RectF(left, top, left + dp(116), top + dp(62))
         val color = dayPalettes[dayPaletteIndex.coerceIn(dayPalettes.indices)].primary
-        nativeShapes.getOrPut(sheetName) { mutableListOf() }.add(NativeShape(kind, rect, color))
+        val shape = NativeShape(java.util.UUID.randomUUID().toString(), kind, rect, Color.TRANSPARENT, color, dp(2).toFloat())
+        nativeShapes.getOrPut(sheetName) { mutableListOf() }.add(shape)
+        selectedNativeShape = shape
         drawingOverlay.invalidate()
+        persistLastWorkbook()
         status.text = "$kind inserted near $selected"
+    }
+
+    private fun metadataForSave(): String {
+        val root = org.json.JSONObject()
+        root.put("niceexcelNativeShapesVersion", 1)
+        if (!reportingMetadata.isNullOrBlank()) root.put("legacyReportingMetadata", reportingMetadata)
+        val all = org.json.JSONObject()
+        nativeShapes.forEach { (sheet, shapes) ->
+            val array = org.json.JSONArray()
+            shapes.forEach { shape ->
+                val item = org.json.JSONObject()
+                item.put("id", shape.id); item.put("kind", shape.kind)
+                item.put("left", shape.bounds.left.toDouble()); item.put("top", shape.bounds.top.toDouble())
+                item.put("right", shape.bounds.right.toDouble()); item.put("bottom", shape.bounds.bottom.toDouble())
+                item.put("fill", shape.fill); item.put("stroke", shape.stroke)
+                item.put("strokeWidth", shape.strokeWidth.toDouble()); item.put("text", shape.text)
+                array.put(item)
+            }
+            all.put(sheet, array)
+        }
+        root.put("nativeShapes", all)
+        return root.toString()
+    }
+
+    private fun restoreNativeShapesFromMetadata() {
+        nativeShapes.clear()
+        val raw = reportingMetadata ?: return
+        try {
+            val root = org.json.JSONObject(raw)
+            if (root.optInt("niceexcelNativeShapesVersion", 0) != 1) return
+            val all = root.optJSONObject("nativeShapes") ?: org.json.JSONObject()
+            val keys = all.keys()
+            while (keys.hasNext()) {
+                val sheet = keys.next()
+                val array = all.optJSONArray(sheet) ?: continue
+                val shapes = mutableListOf<NativeShape>()
+                for (i in 0 until array.length()) {
+                    val item = array.optJSONObject(i) ?: continue
+                    val rect = android.graphics.RectF(
+                        item.optDouble("left").toFloat(), item.optDouble("top").toFloat(),
+                        item.optDouble("right").toFloat(), item.optDouble("bottom").toFloat()
+                    )
+                    if (rect.width() <= 0f || rect.height() <= 0f) continue
+                    shapes.add(NativeShape(
+                        item.optString("id", java.util.UUID.randomUUID().toString()),
+                        item.optString("kind", "Rectangle"), rect,
+                        item.optInt("fill", Color.TRANSPARENT), item.optInt("stroke", Color.rgb(105,55,150)),
+                        item.optDouble("strokeWidth", dp(2).toDouble()).toFloat(), item.optString("text", "Text")
+                    ))
+                }
+                nativeShapes[sheet] = shapes
+            }
+            reportingMetadata = root.optString("legacyReportingMetadata").takeIf { it.isNotBlank() }
+        } catch (_: Exception) {
+            // Older workbooks may contain plain reporting metadata rather than our shape envelope.
+        }
+    }
+
+    private fun showNativeShapeOptions(shape: NativeShape) {
+        val choices = arrayOf("Purple fill", "Light purple fill", "No fill", "Purple outline", "Black outline", "Delete shape")
+        AlertDialog.Builder(this).setTitle(shape.kind)
+            .setItems(choices) { _, which ->
+                when (which) {
+                    0 -> shape.fill = Color.rgb(105,55,150)
+                    1 -> shape.fill = Color.rgb(237,224,255)
+                    2 -> shape.fill = Color.TRANSPARENT
+                    3 -> shape.stroke = Color.rgb(105,55,150)
+                    4 -> shape.stroke = Color.BLACK
+                    5 -> nativeShapes[sheetName]?.removeAll { it.id == shape.id }
+                }
+                if (which == 5) selectedNativeShape = null
+                drawingOverlay.invalidate()
+                persistLastWorkbook()
+            }.setNegativeButton("Cancel", null).show()
     }
 
     private fun showSymbolPickerMenu() {
@@ -3660,7 +3742,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
             cellStyles.mapValues { (_, style) -> style.copy() }
         }
         val mergeSnapshot = mergedRangesBySheet.mapValues { (_, ranges) -> ranges.toList() }
-        val metadataSnapshot = reportingMetadata
+        val metadataSnapshot = metadataForSave()
 
         try {
             backgroundExecutor.execute {
@@ -3784,6 +3866,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                 loaded.mergedRanges.forEach { (name, ranges) -> mergedRangesBySheet[name] = ranges.toMutableList() }
                 formulaDisplayCache.clear()
                 reportingMetadata = loaded.reportingMetadata
+                nativeShapes.clear(); restoreNativeShapesFromMetadata()
                 val lastCellRow = sheets.values.flatMap { it.keys }.mapNotNull { Regex("[A-Z]+([0-9]+)").matchEntire(it)?.groupValues?.get(1)?.toIntOrNull() }.maxOrNull() ?: 50
                 val lastMergeRow = mergedRangesBySheet.values.flatten().flatMap { it.split(":") }.mapNotNull { Regex("[A-Z]+([0-9]+)").matchEntire(it)?.groupValues?.get(1)?.toIntOrNull() }.maxOrNull() ?: 50
                 rowCount = max(50, max(lastCellRow, lastMergeRow))
