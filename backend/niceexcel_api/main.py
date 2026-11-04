@@ -174,6 +174,7 @@ class RangeRequest(BaseModel):
 class StyleRequest(RangeRequest):
     bold: bool | None = None
     italic: bool | None = None
+    underline: bool | None = None
     font_name: str | None = Field(default=None, max_length=80)
     font_size: float | None = Field(default=None, ge=6, le=96)
     font_color: str | None = Field(default=None, pattern=r"^#?[0-9A-Fa-f]{6}$")
@@ -676,6 +677,7 @@ def style_range(book_id: str, request: StyleRequest):
             f = copy(cell.font)
             if request.bold is not None: f.bold = request.bold
             if request.italic is not None: f.italic = request.italic
+            if request.underline is not None: f.underline = request.underline
             if request.font_name is not None: f.name = request.font_name
             if request.font_size is not None: f.sz = request.font_size
             if request.font_color is not None: f.color = _color(request.font_color)
