@@ -1784,7 +1784,11 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         val color = dayPalettes[dayPaletteIndex.coerceIn(dayPalettes.indices)].primary
         val shape = NativeShape(java.util.UUID.randomUUID().toString(), kind, rect, Color.TRANSPARENT, color, dp(2).toFloat(), anchorCell = selected)
         nativeShapes.getOrPut(sheetName) { mutableListOf() }.add(shape)
-        selectedNativeShape = shape
+        // Insertion is complete once the shape is stored. Do not leave the blue
+        // editing frame/resize handle active on the newly inserted (or final) shape.
+        selectedNativeShape = null
+        draggingNativeShape = null
+        resizingNativeShape = false
         drawingOverlay.invalidate()
         persistLastWorkbook()
         status.text = "$kind inserted near $selected"
@@ -2360,6 +2364,12 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
     private fun refreshCurrentSheetGrid() {
         val keepSheet = sheetName
         val keepCell = selected
+        // A manual grid refresh is also an explicit exit from shape-edit mode.
+        // Clear transient selection graphics without deleting saved shapes.
+        selectedNativeShape = null
+        draggingNativeShape = null
+        resizingNativeShape = false
+        if (::drawingOverlay.isInitialized) drawingOverlay.invalidate()
         cachedExplicitLineCountsByRow = null
         if (!refreshSheetInPlaceFast()) render()
         sheetName = keepSheet
