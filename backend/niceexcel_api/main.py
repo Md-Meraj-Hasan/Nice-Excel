@@ -677,7 +677,7 @@ def style_range(book_id: str, request: StyleRequest):
             f = copy(cell.font)
             if request.bold is not None: f.bold = request.bold
             if request.italic is not None: f.italic = request.italic
-            if request.underline is not None: f.underline = request.underline
+            if request.underline is not None: f.underline = ('single' if request.underline else None)
             if request.font_name is not None: f.name = request.font_name
             if request.font_size is not None: f.sz = request.font_size
             if request.font_color is not None: f.color = _color(request.font_color)
