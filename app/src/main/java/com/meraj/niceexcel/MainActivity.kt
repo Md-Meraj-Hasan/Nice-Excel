@@ -1699,7 +1699,8 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         val isTableBorder = st?.border == true && st.thickBorder
         val strokeColor = when {
             isSelected -> palette.primary
-            isTableBorder -> palette.primary
+            // The Black palette primary is intentionally near-black for fills; never reuse it for a border on a black worksheet.
+            isTableBorder -> if (darkMode) palette.accent else palette.primary
             else -> if (darkMode) Color.rgb(65,82,106) else palette.gridLine
         }
         // Table borders are drawn as a 1-physical-pixel hairline. Each cell
