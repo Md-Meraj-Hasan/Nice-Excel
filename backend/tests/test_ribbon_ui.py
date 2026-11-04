@@ -156,3 +156,26 @@ def test_native_black_theme_formula_bar_and_grid_headers_use_high_contrast_text(
     assert "setTextColor(if (darkMode) Color.WHITE else themedColor(Color.rgb(17,94,57)))" in native
     assert 'text="ƒx ▾"; textSize=12f; setTextColor(if (darkMode) Color.WHITE' in native
     assert "if (darkMode) Color.WHITE else dayPalettes" in native
+
+
+def test_smart_table_has_per_column_header_filter_popup_and_custom_color():
+    files = [
+        ROOT / "backend" / "niceexcel_api" / "static" / "index.html",
+        ROOT / "app" / "src" / "main" / "assets" / "niceexcel_index.html",
+    ]
+    for path in files:
+        html = path.read_text(encoding="utf-8")
+        for required in [
+            'id="stCustomColor"', 'id="tableHeaderFilterDialog"',
+            'id="tableHeaderFilterMode"', 'id="tableHeaderFilterValue"',
+            "openTableHeaderFilter(c,meta)", "tableFilterColumn",
+            "classList.add('table-outline')", "table-filter-trigger",
+        ]:
+            assert required in html, f"missing Smart Table feature {required} in {path}"
+
+def test_native_table_header_tap_opens_filter_and_outline_is_applied():
+    native = (ROOT / "app" / "src" / "main" / "java" / "com" / "meraj" / "niceexcel" / "MainActivity.kt").read_text(encoding="utf-8")
+    assert "if (tableHeaderRow != null && tappedRow == tableHeaderRow)" in native
+    assert "filterMenu()" in native
+    assert "st.thickBorder = true" in native
+    assert "customColorInput" in native
