@@ -248,7 +248,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val themePrefs = getSharedPreferences("niceexcel_theme", MODE_PRIVATE)
-        dayPaletteIndex = themePrefs.getInt("day_palette_index", getPreferences(MODE_PRIVATE).getInt("day_palette_index", 0)).coerceIn(dayPalettes.indices)
+        dayPaletteIndex = themePrefs.getInt("day_palette_index", getPreferences(MODE_PRIVATE).getInt("day_palette_index", 2)).coerceIn(dayPalettes.indices)
         darkMode = themePrefs.getBoolean("dark_mode", false)
         updateSystemBars()
         themePrefs.edit().putInt("day_palette_primary", dayPalettes[dayPaletteIndex].primary).apply()
