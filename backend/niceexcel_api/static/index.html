@@ -279,7 +279,37 @@ $('undoBtn').onclick=()=>queueHistoryAction('undo');$('redoBtn').onclick=()=>que
  async function sortSelectedColumn(descending){const p=cellAt(selected);if(!p)return;let range;if(activeSmartTable){const b=rangeBounds(activeSmartTable.source_range);if(!b||p.c<b.minCol||p.c>b.maxCol){alert('Select a cell inside the Smart Table column you want to sort.');return;}if(b.maxRow<=b.minRow+1){setStatus('Not enough data rows to sort');return;}range=addr(b.minCol,b.minRow+1)+':'+addr(b.maxCol,b.maxRow-(activeSmartTable.total_row?1:0));}else{range=prompt('Range to sort (include header row, e.g. A1:D40)','A1:'+colName(COLS)+ROWS);if(!range)return;}try{await api('/workbooks/'+bookId+'/sort',json('POST',{sheet:activeSheet,range,key_column:colName(p.c),descending}));await refresh();setStatus('Sorted '+range+' by '+colName(p.c)+(descending?' descending':' ascending')+(activeSmartTable?' · Smart Table':'') );}catch(e){alert(e.message)}}
  $('sortAscBtn').onclick=()=>sortSelectedColumn(false);$('sortDescBtn').onclick=()=>sortSelectedColumn(true);
  $('filterColorBtn').onclick=filterBySelectedColor;$('clearColorFilterBtn').onclick=()=>{colorFilter=null;applyQuickFilter();setStatus('Color filter cleared')};$('conditionalFormatBtn').onclick=conditionalFormatTool;$('dataValidationBtn').onclick=dataValidationTool;$('dataCleaningBtn').onclick=dataCleaningTool;$('pivotTableBtn').onclick=()=>pivotOrDashboard(false);$('dashboardBuilderBtn').onclick=()=>pivotOrDashboard(true);
- $('filterColumnBtn').onclick=()=>{const p=cellAt(selected);const suggested=colName(p?.c||1);const raw=prompt('Choose the worksheet column to filter (A to '+colName(COLS)+'). This is independent of the selected cell.',''+suggested);if(raw===null)return;const column=raw.trim().toUpperCase();if(!/^[A-Z]{1,3}$/.test(column)||columnNumber(column)<1||columnNumber(column)>COLS){alert('Choose a column from A to '+colName(COLS)+'.');return;}const existing=quickFilters.find(f=>f.column===column)?.text||'';const q=prompt('Show rows where column '+column+' contains text (blank removes only this column filter)',''+existing);if(q===null)return;quickFilters=quickFilters.filter(f=>f.column!==column);if(q.trim())quickFilters.push({column,text:q.trim()});quickFilterColumn=quickFilters[quickFilters.length-1]?.column||null;quickFilterText=quickFilters[quickFilters.length-1]?.text||null;applyQuickFilter();setStatus(quickFilters.length?'Filters: '+quickFilters.map(f=>f.column+' contains '+f.text).join(' AND '):'Grid filter cleared');};
+ function openColumnFilterDialog(){
+   const previous=document.getElementById('niceExcelColumnFilterDialog');
+   if(previous)previous.remove();
+   const selectedCell=cellAt(selected),suggested=selectedCell?.c||1;
+   const overlay=document.createElement('div');
+   overlay.id='niceExcelColumnFilterDialog';
+   overlay.setAttribute('role','presentation');
+   overlay.style.cssText='position:fixed;inset:0;z-index:20000;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(2,6,23,.76);';
+   const panel=document.createElement('section');
+   panel.setAttribute('role','dialog');panel.setAttribute('aria-modal','true');panel.setAttribute('aria-labelledby','niceExcelFilterTitle');
+   panel.style.cssText='width:min(420px,100%);max-height:90dvh;overflow:auto;padding:16px;border:1px solid var(--line);border-radius:13px;background:var(--panel);color:var(--text);box-shadow:0 18px 60px #000b;';
+   const title=document.createElement('h3');title.id='niceExcelFilterTitle';title.textContent='Filter worksheet column';title.style.cssText='margin:0 0 14px;font-size:17px;';
+   const columnLabel=document.createElement('label');columnLabel.textContent='Column';columnLabel.style.cssText='display:block;margin:0 0 5px;color:var(--muted);font-size:12px;font-weight:700;';
+   const columnSelect=document.createElement('select');columnSelect.id='niceExcelFilterColumn';columnSelect.style.cssText='width:100%;padding:10px;margin-bottom:13px;border:1px solid var(--line);border-radius:7px;background:#0b1220;color:var(--text);font-size:16px;';
+   for(let c=1;c<=COLS;c++){const option=document.createElement('option');option.value=colName(c);const header=data[0]?.[c-1]?.value;option.textContent=colName(c)+(header!=null&&String(header).trim()?' · '+String(header).trim():'');columnSelect.append(option);}
+   columnSelect.value=colName(suggested);
+   const valueLabel=document.createElement('label');valueLabel.textContent='Show rows containing';valueLabel.style.cssText='display:block;margin:0 0 5px;color:var(--muted);font-size:12px;font-weight:700;';
+   const valueInput=document.createElement('input');valueInput.type='search';valueInput.autocomplete='off';valueInput.placeholder='Enter text to filter (blank clears this column)';valueInput.value=quickFilters.find(f=>f.column===columnSelect.value)?.text||'';valueInput.style.cssText='width:100%;padding:11px;margin-bottom:15px;border:1px solid var(--line);border-radius:7px;background:#0b1220;color:var(--text);font-size:16px;';
+   const actions=document.createElement('div');actions.style.cssText='display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;';
+   const cancel=document.createElement('button');cancel.type='button';cancel.textContent='Cancel';
+   const apply=document.createElement('button');apply.type='button';apply.textContent='Apply filter';apply.className='primary';
+   const close=()=>{overlay.remove();};
+   const applyFilter=()=>{const column=columnSelect.value;const q=valueInput.value.trim();quickFilters=quickFilters.filter(f=>f.column!==column);if(q)quickFilters.push({column,text:q});quickFilterColumn=quickFilters[quickFilters.length-1]?.column||null;quickFilterText=quickFilters[quickFilters.length-1]?.text||null;applyQuickFilter();setStatus(quickFilters.length?'Filters: '+quickFilters.map(f=>f.column+' contains '+f.text).join(' AND '):'Grid filter cleared');close();};
+   columnSelect.addEventListener('change',()=>{valueInput.value=quickFilters.find(f=>f.column===columnSelect.value)?.text||'';});
+   cancel.addEventListener('click',close);apply.addEventListener('click',applyFilter);
+   overlay.addEventListener('click',event=>{if(event.target===overlay)close();});
+   panel.addEventListener('keydown',event=>{if(event.key==='Escape')close();else if(event.key==='Enter'&&event.target===valueInput)applyFilter();});
+   actions.append(cancel,apply);panel.append(title,columnLabel,columnSelect,valueLabel,valueInput,actions);overlay.append(panel);document.body.append(overlay);
+   requestAnimationFrame(()=>valueInput.focus());
+ }
+ $('filterColumnBtn').onclick=openColumnFilterDialog;
  $('clearFilterBtn').onclick=()=>{quickFilters=[];quickFilterColumn=null;quickFilterText=null;colorFilter=null;applyQuickFilter();setStatus('Grid filters cleared')};
  $('fontSizeBtn').onclick=async()=>{const size=Number(prompt('Font size (6–96)', '12'));if(!Number.isFinite(size)||size<6||size>96){alert('Enter a font size from 6 to 96');return}try{await api('/workbooks/'+bookId+'/style',json('PATCH',{sheet:activeSheet,range:selected+':'+selected,font_size:size}));await refresh();setStatus('Font size applied to '+selected)}catch(e){alert(e.message)}};
  $('clearFormatBtn').onclick=async()=>{try{await api('/workbooks/'+bookId+'/style',json('PATCH',{sheet:activeSheet,range:selected+':'+selected,bold:false,italic:false,font_color:'000000',fill_color:'FFFFFF',horizontal:'general',number_format:'General',font_size:11}));await refresh();setStatus('Basic formatting cleared for '+selected)}catch(e){alert(e.message)}};
