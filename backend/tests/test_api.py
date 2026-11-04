@@ -42,6 +42,15 @@ def test_cells_sheets_style_and_save_roundtrip():
     assert cells['rows'][0][0]['style']['number_format'] == 'yyyy-mm-dd'
     assert cells['rows'][0][0]['style']['font_size'] == 14
     assert cells['rows'][1][1]['value'] == '=SUM(B1:B1)'
+    assert client.patch(f'/workbooks/{book_id}/style', json={
+        'sheet': 'Sheet1', 'range': 'A1:B1', 'clear_format': True
+    }).status_code == 200
+    cleared = client.get(f'/workbooks/{book_id}/range', query_string={'sheet': 'Sheet1', 'range': 'A1:B2'}).get_json()
+    assert cleared['rows'][0][0]['value'] == 'Revenue'
+    assert cleared['rows'][1][1]['value'] == '=SUM(B1:B1)'
+    assert cleared['rows'][0][0]['style']['bold'] is False
+    assert cleared['rows'][0][0]['style']['underline'] is False
+    assert cleared['rows'][0][0]['style']['number_format'] == 'General'
     saved = client.get(f'/workbooks/{book_id}/save')
     assert saved.status_code == 200
     assert saved.data[:2] == b'PK'
