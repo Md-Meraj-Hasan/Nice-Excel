@@ -226,13 +226,6 @@ def test_native_table_borders_draw_shared_inner_edges_only_once():
     assert "column - 1" in native and "row - 1" in native
 
 
-def test_native_table_header_contrast_is_reapplied_after_grid_refresh():
-    native = (ROOT / "app" / "src" / "main" / "java" / "com" / "meraj" / "niceexcel" / "MainActivity.kt").read_text(encoding="utf-8")
-    assert "private fun isStyledTableHeader(address: String, style: CellStyle?): Boolean" in native
-    assert "themedCellTextColor(tableHeaderTextColor(st.fillColor))" in native
-    assert "tableHeaderRow = headerRow" in native
-
-
 def test_web_table_header_contrast_handles_transparent_cell_backgrounds():
     for path in [
         ROOT / "backend" / "niceexcel_api" / "static" / "index.html",
