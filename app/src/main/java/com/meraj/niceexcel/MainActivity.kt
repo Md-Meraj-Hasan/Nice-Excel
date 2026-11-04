@@ -1591,6 +1591,40 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
     private fun addOneRow() = addRows(1)
 
     /** Add rows at the end in one operation, rendering at most once for a batch. */
+    private fun showSymbolPickerMenu() {
+        val symbols = linkedMapOf(
+            "Currency" to listOf("₹","$","€","£","¥","₩","₽","₺","₫","฿","₱","₦"),
+            "Math" to listOf("±","×","÷","≠","≤","≥","≈","∞","√","∑","∏","∫","∆","π","°","µ","‰","∴"),
+            "Arrows" to listOf("←","→","↑","↓","↔","↕","↗","↘","↙","↖","⇒","⇐","⇑","⇓"),
+            "Checks & stars" to listOf("✓","✔","✗","✘","★","☆","●","○","◆","■","♥","♣","♦","♠"),
+            "Greek" to listOf("α","β","γ","δ","ε","ζ","η","θ","λ","μ","π","σ","φ","ω","Α","Β","Γ","Δ","Ω"),
+            "Fractions" to listOf("½","⅓","⅔","¼","¾","⅛","⅜","⅝","⅞","¹","²","³","⁴","₁","₂","₃","₄"),
+            "Legal & business" to listOf("©","®","™","§","¶","℠","№","℃","℉")
+        )
+        val labels = symbols.keys.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle("Insert symbol")
+            .setItems(labels) { _, which ->
+                val category = labels[which]
+                val choices = symbols[category].orEmpty().toTypedArray()
+                AlertDialog.Builder(this)
+                    .setTitle(category)
+                    .setItems(choices) { _, index ->
+                        val current = formula.text?.toString().orEmpty()
+                        val cursor = formula.selectionStart.coerceAtLeast(0).coerceAtMost(current.length)
+                        val updated = current.substring(0, cursor) + choices[index] + current.substring(cursor)
+                        formula.setText(updated)
+                        formula.setSelection((cursor + choices[index].length).coerceAtMost(updated.length))
+                        formula.requestFocus()
+                        status.text = "Symbol inserted for $selected · press Enter to apply"
+                    }
+                    .setNegativeButton("Cancel", null)
+                    .show()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
     private fun addRows(count: Int) {
         if (count <= 0) return
         val started = SystemClock.elapsedRealtime()
