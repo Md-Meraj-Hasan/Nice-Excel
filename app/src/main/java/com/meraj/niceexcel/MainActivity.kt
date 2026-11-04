@@ -893,7 +893,6 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
             val st = sheetStyles[address]
             // Cell text color is always user-controlled, including row 1.
             view.setTextColor(themedCellTextColor(st?.textColor ?: Color.rgb(24, 32, 39)))
-            view.setTextColor(textColor)
             view.textSize = st?.fontSize ?: 13f
             view.typeface = Typeface.create(
                 Typeface.DEFAULT,
