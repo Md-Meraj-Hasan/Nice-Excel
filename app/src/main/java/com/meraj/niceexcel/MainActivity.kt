@@ -1784,7 +1784,11 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         val color = dayPalettes[dayPaletteIndex.coerceIn(dayPalettes.indices)].primary
         val shape = NativeShape(java.util.UUID.randomUUID().toString(), kind, rect, Color.TRANSPARENT, color, dp(2).toFloat(), anchorCell = selected)
         nativeShapes.getOrPut(sheetName) { mutableListOf() }.add(shape)
-        selectedNativeShape = shape
+        // Insertion should leave the shape visible without a persistent blue
+        // editing frame or resize handle.
+        selectedNativeShape = null
+        draggingNativeShape = null
+        resizingNativeShape = false
         drawingOverlay.invalidate()
         persistLastWorkbook()
         status.text = "$kind inserted near $selected"
@@ -2010,7 +2014,11 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                 private val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
                 override fun draw(canvas: android.graphics.Canvas) {
                     val b = bounds
-                    canvas.drawColor(fill)
+                    // Drawable bounds do not automatically constrain drawColor().
+                    // Paint only this cell so applying borders cannot cover the worksheet.
+                    paint.color = fill
+                    paint.style = android.graphics.Paint.Style.FILL
+                    canvas.drawRect(b, paint)
                     paint.color = strokeColor
                     paint.style = android.graphics.Paint.Style.FILL
                     val hairline = 1f
