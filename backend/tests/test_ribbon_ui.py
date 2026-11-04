@@ -103,10 +103,10 @@ def test_native_black_theme_keeps_existing_cell_formula_and_inline_editor_text_r
     assert "setHintTextColor(if (darkMode) Color.rgb(150,165,185)" in native
 
 
-def test_native_table_borders_use_hairline_instead_of_double_dp_strokes():
+def test_native_table_borders_use_consistent_visible_strokes():
     native = (ROOT / "app" / "src" / "main" / "java" / "com" / "meraj" / "niceexcel" / "MainActivity.kt").read_text(encoding="utf-8")
-    assert "else if (isTableBorder) 1 else dp(1)" in native
-    assert "using a dp-scaled 2dp stroke on both" in native
+    assert "if (isSelected || isTableBorder) dp(2) else dp(1)" in native
+    assert "else if (isTableBorder) 1 else dp(1)" not in native
 
 
 def test_native_black_theme_uses_dark_cells_and_persists_palette_for_web_activity():
@@ -191,3 +191,61 @@ def test_black_theme_table_borders_use_contrast_safe_grid_colors():
         html = path.read_text(encoding="utf-8")
         assert ".grid td.table-cell{border-right:1px solid var(--line);border-bottom:1px solid var(--line)}" in html
         assert ".grid td.table-cell.table-outline{box-shadow:inset 0 0 0 2px var(--line)}" in html
+
+
+
+def test_native_table_style_uses_contrast_safe_header_and_row_banding():
+    native = (ROOT / "app" / "src" / "main" / "java" / "com" / "meraj" / "niceexcel" / "MainActivity.kt").read_text(encoding="utf-8")
+    assert "private fun tableHeaderTextColor(background: Int)" in native
+    assert "private fun tableStripeColor(headerColor: Int)" in native
+    assert "tableHeaderTextColor(st.fillColor)" not in native
+    assert "(row - headerRow) % 2 == 1" in native
+    assert "isSelected || isTableBorder) dp(2)" in native
+    assert "val colorPresets = listOf(" in native
+    assert "Header color — choose a preset or enter a HEX color" in native
+    assert "if ((row - headerRow) % 2 == 1)" in native
+    assert "if (darkMode) Color.rgb(" in native
+
+
+def test_web_smart_table_header_text_contrasts_with_selected_fill():
+    for path in [
+        ROOT / "backend" / "niceexcel_api" / "static" / "index.html",
+        ROOT / "app" / "src" / "main" / "assets" / "niceexcel_index.html",
+    ]:
+        html = path.read_text(encoding="utf-8")
+        assert "function readableTableHeaderColor(td)" in html
+        assert "td.style.color=readableTableHeaderColor(td)" in html
+        assert ".grid td.table-cell.table-header-cell{font-weight:700}" in html
+
+
+def test_native_table_borders_draw_shared_inner_edges_only_once():
+    native = (ROOT / "app" / "src" / "main" / "java" / "com" / "meraj" / "niceexcel" / "MainActivity.kt").read_text(encoding="utf-8")
+    assert "private fun tableBorderEdges(address: String): BooleanArray" in native
+    assert "return booleanArrayOf(!above, !left, true, true)" in native
+    assert "CellBorderDrawable(fill, strokeColor, strokeWidth.toFloat(), edges)" in native
+    assert "column - 1" in native and "row - 1" in native
+
+
+def test_web_table_header_contrast_handles_transparent_cell_backgrounds():
+    for path in [
+        ROOT / "backend" / "niceexcel_api" / "static" / "index.html",
+        ROOT / "app" / "src" / "main" / "assets" / "niceexcel_index.html",
+    ]:
+        html = path.read_text(encoding="utf-8")
+        assert "getPropertyValue('--cell').trim()" in html
+        assert "if(!rgb)return '#18202b'" in html
+
+
+def test_native_selected_table_range_keeps_single_edge_border_drawable():
+    native = (ROOT / "app" / "src" / "main" / "java" / "com" / "meraj" / "niceexcel" / "MainActivity.kt").read_text(encoding="utf-8")
+    assert "val edges = if (isTableBorder && address != null) tableBorderEdges(address)" in native
+    assert "view.background = if (isTableBorder) {" in native
+    assert "CellBorderDrawable(fill, strokeColor, strokeWidth.toFloat(), edges)" in native
+
+
+def test_native_row_one_manual_font_color_is_never_overridden_by_auto_header_logic():
+    native = (ROOT / "app" / "src" / "main" / "java" / "com" / "meraj" / "niceexcel" / "MainActivity.kt").read_text(encoding="utf-8")
+    assert "isStyledTableHeader" not in native
+    assert "view.setTextColor(themedCellTextColor(st?.textColor ?: Color.rgb(24, 32, 39)))" in native
+    assert "else themedCellTextColor(st?.textColor ?: Color.rgb(24,32,39))" in native
+    assert "tableHeaderTextColor(st.fillColor)" not in native

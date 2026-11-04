@@ -891,6 +891,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
             }
             view.text = text
             val st = sheetStyles[address]
+            // Cell text color is always user-controlled, including row 1.
             view.setTextColor(themedCellTextColor(st?.textColor ?: Color.rgb(24, 32, 39)))
             view.textSize = st?.fontSize ?: 13f
             view.typeface = Typeface.create(
@@ -1093,6 +1094,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         cellViews.forEach { (address, view) ->
             view.text = gridDisplay(address)
             val st = sheetStyles[address]
+            // Cell text color is always user-controlled, including row 1.
             view.setTextColor(themedCellTextColor(st?.textColor ?: Color.rgb(24, 32, 39)))
             view.textSize = st?.fontSize ?: 13f
             view.typeface = Typeface.create(
@@ -1509,6 +1511,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
             gravity = if (header || key == null) Gravity.CENTER else Gravity.CENTER_VERTICAL or Gravity.START
             setPadding(dp(3), 0, dp(3), 0)
             val st = if (key != null) sheetStyles[key] else null
+            // Grid cells always honor the selected font color; only row/column labels use theme colors.
             setTextColor(if (header) { if (darkMode) Color.WHITE else dayPalettes[dayPaletteIndex.coerceIn(dayPalettes.indices)].ink } else themedCellTextColor(st?.textColor ?: Color.rgb(24,32,39)))
             textSize = st?.fontSize ?: 13f
             typeface = Typeface.create(Typeface.DEFAULT, (if (st?.bold == true || header) Typeface.BOLD else Typeface.NORMAL) or (if (st?.italic == true) Typeface.ITALIC else Typeface.NORMAL))
@@ -1686,6 +1689,50 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
             .showProfessional()
     }
 
+    private fun hasThickTableBorder(address: String): Boolean {
+        val style = sheetStyles[address]
+        return style?.border == true && style.thickBorder
+    }
+
+    private fun tableBorderEdges(address: String): BooleanArray {
+        val match = Regex("^([A-Z]+)(\\d+)$").matchEntire(address) ?: return booleanArrayOf(true, true, true, true)
+        val column = columnIndex(match.groupValues[1])
+        val row = match.groupValues[2].toIntOrNull() ?: return booleanArrayOf(true, true, true, true)
+        val left = if (column > 0) hasThickTableBorder("${colName(column - 1)}$row") else false
+        val above = if (row > 1) hasThickTableBorder("${colName(column)}${row - 1}") else false
+        // Ownership rule: the cell on the left owns a shared vertical edge;
+        // the cell above owns a shared horizontal edge. Every edge is painted once.
+        return booleanArrayOf(!above, !left, true, true)
+    }
+
+    private class CellBorderDrawable(
+        private val fillColor: Int,
+        private val borderColor: Int,
+        private val borderWidth: Float,
+        private val edges: BooleanArray
+    ) : android.graphics.drawable.Drawable() {
+        private val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+        override fun draw(canvas: android.graphics.Canvas) {
+            val b = bounds
+            paint.style = android.graphics.Paint.Style.FILL
+            paint.color = fillColor
+            canvas.drawRect(b, paint)
+            paint.style = android.graphics.Paint.Style.STROKE
+            paint.strokeWidth = borderWidth
+            paint.strokeCap = android.graphics.Paint.Cap.SQUARE
+            paint.color = borderColor
+            val inset = borderWidth / 2f
+            if (edges[0]) canvas.drawLine(b.left + inset, b.top + inset, b.right - inset, b.top + inset, paint)
+            if (edges[1]) canvas.drawLine(b.left + inset, b.top + inset, b.left + inset, b.bottom - inset, paint)
+            if (edges[2]) canvas.drawLine(b.right - inset, b.top + inset, b.right - inset, b.bottom - inset, paint)
+            if (edges[3]) canvas.drawLine(b.left + inset, b.bottom - inset, b.right - inset, b.bottom - inset, paint)
+        }
+        override fun setAlpha(alpha: Int) { paint.alpha = alpha; invalidateSelf() }
+        override fun setColorFilter(colorFilter: android.graphics.ColorFilter?) { paint.colorFilter = colorFilter; invalidateSelf() }
+        @Deprecated("Deprecated in Java")
+        override fun getOpacity(): Int = android.graphics.PixelFormat.TRANSLUCENT
+    }
+
     private fun applyCellBackground(view: TextView, address: String?, header: Boolean) {
         val st = if (address != null) sheetStyles[address] else null
         val isSelected = address != null && (address == selected || address in selectedRangeCells)
@@ -1699,19 +1746,23 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         val isTableBorder = st?.border == true && st.thickBorder
         val strokeColor = when {
             isSelected -> palette.primary
-            // The Black palette primary is intentionally near-black for fills; never reuse it for a border on a black worksheet.
             isTableBorder -> if (darkMode) palette.accent else palette.primary
             else -> if (darkMode) Color.rgb(65,82,106) else palette.gridLine
         }
-        // Table borders are drawn as a 1-physical-pixel hairline. Each cell
-        // paints its own four edges; using a dp-scaled 2dp stroke on both
-        // neighbours made shared edges look like thick doubled separators.
-        val strokeWidth = if (isSelected) dp(2) else if (isTableBorder) 1 else dp(1)
-        val signature = "$fill|$strokeColor|$strokeWidth"
+        val strokeWidth = if (isSelected || isTableBorder) dp(2) else dp(1)
+        // Keep single-edge ownership even while a table range is selected.
+        // Selection changes the border color, not the geometry; otherwise the
+        // selected GradientDrawable would restore four strokes per cell.
+        val edges = if (isTableBorder && address != null) tableBorderEdges(address) else booleanArrayOf(true, true, true, true)
+        val signature = "$fill|$strokeColor|$strokeWidth|${edges.joinToString("")}"
         if (appliedCellBackgrounds[view] == signature) return
-        view.background = android.graphics.drawable.GradientDrawable().apply {
-            setColor(fill)
-            setStroke(strokeWidth, strokeColor)
+        view.background = if (isTableBorder) {
+            CellBorderDrawable(fill, strokeColor, strokeWidth.toFloat(), edges)
+        } else {
+            android.graphics.drawable.GradientDrawable().apply {
+                setColor(fill)
+                setStroke(strokeWidth, strokeColor)
+            }
         }
         appliedCellBackgrounds[view] = signature
     }
@@ -2976,9 +3027,31 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS
         }
         val customColorInput = EditText(this).apply {
-            hint = "Optional header color hex, e.g. #4472C4"
+            hint = "Custom header color hex, e.g. #4472C4"
             setSingleLine(true)
             setText("#4472C4")
+        }
+        val colorPresets = listOf(
+            "#4472C4", "#217346", "#7030A0", "#C00000", "#ED7D31",
+            "#00A6A6", "#264478", "#7F6000", "#595959", "#000000"
+        )
+        val presetRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = android.view.Gravity.CENTER_VERTICAL
+        }
+        colorPresets.forEach { hex ->
+            val color = android.graphics.Color.parseColor(hex)
+            presetRow.addView(TextView(this).apply {
+                text = "  "
+                contentDescription = "Choose $hex"
+                setPadding(dp(5), dp(8), dp(5), dp(8))
+                background = roundedToolbarBackground(color, themedColor(Color.WHITE), 6)
+                isClickable = true
+                isFocusable = true
+                setOnClickListener { customColorInput.setText(hex) }
+            }, LinearLayout.LayoutParams(0, dp(34), 1f).apply {
+                setMargins(dp(2), dp(3), dp(2), dp(3))
+            })
         }
         val panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -2990,6 +3063,13 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                 setPadding(0, 0, 0, dp(8))
             })
             addView(rangeInput, LinearLayout.LayoutParams(-1, -2))
+            addView(TextView(this@MainActivity).apply {
+                text = "Header color — choose a preset or enter a HEX color"
+                textSize = 12f
+                setTextColor(themedCellTextColor(Color.rgb(24,32,39)))
+                setPadding(0, dp(10), 0, dp(3))
+            })
+            addView(presetRow, LinearLayout.LayoutParams(-1, dp(42)))
             addView(customColorInput, LinearLayout.LayoutParams(-1, -2))
         }
         val actions = listOf(
@@ -3033,6 +3113,20 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         dialog.show()
     }
 
+    private fun tableHeaderTextColor(background: Int): Int {
+        val luminance = (Color.red(background) * 299 + Color.green(background) * 587 + Color.blue(background) * 114) / 1000
+        return if (luminance >= 150) Color.rgb(24, 32, 39) else Color.WHITE
+    }
+
+    private fun tableStripeColor(headerColor: Int): Int {
+        // A subtle 90% white tint derived from the selected header color.
+        return Color.rgb(
+            (Color.red(headerColor) * 0.10 + 255 * 0.90).toInt(),
+            (Color.green(headerColor) * 0.10 + 255 * 0.90).toInt(),
+            (Color.blue(headerColor) * 0.10 + 255 * 0.90).toInt()
+        )
+    }
+
     private fun applyTableRangeAction(action: Int, cells: List<String>, range: String, customColor: Int? = null) {
         val affected = linkedSetOf<String>()
         val rows = cells.mapNotNull { Regex("[0-9]+").find(it)?.value?.toIntOrNull() }.distinct().sorted()
@@ -3046,7 +3140,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                     val address = "${col}$headerRow"; affected.add(address)
                     styleFor(address).apply {
                         bold = true; fillColor = customColor ?: dayPalettes[dayPaletteIndex.coerceIn(dayPalettes.indices)].primary
-                        textColor = Color.WHITE; border = true; thickBorder = true
+                        border = true; thickBorder = true
                     }
                 }
                 status.text = "Header applied to ${columns.first()}${headerRow}:${columns.last()}${headerRow}"
@@ -3060,15 +3154,25 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                     st.border = true
                     st.thickBorder = true
                     if (row == headerRow) {
-                        st.bold = true; st.fillColor = customColor ?: dayPalettes[dayPaletteIndex.coerceIn(dayPalettes.indices)].primary; st.textColor = Color.WHITE; st.thickBorder = true
+                        st.bold = true
+                        st.fillColor = customColor ?: dayPalettes[dayPaletteIndex.coerceIn(dayPalettes.indices)].primary
+                        st.thickBorder = true
                     } else {
-                        st.fillColor = if (darkMode) Color.rgb(18,26,43) else if ((columnIndex(col) + row) % 2 == 0) 0xFFE8F5E9.toInt() else themedSurface(Color.WHITE)
+                        st.fillColor = if ((row - headerRow) % 2 == 1) {
+                            val base = customColor ?: dayPalettes[dayPaletteIndex.coerceIn(dayPalettes.indices)].primary
+                            if (darkMode) Color.rgb(
+                                (Color.red(base) * 0.28).toInt().coerceAtLeast(18),
+                                (Color.green(base) * 0.28).toInt().coerceAtLeast(22),
+                                (Color.blue(base) * 0.28).toInt().coerceAtLeast(30)
+                            ) else tableStripeColor(base)
+                        } else if (darkMode) Color.rgb(30, 35, 45) else Color.WHITE
                     }
                 }
                 tableHeaderRow = headerRow
                 status.text = "Table style applied to $range"
             }
             2 -> {
+                tableHeaderRow = headerRow
                 cells.forEach { address ->
                     affected.add(address)
                     styleFor(address).apply { border = true; thickBorder = true }
