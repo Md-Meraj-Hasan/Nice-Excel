@@ -106,7 +106,7 @@ def test_native_black_theme_keeps_existing_cell_formula_and_inline_editor_text_r
 def test_native_table_borders_use_consistent_visible_strokes():
     native = (ROOT / "app" / "src" / "main" / "java" / "com" / "meraj" / "niceexcel" / "MainActivity.kt").read_text(encoding="utf-8")
     assert "if (isSelected || isTableBorder) dp(2) else dp(1)" in native
-    assert "Table borders are drawn as a 1-physical-pixel hairline" not in native
+    assert "else if (isTableBorder) 1 else dp(1)" not in native
 
 
 def test_native_black_theme_uses_dark_cells_and_persists_palette_for_web_activity():
