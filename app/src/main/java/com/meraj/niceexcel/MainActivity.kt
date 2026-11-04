@@ -1327,6 +1327,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
     }
 
     private fun render() {
+        if (::drawingOverlay.isInitialized) drawingOverlay.invalidate()
         cachedExplicitLineCountsByRow = null
         val perfStarted = SystemClock.elapsedRealtime()
         val generation = ++renderGeneration
@@ -1704,8 +1705,8 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         val match = Regex("^([A-Z]+)([0-9]+)$").matchEntire(selected)
         val col = columnIndex(match?.groupValues?.get(1) ?: "A")
         val row = match?.groupValues?.get(2)?.toIntOrNull() ?: 1
-        val left = (48 + (0 until col).sumOf { lastColumnWidths.getOrElse(it) { dp(64) } } + dp(8)).toFloat()
-        val top = ((2 until row).sumOf { dp(rowHeightPx(it)) } + dp(8)).toFloat()
+        val left = dp(48 + (0 until col).sumOf { lastColumnWidths.getOrElse(it) { 64 } } + 8).toFloat()
+        val top = dp((2 until row).sumOf { rowHeightPx(it) } + 8).toFloat()
         val rect = android.graphics.RectF(left, top, left + dp(116), top + dp(62))
         val color = dayPalettes[dayPaletteIndex.coerceIn(dayPalettes.indices)].primary
         val shape = NativeShape(java.util.UUID.randomUUID().toString(), kind, rect, Color.TRANSPARENT, color, dp(2).toFloat())
