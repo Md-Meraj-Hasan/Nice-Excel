@@ -812,10 +812,11 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                 "AI Auto Fill…" to { autoFillDialog() }
             )
             "Format" -> listOf(
-                "Format selected cell / range…" to { formattingMenu() },
-                "Font size…" to { val targets = selectedRangeCells.toList().ifEmpty { listOf(selected) }; chooseRangeFontSize(selectedRangeLabel ?: selected, targets) },
-                "Alignment…" to { val targets = selectedRangeCells.toList().ifEmpty { listOf(selected) }; chooseAlignmentForTargets(targets, selectedRangeLabel ?: selected) },
-                "Number format…" to { val targets = selectedRangeCells.toList().ifEmpty { listOf(selected) }; chooseRangeNumberFormat(selectedRangeLabel ?: selected, targets) },
+                "Cells… (selected cell only)" to { formattingMenu(forceCell = true) },
+                "Range… (enter range)" to { rangeFormattingInput() },
+                "Font size…" to { chooseFontSize() },
+                "Alignment…" to { chooseAlignmentForTargets(listOf(selected), selected) },
+                "Number format…" to { chooseNumberFormat() },
                 "Table styles…" to { tableMenu() }
             )
             "Data" -> listOf(
@@ -3190,9 +3191,20 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
             .showProfessional()
     }
 
-    private fun formattingMenu() {
-        val rangeCells = selectedRangeCells.toList()
-        val targetLabel = selectedRangeLabel ?: selected
+    private fun rangeFormattingInput() {
+        val input = EditText(this).apply { hint = "Range e.g. A1:C10"; setSingleLine(true); setText(selectedRangeLabel?.takeIf { it.contains(":") } ?: "") }
+        AlertDialog.Builder(this).setTitle("Format a range").setMessage("Enter the cell range to format. All changes can be applied together.").setView(input)
+            .setPositiveButton("Continue") { _, _ ->
+                val label = input.text.toString().trim().uppercase(Locale.ROOT)
+                val cells = parseCellRange(label)
+                if (cells.isEmpty() || !label.contains(":")) Toast.makeText(this, "Enter a valid range such as A1:C10", Toast.LENGTH_SHORT).show()
+                else showRangeActions(label, cells)
+            }.setNegativeButton("Cancel", null).showProfessional()
+    }
+
+    private fun formattingMenu(forceCell: Boolean = false) {
+        val rangeCells = if (forceCell) emptyList() else selectedRangeCells.toList()
+        val targetLabel = if (forceCell) selected else (selectedRangeLabel ?: selected)
         val options = arrayOf(
             "Bold on/off", "Italic on/off", "Underline on/off", "Font size", "Text color", "Cell fill color",
             "Alignment", "Number format", "Cell borders", "Clear formatting", "Clear cell", "Find / replace"
