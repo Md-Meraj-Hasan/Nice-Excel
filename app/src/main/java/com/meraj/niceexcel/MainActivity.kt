@@ -1096,7 +1096,9 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         cellViews.forEach { (address, view) ->
             view.text = gridDisplay(address)
             val st = sheetStyles[address]
-            view.setTextColor(themedCellTextColor(st?.textColor ?: Color.rgb(24, 32, 39)))
+            val isTableHeader = st?.bold == true && st.border && st.thickBorder
+            val textColor = if (isTableHeader && st != null) themedCellTextColor(tableHeaderTextColor(st.fillColor)) else themedCellTextColor(st?.textColor ?: Color.rgb(24, 32, 39))
+            view.setTextColor(textColor)
             view.textSize = st?.fontSize ?: 13f
             view.typeface = Typeface.create(
                 Typeface.DEFAULT,
@@ -1703,7 +1705,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         val above = if (row > 1) hasThickTableBorder("${colName(column)}${row - 1}") else false
         // Ownership rule: the cell on the left owns a shared vertical edge;
         // the cell above owns a shared horizontal edge. Every edge is painted once.
-        return booleanArrayOf(!above, true, true, !left)
+        return booleanArrayOf(!above, !left, true, true)
     }
 
     private class CellBorderDrawable(
