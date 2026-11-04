@@ -649,29 +649,18 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                 "Undo" to { undo() }, "Redo" to { redo() },
                 "Copy selected cell" to { copySelectedCell() },
                 "Paste range from clipboard" to { pasteRangeFromClipboard() },
-                "Clear selected cell" to { clearSelectedCell() },
-                "Cell formatting…" to { formattingMenu() },
-                "Find / Replace…" to { findReplaceMenu() }
+                "Clear selected cell" to { clearSelectedCell() }
             )
             "Insert" -> listOf(
-                "Add row at bottom" to { addRows(1) },
-                "Add 5 rows at bottom" to { addRows(5) },
-                "Add 10 rows at bottom" to { addRows(10) },
-                "Duplicate selected row to bottom" to { duplicateSelectedRowToBottom() },
-                "Clear selected row…" to { clearSelectedRowConfirm() },
-                "Merge Top to Bottom" to { mergeCellsDialog(vertical = true) },
-                "Merge Left to Right" to { mergeCellsDialog(vertical = false) },
-                "Unmerge selected range…" to { unmergeCellsDialog() },
-                "AI Auto Fill…" to { autoFillDialog() },
-                "Table tools…" to { tableMenu() }
+                "Insert 10 rows at selection" to { addRows(10) },
+                "Insert 20 rows at selection" to { addRows(20) },
+                "Insert 50 rows at selection" to { addRows(50) },
+                "Table tools…" to { tableMenu() },
+                "Shapes…" to { startActivity(Intent(this, FlaskActivity::class.java)) },
+                "Symbols…" to { showSymbolPickerMenu() },
+                "AI Auto Fill…" to { autoFillDialog() }
             )
             "Format" -> listOf(
-                "Format cells…" to { formattingMenu() },
-                "Range formatting…" to { rangeToolsMenu() },
-                "Font size…" to { chooseFontSize() },
-                "Text alignment…" to { chooseAlignment() },
-                "Number format…" to { chooseNumberFormat() },
-                "Selected row: Single / Double line…" to { selectedRowTextModeMenu() },
                 "Table styles…" to { tableMenu() }
             )
             "Data" -> listOf(
@@ -707,12 +696,10 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         val compactLabels = mapOf(
             "New workbook" to "＋ New", "Open workbook…" to "Open", "Save" to "Save", "Save As…" to "Save As",
             "Export CSV…" to "CSV", "Undo" to "↶ Undo", "Redo" to "↷ Redo", "Copy selected cell" to "Copy",
-            "Clear selected cell" to "Clear", "Cell formatting…" to "Format", "Paste range from clipboard" to "Paste Range",
-            "Find / Replace…" to "Find", "Table tools…" to "Table",
-            "Merge Top to Bottom" to "Merge ↓", "Merge Left to Right" to "Merge →",
-            "Unmerge selected range…" to "Unmerge",
-            "Format cells…" to "Cells", "Range formatting…" to "Range", "Font size…" to "Size", "Text alignment…" to "Align",
-            "Number format…" to "Number", "Selected row: Single / Double line…" to "↵ Wrap", "Table styles…" to "Styles",
+            "Clear selected cell" to "Clear",  "Paste range from clipboard" to "Paste Range",
+             "Table tools…" to "Table",
+            
+            "Insert 10 rows at selection" to "＋ 10 Rows", "Insert 20 rows at selection" to "＋ 20 Rows", "Insert 50 rows at selection" to "＋ 50 Rows", "Table tools…" to "Table", "Shapes…" to "Shapes", "Symbols…" to "Symbols", "AI Auto Fill…" to "AI-Fill", "Table styles…" to "Styles",
             "Sort column A → Z" to "Sort A→Z", "Filter column…" to "Filter", "Clear filter" to "Clear filter", "Find / Replace…" to "Find",
             "Workbook data range info" to "Range info", "Open Full Advanced Tools (Web)" to "Full Tools", "Conditional Formatting…" to "Conditional", "Data Validation…" to "Validation", "Data Cleaning…" to "Clean Data", "Filter by Cell Colour" to "Filter Colour", "Clear Advanced Filters" to "Clear Filters", "Pivot Summary…" to "Pivot", "Dashboard Builder…" to "Dashboard", "Insert function…" to "ƒx Insert", "Formula help" to "ƒx Help",
             "Workbook info" to "Info", "Refresh current sheet formulas" to "↻ Refresh"
