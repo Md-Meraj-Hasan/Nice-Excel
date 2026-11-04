@@ -172,6 +172,7 @@ class RangeRequest(BaseModel):
 
 
 class StyleRequest(RangeRequest):
+    clear_format: bool | None = None
     bold: bool | None = None
     italic: bool | None = None
     underline: bool | None = None
@@ -676,6 +677,13 @@ def style_range(book_id: str, request: StyleRequest):
     _record_history(book_id)
     for row in ws.iter_rows(min_row=min_row, max_row=max_row, min_col=min_col, max_col=max_col):
         for cell in row:
+            if request.clear_format:
+                cell.font = Font()
+                cell.fill = PatternFill()
+                cell.alignment = Alignment()
+                cell.border = Border()
+                cell.number_format = "General"
+                continue
             f = copy(cell.font)
             if request.bold is not None: f.bold = request.bold
             if request.italic is not None: f.italic = request.italic
