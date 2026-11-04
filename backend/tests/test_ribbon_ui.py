@@ -248,3 +248,11 @@ def test_native_selected_table_range_keeps_single_edge_border_drawable():
     assert "val edges = if (isTableBorder && address != null) tableBorderEdges(address)" in native
     assert "view.background = if (isTableBorder) {" in native
     assert "CellBorderDrawable(fill, strokeColor, strokeWidth.toFloat(), edges)" in native
+
+
+def test_native_row_one_manual_font_color_is_never_overridden_by_auto_header_logic():
+    native = (ROOT / "app" / "src" / "main" / "java" / "com" / "meraj" / "niceexcel" / "MainActivity.kt").read_text(encoding="utf-8")
+    assert "isStyledTableHeader" not in native
+    assert "view.setTextColor(themedCellTextColor(st?.textColor ?: Color.rgb(24, 32, 39)))" in native
+    assert "else themedCellTextColor(st?.textColor ?: Color.rgb(24,32,39))" in native
+    assert "tableHeaderTextColor(st.fillColor)" not in native
