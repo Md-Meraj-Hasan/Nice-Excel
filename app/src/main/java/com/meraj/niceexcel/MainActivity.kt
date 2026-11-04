@@ -2974,16 +2974,22 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
             })
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS
         }
+        val customColorInput = EditText(this).apply {
+            hint = "Optional header color hex, e.g. #4472C4"
+            setSingleLine(true)
+            setText("#4472C4")
+        }
         val panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(18), dp(10), dp(18), dp(8))
             addView(TextView(this@MainActivity).apply {
-                text = "Select the exact table range. Formatting applies to every cell in both the selected rows and columns."
+                text = "Select range and optional custom header color (hex)."
                 textSize = 13f
                 setTextColor(themedCellTextColor(Color.rgb(24,32,39)))
                 setPadding(0, 0, 0, dp(8))
             })
             addView(rangeInput, LinearLayout.LayoutParams(-1, -2))
+            addView(customColorInput, LinearLayout.LayoutParams(-1, -2))
         }
         val actions = listOf(
             "Format first row as heading",
@@ -3010,7 +3016,9 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                         rangeInput.error = "Use a valid range such as A1:D20"
                     } else {
                         dialog.dismiss()
-                        applyTableRangeAction(index, cells, range)
+                        val rawColor = customColorInput.text.toString().trim().removePrefix("#")
+                        val customColor = rawColor.takeIf { it.matches(Regex("^[0-9A-Fa-f]{6}$")) }?.toLong(16)?.toInt()
+                        applyTableRangeAction(index, cells, range, customColor)
                     }
                 }
             }
