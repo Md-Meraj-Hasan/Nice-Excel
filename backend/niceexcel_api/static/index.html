@@ -419,7 +419,7 @@ function setupFormulaPicker(){
    if(!bookId)return;
    const p=cellAt(selected);const raw=prompt('How many rows should be inserted at '+(p?.r||1)+'? (10 or more)','10');
    if(raw===null)return;const count=Number(raw);
-   if(!Number.isInteger(count)||count<10||count>ROWS){alert('Enter a whole number from 10 to '+ROWS+'.');return;}
+   if(!Number.isInteger(count)||count<10||count>1000){alert('Enter a whole number from 10 to 1000.');return;}
    const row=p?.r||1;
    try{for(let n=0;n<count;n++)await api('/workbooks/'+bookId+'/rows',json('POST',{sheet:activeSheet,row}));
      await refresh();select(addr(1,row));setStatus(count+' rows inserted at row '+row);
