@@ -175,7 +175,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
     private var resizingNativeShape = false
     private var lastShapeTouchX = 0f
     private var lastShapeTouchY = 0f
-    private data class NativeShape(val id: String, val kind: String, val bounds: android.graphics.RectF, var fill: Int, var stroke: Int, var strokeWidth: Float = 2f, var text: String = "Text")
+    private data class NativeShape(val id: String, val kind: String, val bounds: android.graphics.RectF, var fill: Int, var stroke: Int, var strokeWidth: Float = 2f, var text: String = "Text", var anchorCell: String? = null)
     private lateinit var verticalScroll: ScrollView
     private lateinit var headerHorizontal: HorizontalScrollView
     private lateinit var frozenRowHorizontal: HorizontalScrollView
@@ -551,10 +551,31 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                     android.view.MotionEvent.ACTION_MOVE -> {
                         val shape = draggingNativeShape ?: return false
                         val dx = event.x-lastShapeTouchX; val dy = event.y-lastShapeTouchY
+                        val anchor = shape.anchorCell?.let { cellViews[it] }
+                        val cellRect = anchor?.let {
+                            val cellPos = IntArray(2); val overlayPos = IntArray(2)
+                            it.getLocationOnScreen(cellPos); drawingOverlay.getLocationOnScreen(overlayPos)
+                            android.graphics.RectF(
+                                (cellPos[0] - overlayPos[0]).toFloat(),
+                                (cellPos[1] - overlayPos[1]).toFloat(),
+                                (cellPos[0] - overlayPos[0] + it.width).toFloat(),
+                                (cellPos[1] - overlayPos[1] + it.height).toFloat()
+                            )
+                        }
                         if (resizingNativeShape) {
-                            shape.bounds.right = max(shape.bounds.left + dp(36), shape.bounds.right + dx)
-                            shape.bounds.bottom = max(shape.bounds.top + dp(28), shape.bounds.bottom + dy)
-                        } else shape.bounds.offset(dx, dy)
+                            val minW = minOf(dp(12).toFloat(), cellRect?.width() ?: dp(36).toFloat())
+                            val minH = minOf(dp(12).toFloat(), cellRect?.height() ?: dp(28).toFloat())
+                            shape.bounds.right = (shape.bounds.right + dx).coerceAtLeast(shape.bounds.left + minW)
+                            shape.bounds.bottom = (shape.bounds.bottom + dy).coerceAtLeast(shape.bounds.top + minH)
+                            cellRect?.let { shape.bounds.right = shape.bounds.right.coerceAtMost(it.right - dp(2)); shape.bounds.bottom = shape.bounds.bottom.coerceAtMost(it.bottom - dp(2)) }
+                        } else {
+                            var moveX = dx; var moveY = dy
+                            cellRect?.let {
+                                moveX = moveX.coerceIn(it.left + dp(2) - shape.bounds.left, it.right - dp(2) - shape.bounds.right)
+                                moveY = moveY.coerceIn(it.top + dp(2) - shape.bounds.top, it.bottom - dp(2) - shape.bounds.bottom)
+                            }
+                            shape.bounds.offset(moveX, moveY)
+                        }
                         lastShapeTouchX=event.x; lastShapeTouchY=event.y; invalidate(); return true
                     }
                     android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
@@ -1730,9 +1751,18 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         drawingOverlay.getLocationOnScreen(overlayLocation)
         val left = (cellLocation[0] - overlayLocation[0]).toFloat()
         val top = (cellLocation[1] - overlayLocation[1]).toFloat()
-        val rect = android.graphics.RectF(left, top, left + dp(116), top + dp(62))
+        // Fit the inserted object to the selected cell's actual measured dimensions.
+        // A small inset keeps the cell grid visible around the shape.
+        val inset = dp(2).toFloat()
+        val cellWidth = anchorCell.width.toFloat()
+        val cellHeight = anchorCell.height.toFloat()
+        if (cellWidth <= inset * 2 || cellHeight <= inset * 2) {
+            status.text = "Selected cell is too small for a shape"
+            return
+        }
+        val rect = android.graphics.RectF(left + inset, top + inset, left + cellWidth - inset, top + cellHeight - inset)
         val color = dayPalettes[dayPaletteIndex.coerceIn(dayPalettes.indices)].primary
-        val shape = NativeShape(java.util.UUID.randomUUID().toString(), kind, rect, Color.TRANSPARENT, color, dp(2).toFloat())
+        val shape = NativeShape(java.util.UUID.randomUUID().toString(), kind, rect, Color.TRANSPARENT, color, dp(2).toFloat(), anchorCell = selected)
         nativeShapes.getOrPut(sheetName) { mutableListOf() }.add(shape)
         selectedNativeShape = shape
         drawingOverlay.invalidate()
@@ -1753,7 +1783,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                 item.put("left", shape.bounds.left.toDouble()); item.put("top", shape.bounds.top.toDouble())
                 item.put("right", shape.bounds.right.toDouble()); item.put("bottom", shape.bounds.bottom.toDouble())
                 item.put("fill", shape.fill); item.put("stroke", shape.stroke)
-                item.put("strokeWidth", shape.strokeWidth.toDouble()); item.put("text", shape.text)
+                item.put("strokeWidth", shape.strokeWidth.toDouble()); item.put("text", shape.text); item.put("anchorCell", shape.anchorCell ?: "")
                 array.put(item)
             }
             all.put(sheet, array)
@@ -1785,7 +1815,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                         item.optString("id", java.util.UUID.randomUUID().toString()),
                         item.optString("kind", "Rectangle"), rect,
                         item.optInt("fill", Color.TRANSPARENT), item.optInt("stroke", Color.rgb(105,55,150)),
-                        item.optDouble("strokeWidth", dp(2).toDouble()).toFloat(), item.optString("text", "Text")
+                        item.optDouble("strokeWidth", dp(2).toDouble()).toFloat(), item.optString("text", "Text"), item.optString("anchorCell").takeIf { it.isNotBlank() }
                     ))
                 }
                 nativeShapes[sheet] = shapes
