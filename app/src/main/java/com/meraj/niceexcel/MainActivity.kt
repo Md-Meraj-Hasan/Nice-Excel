@@ -170,7 +170,11 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
     private lateinit var grid: LinearLayout
     private lateinit var drawingOverlay: android.view.View
     private val nativeShapes = mutableMapOf<String, MutableList<NativeShape>>()
-    private data class NativeShape(val kind: String, val bounds: android.graphics.RectF, val color: Int)
+    private var selectedNativeShape: NativeShape? = null
+    private var draggingNativeShape: NativeShape? = null
+    private var lastShapeTouchX = 0f
+    private var lastShapeTouchY = 0f
+    private data class NativeShape(val id: String, val kind: String, val bounds: android.graphics.RectF, var fill: Int, var stroke: Int, var strokeWidth: Float = 2f, var text: String = "Text")
     private lateinit var verticalScroll: ScrollView
     private lateinit var headerHorizontal: HorizontalScrollView
     private lateinit var frozenRowHorizontal: HorizontalScrollView
@@ -467,33 +471,91 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
             addView(grid, android.widget.FrameLayout.LayoutParams(-2, -2))
         }
         drawingOverlay = object : android.view.View(this) {
-            private val brush = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
-                style = android.graphics.Paint.Style.STROKE
-                strokeWidth = dp(2).toFloat()
+            private val brush = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+            private fun polygon(rect: android.graphics.RectF, sides: Int, rotation: Float = -90f): android.graphics.Path {
+                val path = android.graphics.Path()
+                for (i in 0 until sides) {
+                    val angle = Math.toRadians((rotation + i * 360f / sides).toDouble())
+                    val x = rect.centerX() + kotlin.math.cos(angle).toFloat() * rect.width() / 2f
+                    val y = rect.centerY() + kotlin.math.sin(angle).toFloat() * rect.height() / 2f
+                    if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+                }
+                path.close()
+                return path
             }
             override fun onDraw(canvas: android.graphics.Canvas) {
                 super.onDraw(canvas)
                 nativeShapes[sheetName].orEmpty().forEach { shape ->
-                    brush.color = shape.color
+                    val rect = shape.bounds
+                    brush.color = shape.fill
+                    brush.style = android.graphics.Paint.Style.FILL
                     when (shape.kind) {
-                        "Line" -> canvas.drawLine(shape.bounds.left, shape.bounds.top, shape.bounds.right, shape.bounds.bottom, brush)
+                        "Line", "Arrow", "Double arrow" -> Unit
+                        "Oval / Circle" -> if (shape.fill != Color.TRANSPARENT) canvas.drawOval(rect, brush)
+                        "Triangle" -> if (shape.fill != Color.TRANSPARENT) canvas.drawPath(polygon(rect, 3), brush)
+                        "Diamond" -> if (shape.fill != Color.TRANSPARENT) canvas.drawPath(polygon(rect, 4), brush)
+                        "Pentagon" -> if (shape.fill != Color.TRANSPARENT) canvas.drawPath(polygon(rect, 5), brush)
+                        "Hexagon" -> if (shape.fill != Color.TRANSPARENT) canvas.drawPath(polygon(rect, 6), brush)
+                        "Callout" -> if (shape.fill != Color.TRANSPARENT) canvas.drawRoundRect(rect, dp(8).toFloat(), dp(8).toFloat(), brush)
+                        "Text box" -> if (shape.fill != Color.TRANSPARENT) canvas.drawRect(rect, brush)
+                        "Rounded rectangle" -> if (shape.fill != Color.TRANSPARENT) canvas.drawRoundRect(rect, dp(10).toFloat(), dp(10).toFloat(), brush)
+                        else -> if (shape.fill != Color.TRANSPARENT) canvas.drawRect(rect, brush)
+                    }
+                    brush.color = shape.stroke
+                    brush.strokeWidth = shape.strokeWidth
+                    brush.style = android.graphics.Paint.Style.STROKE
+                    when (shape.kind) {
+                        "Line" -> canvas.drawLine(rect.left, rect.top, rect.right, rect.bottom, brush)
                         "Arrow" -> {
-                            canvas.drawLine(shape.bounds.left, shape.bounds.bottom, shape.bounds.right, shape.bounds.top, brush)
-                            val p = android.graphics.Path().apply {
-                                moveTo(shape.bounds.right, shape.bounds.top)
-                                lineTo(shape.bounds.right-dp(14), shape.bounds.top+dp(4))
-                                lineTo(shape.bounds.right-dp(4), shape.bounds.top+dp(14))
-                                close()
-                            }
-                            canvas.drawPath(p, brush)
+                            canvas.drawLine(rect.left, rect.bottom, rect.right, rect.top, brush)
+                            val p = android.graphics.Path().apply { moveTo(rect.right, rect.top); lineTo(rect.right-dp(14), rect.top+dp(5)); lineTo(rect.right-dp(5), rect.top+dp(14)); close() }
+                            brush.style = android.graphics.Paint.Style.FILL; canvas.drawPath(p, brush)
                         }
-                        "Oval / Circle" -> canvas.drawOval(shape.bounds, brush)
-                        "Rounded rectangle" -> canvas.drawRoundRect(shape.bounds, dp(10).toFloat(), dp(10).toFloat(), brush)
-                        else -> canvas.drawRect(shape.bounds, brush)
+                        "Double arrow" -> {
+                            canvas.drawLine(rect.left, rect.centerY(), rect.right, rect.centerY(), brush)
+                            canvas.drawLine(rect.left, rect.centerY(), rect.left+dp(12), rect.centerY()-dp(7), brush)
+                            canvas.drawLine(rect.left, rect.centerY(), rect.left+dp(12), rect.centerY()+dp(7), brush)
+                            canvas.drawLine(rect.right, rect.centerY(), rect.right-dp(12), rect.centerY()-dp(7), brush)
+                            canvas.drawLine(rect.right, rect.centerY(), rect.right-dp(12), rect.centerY()+dp(7), brush)
+                        }
+                        "Oval / Circle" -> canvas.drawOval(rect, brush)
+                        "Triangle" -> canvas.drawPath(polygon(rect, 3), brush)
+                        "Diamond" -> canvas.drawPath(polygon(rect, 4), brush)
+                        "Pentagon" -> canvas.drawPath(polygon(rect, 5), brush)
+                        "Hexagon" -> canvas.drawPath(polygon(rect, 6), brush)
+                        "Callout" -> { canvas.drawRoundRect(rect, dp(8).toFloat(), dp(8).toFloat(), brush); canvas.drawLine(rect.left+dp(20), rect.bottom, rect.left+dp(9), rect.bottom+dp(12), brush) }
+                        "Text box" -> { canvas.drawRect(rect, brush); brush.style = android.graphics.Paint.Style.FILL; brush.textSize = dp(14).toFloat(); canvas.drawText(shape.text, rect.left+dp(7), rect.centerY(), brush) }
+                        "Rounded rectangle" -> canvas.drawRoundRect(rect, dp(10).toFloat(), dp(10).toFloat(), brush)
+                        else -> canvas.drawRect(rect, brush)
+                    }
+                    if (selectedNativeShape?.id == shape.id) {
+                        brush.color = Color.rgb(40, 120, 220); brush.strokeWidth = dp(2).toFloat()
+                        brush.style = android.graphics.Paint.Style.STROKE
+                        canvas.drawRect(android.graphics.RectF(rect.left-dp(4), rect.top-dp(4), rect.right+dp(4), rect.bottom+dp(4)), brush)
                     }
                 }
             }
-        }.apply { isClickable = false; isFocusable = false }
+            override fun onTouchEvent(event: android.view.MotionEvent): Boolean {
+                val items = nativeShapes[sheetName] ?: return false
+                when (event.actionMasked) {
+                    android.view.MotionEvent.ACTION_DOWN -> {
+                        val hit = items.asReversed().firstOrNull { android.graphics.RectF(it.bounds).apply { inset(-dp(12).toFloat(), -dp(12).toFloat()) }.contains(event.x, event.y) } ?: return false
+                        selectedNativeShape = hit; draggingNativeShape = hit
+                        lastShapeTouchX = event.x; lastShapeTouchY = event.y; invalidate(); return true
+                    }
+                    android.view.MotionEvent.ACTION_MOVE -> {
+                        val shape = draggingNativeShape ?: return false
+                        val dx = event.x-lastShapeTouchX; val dy = event.y-lastShapeTouchY
+                        shape.bounds.offset(dx, dy); lastShapeTouchX=event.x; lastShapeTouchY=event.y; invalidate(); return true
+                    }
+                    android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
+                        draggingNativeShape = null; persistLastWorkbook(); performClick(); return true
+                    }
+                }
+                return true
+            }
+            override fun performClick(): Boolean { super.performClick(); return true }
+        }.apply { isClickable = true; isFocusable = true }
         layer.addView(drawingOverlay, android.widget.FrameLayout.LayoutParams(-1, -1))
         bodyHorizontal.addView(layer)
         verticalScroll=ScrollView(this).apply { isFillViewport=true; isVerticalScrollBarEnabled=true; addView(bodyHorizontal) }
