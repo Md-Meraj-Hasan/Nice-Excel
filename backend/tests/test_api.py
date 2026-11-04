@@ -30,7 +30,7 @@ def test_cells_sheets_style_and_save_roundtrip():
     })
     assert result.status_code == 200
     assert client.patch(f'/workbooks/{book_id}/style', json={
-        'sheet': 'Sheet1', 'range': 'A1:B1', 'bold': True, 'fill_color': '#D9EAD3'
+        'sheet': 'Sheet1', 'range': 'A1:B1', 'bold': True, 'underline': True, 'fill_color': '#D9EAD3', 'number_format': 'yyyy-mm-dd', 'font_size': 14
     }).status_code == 200
     assert client.post(f'/workbooks/{book_id}/sheets', json={'name': 'Forecast'}).status_code == 200
     info = client.get(f'/workbooks/{book_id}').get_json()
@@ -38,6 +38,9 @@ def test_cells_sheets_style_and_save_roundtrip():
     cells = client.get(f'/workbooks/{book_id}/range', query_string={'sheet': 'Sheet1', 'range': 'A1:B2'}).get_json()
     assert cells['rows'][0][0]['value'] == 'Revenue'
     assert cells['rows'][0][0]['style']['bold'] is True
+    assert cells['rows'][0][0]['style']['underline'] is True
+    assert cells['rows'][0][0]['style']['number_format'] == 'yyyy-mm-dd'
+    assert cells['rows'][0][0]['style']['font_size'] == 14
     assert cells['rows'][1][1]['value'] == '=SUM(B1:B1)'
     saved = client.get(f'/workbooks/{book_id}/save')
     assert saved.status_code == 200
