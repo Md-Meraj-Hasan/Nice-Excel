@@ -92,7 +92,10 @@ def test_web_and_android_webview_quick_filters_support_multiple_columns():
         html = path.read_text(encoding="utf-8")
         assert "let quickFilters=[]" in html
         assert "for(const f of quickFilters)" in html
-        assert "quickFilters.push({column,text:q.trim()})" in html
+        assert "quickFilters.push({column,mode,text:q})" in html
+        assert '<option value="equal">Equal</option>' in html
+        assert '<option value="not-equal">Not equal</option>' in html
+        assert '<option value="blank">Blank</option>' in html
         assert "quickFilters=[]" in html
 
 
@@ -123,7 +126,10 @@ def test_native_black_theme_uses_dark_cells_and_persists_palette_for_web_activit
 
 def test_native_filters_match_displayed_formula_results_in_any_column():
     native = (ROOT / "app" / "src" / "main" / "java" / "com" / "meraj" / "niceexcel" / "MainActivity.kt").read_text(encoding="utf-8")
-    assert 'gridDisplay("${column}$row").contains(query, ignoreCase = true)' in native
+    assert 'matchesColumnFilter(gridDisplay("${column}$row"), query)' in native
+    assert '"equal" -> value.equals(expected, ignoreCase = true)' in native
+    assert '"not-equal" -> !value.equals(expected, ignoreCase = true)' in native
+    assert '"blank" -> value.isBlank()' in native
     assert 'gridDisplay("${col}$row")' in native
 
 
