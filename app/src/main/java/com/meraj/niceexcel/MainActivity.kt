@@ -656,7 +656,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                 "Insert 20 rows at selection" to { addRows(20) },
                 "Insert 50 rows at selection" to { addRows(50) },
                 "Table tools…" to { tableMenu() },
-                "Shapes…" to { startActivity(Intent(this, FlaskActivity::class.java)) },
+                "Shapes…" to { showNativeShapesMenu() },
                 "Symbols…" to { showSymbolPickerMenu() },
                 "AI Auto Fill…" to { autoFillDialog() }
             )
@@ -1593,6 +1593,14 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
     private fun addOneRow() = addRows(1)
 
     /** Add rows at the end in one operation, rendering at most once for a batch. */
+    private fun showNativeShapesMenu() {
+        val names = arrayOf("Rectangle", "Rounded rectangle", "Oval / Circle", "Line", "Arrow", "Double arrow", "Triangle", "Diamond", "Hexagon", "Pentagon", "Callout", "Text box")
+        AlertDialog.Builder(this).setTitle("Insert shape")
+            .setItems(names) { _, which ->
+                status.text = names[which] + " selected at " + selected
+                Toast.makeText(this, names[which] + " shape: drawing layer support is not yet connected in Native view", Toast.LENGTH_LONG).show()
+            }.setNegativeButton("Cancel", null).show()
+    }
     private fun showSymbolPickerMenu() {
         val symbols = linkedMapOf(
             "Currency" to listOf("₹","$","€","£","¥","₩","₽","₺","₫","฿","₱","₦"),
