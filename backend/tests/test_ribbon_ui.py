@@ -179,3 +179,15 @@ def test_native_table_header_tap_opens_filter_and_outline_is_applied():
     assert "filterMenu()" in native
     assert "st.thickBorder = true" in native
     assert "customColorInput" in native
+
+
+def test_black_theme_table_borders_use_contrast_safe_grid_colors():
+    native = (ROOT / "app" / "src" / "main" / "java" / "com" / "meraj" / "niceexcel" / "MainActivity.kt").read_text(encoding="utf-8")
+    assert "isTableBorder -> if (darkMode) palette.accent else palette.primary" in native
+    for path in [
+        ROOT / "backend" / "niceexcel_api" / "static" / "index.html",
+        ROOT / "app" / "src" / "main" / "assets" / "niceexcel_index.html",
+    ]:
+        html = path.read_text(encoding="utf-8")
+        assert ".grid td.table-cell{border-right:1px solid var(--line);border-bottom:1px solid var(--line)}" in html
+        assert ".grid td.table-cell.table-outline{box-shadow:inset 0 0 0 2px var(--line)}" in html
