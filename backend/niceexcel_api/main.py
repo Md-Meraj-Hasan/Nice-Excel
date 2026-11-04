@@ -283,6 +283,7 @@ def _cell_json(cell) -> dict[str, Any]:
             "font_color": cell.font.color.rgb if cell.font.color and cell.font.color.type == "rgb" else None,
             "fill_color": cell.fill.fgColor.rgb if cell.fill.fgColor.type == "rgb" else None,
             "horizontal": cell.alignment.horizontal,
+            "number_format": cell.number_format,
         },
     }
 
