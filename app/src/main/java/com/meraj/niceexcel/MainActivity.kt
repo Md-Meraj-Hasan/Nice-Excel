@@ -1387,12 +1387,9 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
             headerCell.setOnClickListener {
                 if (filterAllColumns) showColumnFilterDialog(colName(c)) else selectColumn(c)
             }
-            headerCell.setOnTouchListener { view, event ->
-                if (event.action == android.view.MotionEvent.ACTION_UP && filterAllColumns) {
-                    view.performClick()
-                    true
-                } else false
-            }
+            // Keep the standard Android click sequence. The previous ACTION_UP-only
+            // listener consumed the release without a matching DOWN and cancelled clicks
+            // on several devices, so All Columns never opened its filter dialog.
             header.addView(headerCell)
         }
         frozenRowHorizontal.visibility = android.view.View.VISIBLE
@@ -1720,11 +1717,19 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
     }
 
     private fun insertNativeShape(kind: String) {
-        val match = Regex("^([A-Z]+)([0-9]+)$").matchEntire(selected)
-        val col = columnIndex(match?.groupValues?.get(1) ?: "A")
-        val row = match?.groupValues?.get(2)?.toIntOrNull() ?: 1
-        val left = dp(48 + (0 until col).sumOf { lastColumnWidths.getOrElse(it) { 64 } } + 8).toFloat()
-        val top = dp((2 until row).sumOf { rowHeightPx(it) } + 8).toFloat()
+        val anchorCell = cellViews[selected]
+        if (anchorCell == null || !::drawingOverlay.isInitialized) {
+            status.text = "Select a visible cell before inserting a shape"
+            return
+        }
+        // Resolve the anchor from the actual laid-out cell position. This accounts for
+        // variable column widths, row heights, frozen headers and the current scroll offset.
+        val cellLocation = IntArray(2)
+        val overlayLocation = IntArray(2)
+        anchorCell.getLocationOnScreen(cellLocation)
+        drawingOverlay.getLocationOnScreen(overlayLocation)
+        val left = (cellLocation[0] - overlayLocation[0]).toFloat()
+        val top = (cellLocation[1] - overlayLocation[1]).toFloat()
         val rect = android.graphics.RectF(left, top, left + dp(116), top + dp(62))
         val color = dayPalettes[dayPaletteIndex.coerceIn(dayPalettes.indices)].primary
         val shape = NativeShape(java.util.UUID.randomUUID().toString(), kind, rect, Color.TRANSPARENT, color, dp(2).toFloat())
