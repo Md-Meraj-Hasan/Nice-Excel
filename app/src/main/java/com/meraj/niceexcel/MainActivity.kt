@@ -1629,11 +1629,23 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
     private fun showNativeShapesMenu() {
         val names = arrayOf("Rectangle", "Rounded rectangle", "Oval / Circle", "Line", "Arrow", "Double arrow", "Triangle", "Diamond", "Hexagon", "Pentagon", "Callout", "Text box")
         AlertDialog.Builder(this).setTitle("Insert shape")
-            .setItems(names) { _, which ->
-                status.text = names[which] + " selected at " + selected
-                Toast.makeText(this, names[which] + " shape: drawing layer support is not yet connected in Native view", Toast.LENGTH_LONG).show()
-            }.setNegativeButton("Cancel", null).show()
+            .setItems(names) { _, which -> insertNativeShape(names[which]) }
+            .setNegativeButton("Cancel", null).show()
     }
+
+    private fun insertNativeShape(kind: String) {
+        val match = Regex("^([A-Z]+)([0-9]+)$").matchEntire(selected)
+        val col = columnIndex(match?.groupValues?.get(1) ?: "A")
+        val row = match?.groupValues?.get(2)?.toIntOrNull() ?: 1
+        val left = (48 + (0 until col).sumOf { lastColumnWidths.getOrElse(it) { dp(64) } } + dp(8)).toFloat()
+        val top = (dp(24) + (1 until row).sumOf { dp(rowHeightPx(it)) } + dp(8)).toFloat()
+        val rect = android.graphics.RectF(left, top, left + dp(116), top + dp(62))
+        val color = dayPalettes[dayPaletteIndex.coerceIn(dayPalettes.indices)].primary
+        nativeShapes.getOrPut(sheetName) { mutableListOf() }.add(NativeShape(kind, rect, color))
+        drawingOverlay.invalidate()
+        status.text = "$kind inserted near $selected"
+    }
+
     private fun showSymbolPickerMenu() {
         val symbols = linkedMapOf(
             "Currency" to listOf("₹","$","€","£","¥","₩","₽","₺","₫","฿","₱","₦"),
