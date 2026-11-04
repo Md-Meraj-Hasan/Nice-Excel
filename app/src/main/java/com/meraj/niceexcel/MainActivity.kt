@@ -1382,7 +1382,17 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         columnWidthsBySheet[sheetName] = columnWidths
         for(c in 0 until colLimit) {
             val headerCell = makeCell(colName(c),columnWidths[c],true,null)
-            headerCell.setOnClickListener { if (filterAllColumns) showColumnFilterDialog(colName(c)) else selectColumn(c) }
+            headerCell.isClickable = true
+            headerCell.isFocusable = true
+            headerCell.setOnClickListener {
+                if (filterAllColumns) showColumnFilterDialog(colName(c)) else selectColumn(c)
+            }
+            headerCell.setOnTouchListener { view, event ->
+                if (event.action == android.view.MotionEvent.ACTION_UP && filterAllColumns) {
+                    view.performClick()
+                    true
+                } else false
+            }
             header.addView(headerCell)
         }
         frozenRowHorizontal.visibility = android.view.View.VISIBLE
@@ -1928,7 +1938,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         // Table borders are drawn as a 1-physical-pixel hairline. Each cell
         // paints its own four edges; using a dp-scaled 2dp stroke on both
         // neighbours made shared edges look like thick doubled separators.
-        val strokeWidth = if (isSelected) dp(2) else if (st?.thickBorder == true) dp(2) else if (isTableBorder) 1 else dp(1)
+        val strokeWidth = if (isSelected) dp(2) else if (st?.thickBorder == true || isTableBorder) 1 else dp(1)
         val signature = "$fill|$strokeColor|$strokeWidth"
         if (appliedCellBackgrounds[view] == signature) return
         view.background = android.graphics.drawable.GradientDrawable().apply {
@@ -3287,8 +3297,9 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                     val row = Regex("[0-9]+").find(address)?.value?.toIntOrNull() ?: headerRow
                     val col = Regex("^[A-Z]+").find(address)?.value ?: columns.first()
                     val st = styleFor(address)
-                    st.border = true
-                    st.thickBorder = row == headerRow || row == rows.last() || col == columns.first() || col == columns.last()
+                    // Table styles apply colour formatting only. Borders remain a separate command.
+                    st.border = false
+                    st.thickBorder = false
                     if (row == headerRow) {
                         st.bold = true; st.fillColor = headerColor; st.textColor = Color.WHITE
                     } else {
