@@ -42,6 +42,7 @@ class MainActivity : Activity() {
     private var filterColumn: String? = null
     private var filterText: String? = null
     private val filterCriteria = linkedMapOf<String, String>()
+    private var filterAllColumns = false
     private var tableHeaderRow: Int? = null
     private var sheetName = "Sheet1"
     private var selected = "A1"
@@ -167,6 +168,14 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
     private val undoHistory = mutableMapOf<String, MutableList<Map<String, String>>>()
     private val redoHistory = mutableMapOf<String, MutableList<Map<String, String>>>()
     private lateinit var grid: LinearLayout
+    private lateinit var drawingOverlay: android.view.View
+    private val nativeShapes = mutableMapOf<String, MutableList<NativeShape>>()
+    private var selectedNativeShape: NativeShape? = null
+    private var draggingNativeShape: NativeShape? = null
+    private var resizingNativeShape = false
+    private var lastShapeTouchX = 0f
+    private var lastShapeTouchY = 0f
+    private data class NativeShape(val id: String, val kind: String, val bounds: android.graphics.RectF, var fill: Int, var stroke: Int, var strokeWidth: Float = 2f, var text: String = "Text", var anchorCell: String? = null)
     private lateinit var verticalScroll: ScrollView
     private lateinit var headerHorizontal: HorizontalScrollView
     private lateinit var frozenRowHorizontal: HorizontalScrollView
@@ -247,7 +256,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val themePrefs = getSharedPreferences("niceexcel_theme", MODE_PRIVATE)
-        dayPaletteIndex = themePrefs.getInt("day_palette_index", getPreferences(MODE_PRIVATE).getInt("day_palette_index", 0)).coerceIn(dayPalettes.indices)
+        dayPaletteIndex = themePrefs.getInt("day_palette_index", getPreferences(MODE_PRIVATE).getInt("day_palette_index", 2)).coerceIn(dayPalettes.indices)
         darkMode = themePrefs.getBoolean("dark_mode", false)
         updateSystemBars()
         themePrefs.edit().putInt("day_palette_primary", dayPalettes[dayPaletteIndex].primary).apply()
@@ -285,6 +294,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
             mergedRangesBySheet.clear()
             restored.mergedRanges.forEach { (name, ranges) -> mergedRangesBySheet[name] = ranges.toMutableList() }
             reportingMetadata = restored.reportingMetadata
+            restoreNativeShapesFromMetadata()
             sheetName = getPreferences(MODE_PRIVATE).getString("last_session_sheet", null)
                 ?.takeIf { restored.sheets.containsKey(it) } ?: restored.sheets.keys.first()
             selected = getPreferences(MODE_PRIVATE).getString("last_session_cell", "A1") ?: "A1"
@@ -314,7 +324,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
             val snapshotMerges = mergedRangesBySheet.mapValues { it.value.toList() }
             val temp = java.io.File(filesDir, "niceexcel_last_session.tmp")
             java.io.FileOutputStream(temp).use { output ->
-                XlsxCodec.write(output, snapshotSheets, snapshotStyles, reportingMetadata, snapshotMerges)
+                XlsxCodec.write(output, snapshotSheets, snapshotStyles, metadataForSave(), snapshotMerges)
                 output.fd.sync()
             }
             val target = lastWorkbookFile()
@@ -350,7 +360,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
             setPadding(dp(6), dp(5), dp(6), dp(5))
             setBackgroundColor(themedColor(Color.rgb(17, 94, 57)))
         }
-        listOf("File", "Home", "Insert", "Format", "Data", "Advanced", "Formula", "View").forEach { label ->
+        listOf("File", "Home", "Insert", "Format", "Data", "View", "Advanced").forEach { label ->
             val button = tool(label) { showTopMenu(label) }.apply {
                 textSize = 13f
                 minHeight = dp(34)
@@ -458,7 +468,150 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
 
         bodyHorizontal = HorizontalScrollView(this).apply { isFillViewport=false; isHorizontalScrollBarEnabled=false }
         grid=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL; clipChildren = false; clipToPadding = false }
-        bodyHorizontal.addView(grid)
+        val layer = android.widget.FrameLayout(this).apply {
+            clipChildren = false
+            addView(grid, android.widget.FrameLayout.LayoutParams(-2, -2))
+        }
+        drawingOverlay = object : android.view.View(this) {
+            private val brush = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+            private fun polygon(rect: android.graphics.RectF, sides: Int, rotation: Float = -90f): android.graphics.Path {
+                val path = android.graphics.Path()
+                for (i in 0 until sides) {
+                    val angle = Math.toRadians((rotation + i * 360f / sides).toDouble())
+                    val x = rect.centerX() + kotlin.math.cos(angle).toFloat() * rect.width() / 2f
+                    val y = rect.centerY() + kotlin.math.sin(angle).toFloat() * rect.height() / 2f
+                    if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+                }
+                path.close()
+                return path
+            }
+            override fun onDraw(canvas: android.graphics.Canvas) {
+                super.onDraw(canvas)
+                nativeShapes[sheetName].orEmpty().forEach { shape ->
+                    val rect = shape.bounds
+                    brush.color = shape.fill
+                    brush.style = android.graphics.Paint.Style.FILL
+                    when (shape.kind) {
+                        "Line", "Arrow", "Double arrow" -> Unit
+                        "Oval / Circle" -> if (shape.fill != Color.TRANSPARENT) canvas.drawOval(rect, brush)
+                        "Triangle" -> if (shape.fill != Color.TRANSPARENT) canvas.drawPath(polygon(rect, 3), brush)
+                        "Diamond" -> if (shape.fill != Color.TRANSPARENT) canvas.drawPath(polygon(rect, 4), brush)
+                        "Pentagon" -> if (shape.fill != Color.TRANSPARENT) canvas.drawPath(polygon(rect, 5), brush)
+                        "Hexagon" -> if (shape.fill != Color.TRANSPARENT) canvas.drawPath(polygon(rect, 6), brush)
+                        "Callout" -> if (shape.fill != Color.TRANSPARENT) canvas.drawRoundRect(rect, dp(8).toFloat(), dp(8).toFloat(), brush)
+                        "Text box" -> if (shape.fill != Color.TRANSPARENT) canvas.drawRect(rect, brush)
+                        "Rounded rectangle" -> if (shape.fill != Color.TRANSPARENT) canvas.drawRoundRect(rect, dp(10).toFloat(), dp(10).toFloat(), brush)
+                        else -> if (shape.fill != Color.TRANSPARENT) canvas.drawRect(rect, brush)
+                    }
+                    brush.color = shape.stroke
+                    brush.strokeWidth = shape.strokeWidth
+                    brush.style = android.graphics.Paint.Style.STROKE
+                    when (shape.kind) {
+                        "Line" -> canvas.drawLine(rect.left, rect.top, rect.right, rect.bottom, brush)
+                        "Arrow" -> {
+                            canvas.drawLine(rect.left, rect.bottom, rect.right, rect.top, brush)
+                            val p = android.graphics.Path().apply { moveTo(rect.right, rect.top); lineTo(rect.right-dp(14), rect.top+dp(5)); lineTo(rect.right-dp(5), rect.top+dp(14)); close() }
+                            brush.style = android.graphics.Paint.Style.FILL; canvas.drawPath(p, brush)
+                        }
+                        "Double arrow" -> {
+                            canvas.drawLine(rect.left, rect.centerY(), rect.right, rect.centerY(), brush)
+                            canvas.drawLine(rect.left, rect.centerY(), rect.left+dp(12), rect.centerY()-dp(7), brush)
+                            canvas.drawLine(rect.left, rect.centerY(), rect.left+dp(12), rect.centerY()+dp(7), brush)
+                            canvas.drawLine(rect.right, rect.centerY(), rect.right-dp(12), rect.centerY()-dp(7), brush)
+                            canvas.drawLine(rect.right, rect.centerY(), rect.right-dp(12), rect.centerY()+dp(7), brush)
+                        }
+                        "Oval / Circle" -> canvas.drawOval(rect, brush)
+                        "Triangle" -> canvas.drawPath(polygon(rect, 3), brush)
+                        "Diamond" -> canvas.drawPath(polygon(rect, 4), brush)
+                        "Pentagon" -> canvas.drawPath(polygon(rect, 5), brush)
+                        "Hexagon" -> canvas.drawPath(polygon(rect, 6), brush)
+                        "Callout" -> { canvas.drawRoundRect(rect, dp(8).toFloat(), dp(8).toFloat(), brush); canvas.drawLine(rect.left+dp(20), rect.bottom, rect.left+dp(9), rect.bottom+dp(12), brush) }
+                        "Text box" -> { canvas.drawRect(rect, brush); brush.style = android.graphics.Paint.Style.FILL; brush.textSize = dp(14).toFloat(); canvas.drawText(shape.text, rect.left+dp(7), rect.centerY(), brush) }
+                        "Rounded rectangle" -> canvas.drawRoundRect(rect, dp(10).toFloat(), dp(10).toFloat(), brush)
+                        else -> canvas.drawRect(rect, brush)
+                    }
+                    if (selectedNativeShape?.id == shape.id) {
+                        brush.color = Color.rgb(40, 120, 220); brush.strokeWidth = dp(2).toFloat()
+                        brush.style = android.graphics.Paint.Style.STROKE
+                        canvas.drawRect(android.graphics.RectF(rect.left-dp(4), rect.top-dp(4), rect.right+dp(4), rect.bottom+dp(4)), brush)
+                        brush.style = android.graphics.Paint.Style.FILL
+                        canvas.drawCircle(rect.right, rect.bottom, dp(6).toFloat(), brush)
+                    }
+                }
+            }
+            override fun onTouchEvent(event: android.view.MotionEvent): Boolean {
+                val items = nativeShapes[sheetName] ?: return false
+                when (event.actionMasked) {
+                    android.view.MotionEvent.ACTION_DOWN -> {
+                        val hit = items.asReversed().firstOrNull { android.graphics.RectF(it.bounds).apply { inset(-dp(12).toFloat(), -dp(12).toFloat()) }.contains(event.x, event.y) }
+                        if (hit == null) {
+                            // A tap on a worksheet cell/background deselects the last shape.
+                            // Clear the blue resize frame immediately, including for the final shape.
+                            if (selectedNativeShape != null) {
+                                selectedNativeShape = null
+                                invalidate()
+                            }
+                            draggingNativeShape = null
+                            resizingNativeShape = false
+                            return false
+                        }
+                        selectedNativeShape = hit; draggingNativeShape = hit
+                        resizingNativeShape = kotlin.math.hypot((event.x-hit.bounds.right).toDouble(), (event.y-hit.bounds.bottom).toDouble()) <= dp(20)
+                        lastShapeTouchX = event.x; lastShapeTouchY = event.y; invalidate(); return true
+                    }
+                    android.view.MotionEvent.ACTION_MOVE -> {
+                        val shape = draggingNativeShape ?: return false
+                        val dx = event.x-lastShapeTouchX; val dy = event.y-lastShapeTouchY
+                        val anchor = shape.anchorCell?.let { cellViews[it] }
+                        val cellRect = anchor?.let {
+                            val cellPos = IntArray(2); val overlayPos = IntArray(2)
+                            it.getLocationOnScreen(cellPos); drawingOverlay.getLocationOnScreen(overlayPos)
+                            android.graphics.RectF(
+                                (cellPos[0] - overlayPos[0]).toFloat(),
+                                (cellPos[1] - overlayPos[1]).toFloat(),
+                                (cellPos[0] - overlayPos[0] + it.width).toFloat(),
+                                (cellPos[1] - overlayPos[1] + it.height).toFloat()
+                            )
+                        }
+                        if (resizingNativeShape) {
+                            val minW = minOf(dp(12).toFloat(), cellRect?.width() ?: dp(36).toFloat())
+                            val minH = minOf(dp(12).toFloat(), cellRect?.height() ?: dp(28).toFloat())
+                            shape.bounds.right = (shape.bounds.right + dx).coerceAtLeast(shape.bounds.left + minW)
+                            shape.bounds.bottom = (shape.bounds.bottom + dy).coerceAtLeast(shape.bounds.top + minH)
+                            cellRect?.let { shape.bounds.right = shape.bounds.right.coerceAtMost(it.right - dp(2)); shape.bounds.bottom = shape.bounds.bottom.coerceAtMost(it.bottom - dp(2)) }
+                        } else {
+                            var moveX = dx; var moveY = dy
+                            cellRect?.let {
+                                moveX = moveX.coerceIn(it.left + dp(2) - shape.bounds.left, it.right - dp(2) - shape.bounds.right)
+                                moveY = moveY.coerceIn(it.top + dp(2) - shape.bounds.top, it.bottom - dp(2) - shape.bounds.bottom)
+                            }
+                            shape.bounds.offset(moveX, moveY)
+                        }
+                        lastShapeTouchX=event.x; lastShapeTouchY=event.y; invalidate(); return true
+                    }
+                    android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
+                        val changed = draggingNativeShape != null
+                        draggingNativeShape = null
+                        resizingNativeShape = false
+                        // The blue selection frame and resize handle are transient editing
+                        // affordances, not part of the saved shape. Never leave them behind.
+                        selectedNativeShape = null
+                        invalidate()
+                        if (changed) persistLastWorkbook()
+                        performClick()
+                        return true
+                    }
+                }
+                return true
+            }
+            override fun performClick(): Boolean { super.performClick(); return true }
+        }.apply { isClickable = true; isFocusable = true }
+        drawingOverlay.setOnLongClickListener {
+            selectedNativeShape?.let { showNativeShapeOptions(it) }
+            true
+        }
+        layer.addView(drawingOverlay, android.widget.FrameLayout.LayoutParams(-1, -1))
+        bodyHorizontal.addView(layer)
         verticalScroll=ScrollView(this).apply { isFillViewport=true; isVerticalScrollBarEnabled=true; addView(bodyHorizontal) }
         root.addView(verticalScroll,LinearLayout.LayoutParams(-1,0,1f))
         val syncScroll = { source: HorizontalScrollView, targets: List<HorizontalScrollView> ->
@@ -649,37 +802,32 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                 "Undo" to { undo() }, "Redo" to { redo() },
                 "Copy selected cell" to { copySelectedCell() },
                 "Paste range from clipboard" to { pasteRangeFromClipboard() },
-                "Clear selected cell" to { clearSelectedCell() },
-                "Cell formatting…" to { formattingMenu() },
-                "Find / Replace…" to { findReplaceMenu() }
+                "Clear selected cell" to { clearSelectedCell() }
             )
             "Insert" -> listOf(
-                "Add row at bottom" to { addRows(1) },
-                "Add 5 rows at bottom" to { addRows(5) },
-                "Add 10 rows at bottom" to { addRows(10) },
-                "Duplicate selected row to bottom" to { duplicateSelectedRowToBottom() },
-                "Clear selected row…" to { clearSelectedRowConfirm() },
-                "Merge Top to Bottom" to { mergeCellsDialog(vertical = true) },
-                "Merge Left to Right" to { mergeCellsDialog(vertical = false) },
-                "Unmerge selected range…" to { unmergeCellsDialog() },
+                "Insert 10 rows at selection" to { addRows(10) },
+                "Table tools…" to { tableMenu() },
+                "Shapes…" to { showNativeShapesMenu() },
+                "Symbols…" to { showSymbolPickerMenu() },
                 "AI Auto Fill…" to { autoFillDialog() },
-                "Table tools…" to { tableMenu() }
+                "Clear formatting" to { clearFormattingSelection() }
             )
             "Format" -> listOf(
-                "Format cells…" to { formattingMenu() },
-                "Range formatting…" to { rangeToolsMenu() },
+                "Cells… (selected cell only)" to { formattingMenu(forceCell = true) },
+                "Range… (enter range)" to { rangeFormattingInput() },
                 "Font size…" to { chooseFontSize() },
-                "Text alignment…" to { chooseAlignment() },
+                "Alignment…" to { chooseAlignmentForTargets(listOf(selected), selected) },
                 "Number format…" to { chooseNumberFormat() },
-                "Selected row: Single / Double line…" to { selectedRowTextModeMenu() },
-                "Table styles…" to { tableMenu() }
+                "Table styles…" to { tableMenu() },
+                "Clear formatting" to { clearFormattingSelection() }
             )
             "Data" -> listOf(
                 "Sort column A → Z" to { sortColumn() },
                 "Filter column…" to { filterMenu() },
-                "Clear filter" to { filterColumn = null; filterText = null; filterCriteria.clear(); refreshFilterVisibility() },
+                "Clear filter" to { filterColumn = null; filterText = null; filterCriteria.clear(); filterAllColumns = false; refreshFilterVisibility() },
                 "Find / Replace…" to { findReplaceMenu() },
-                "Workbook data range info" to { val used = usedRange(); status.text = "Used range: A1:${colName(used.second)}${used.first}" }
+                "Workbook data range info" to { val used = usedRange(); status.text = "Used range: A1:${colName(used.second)}${used.first}" },
+                "Clear formatting" to { clearFormattingSelection() }
             )
             "Advanced" -> listOf(
                 "Open Full Advanced Tools (Web)" to { startActivity(Intent(this, FlaskActivity::class.java)) },
@@ -689,15 +837,17 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                 "Filter by Cell Colour" to { filterByCellColour() },
                 "Clear Advanced Filters" to { clearAdvancedFilters() },
                 "Pivot Summary…" to { pivotSummaryMenu(false) },
-                "Dashboard Builder…" to { pivotSummaryMenu(true) }
+                "Dashboard Builder…" to { pivotSummaryMenu(true) },
+                "Clear formatting" to { clearFormattingSelection() }
             )
-            "Formula" -> listOf("Insert function…" to { formulaPickerMenu() }, "Formula help" to { formulaHelp() }, "Formula examples" to { formulaHelp() })
+            "Formula" -> listOf("Insert function…" to { formulaPickerMenu() }, "Formula help" to { formulaHelp() }, "Formula examples" to { formulaHelp() }, "Clear formatting" to { clearFormattingSelection() })
             "View" -> buildList {
                 add("Choose Colour • ${dayPalettes[dayPaletteIndex].name}" to { chooseDayPalette() })
                 add(if (darkMode) "Switch to Day Theme" to { toggleDarkTheme() } else "Switch to Black Theme" to { toggleDarkTheme() })
                 add("Refresh cells grid" to { refreshCurrentSheetGrid() })
                 add("Refresh current sheet formulas" to { refreshCurrentSheetFormulas() })
                 add("Workbook info" to { status.text = "${sheets.size} sheet(s) • $rowCount rows • Offline workbook" })
+                add("Clear formatting" to { clearFormattingSelection() })
             }
             else -> listOf(
                 "Workbook info" to { status.text = "${sheets.size} sheet(s) • $rowCount rows • Offline workbook" }
@@ -707,12 +857,10 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         val compactLabels = mapOf(
             "New workbook" to "＋ New", "Open workbook…" to "Open", "Save" to "Save", "Save As…" to "Save As",
             "Export CSV…" to "CSV", "Undo" to "↶ Undo", "Redo" to "↷ Redo", "Copy selected cell" to "Copy",
-            "Clear selected cell" to "Clear", "Cell formatting…" to "Format", "Paste range from clipboard" to "Paste Range",
-            "Find / Replace…" to "Find", "Table tools…" to "Table",
-            "Merge Top to Bottom" to "Merge ↓", "Merge Left to Right" to "Merge →",
-            "Unmerge selected range…" to "Unmerge",
-            "Format cells…" to "Cells", "Range formatting…" to "Range", "Font size…" to "Size", "Text alignment…" to "Align",
-            "Number format…" to "Number", "Selected row: Single / Double line…" to "↵ Wrap", "Table styles…" to "Styles",
+            "Clear selected cell" to "Clear",  "Paste range from clipboard" to "Paste Range",
+             "Table tools…" to "Table",
+            
+            "Insert 10 rows at selection" to "＋ 10 Rows", "Table tools…" to "Table", "Shapes…" to "Shapes", "Symbols…" to "Symbols", "AI Auto Fill…" to "AI-Fill", "Table styles…" to "Styles",
             "Sort column A → Z" to "Sort A→Z", "Filter column…" to "Filter", "Clear filter" to "Clear filter", "Find / Replace…" to "Find",
             "Workbook data range info" to "Range info", "Open Full Advanced Tools (Web)" to "Full Tools", "Conditional Formatting…" to "Conditional", "Data Validation…" to "Validation", "Data Cleaning…" to "Clean Data", "Filter by Cell Colour" to "Filter Colour", "Clear Advanced Filters" to "Clear Filters", "Pivot Summary…" to "Pivot", "Dashboard Builder…" to "Dashboard", "Insert function…" to "ƒx Insert", "Formula help" to "ƒx Help",
             "Workbook info" to "Info", "Refresh current sheet formulas" to "↻ Refresh"
@@ -749,6 +897,19 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
         clipboard.setPrimaryClip(android.content.ClipData.newPlainText("$sheetName!$selected", data[selected].orEmpty()))
         status.text = "Copied $sheetName!$selected"
+    }
+
+    private fun clearFormattingSelection() {
+        val targets = selectedRangeCells.toList().ifEmpty { listOf(selected) }
+        val label = selectedRangeLabel ?: selected
+        AlertDialog.Builder(this).setTitle("Clear formatting")
+            .setMessage("Remove formatting from $label? Cell contents and formulas will remain unchanged.")
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Clear") { _, _ ->
+                targets.forEach { sheetStyles.remove(it) }
+                refreshStyledCells(targets)
+                status.text = "Formatting cleared: $label"
+            }.showProfessional()
     }
 
     private fun clearSelectedCell() {
@@ -926,7 +1087,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                     val headerLimit = tableHeaderRow ?: 1
                     val visibleRows = (2..rowLimit).filter { row ->
                         row <= headerLimit || criteria.all { (col, query) ->
-                            columnValues[col]?.get(row).orEmpty().contains(query, ignoreCase = true)
+                            matchesColumnFilter(columnValues[col]?.get(row).orEmpty(), query)
                         }
                     }.toSet()
                     mainHandler.post {
@@ -1238,6 +1399,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
     }
 
     private fun render() {
+        if (::drawingOverlay.isInitialized) drawingOverlay.invalidate()
         cachedExplicitLineCountsByRow = null
         val perfStarted = SystemClock.elapsedRealtime()
         val generation = ++renderGeneration
@@ -1284,7 +1446,14 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         columnWidthsBySheet[sheetName] = columnWidths
         for(c in 0 until colLimit) {
             val headerCell = makeCell(colName(c),columnWidths[c],true,null)
-            headerCell.setOnClickListener { selectColumn(c) }
+            headerCell.isClickable = true
+            headerCell.isFocusable = true
+            headerCell.setOnClickListener {
+                if (filterAllColumns) showColumnFilterDialog(colName(c)) else selectColumn(c)
+            }
+            // Keep the standard Android click sequence. The previous ACTION_UP-only
+            // listener consumed the release without a matching DOWN and cancelled clicks
+            // on several devices, so All Columns never opened its filter dialog.
             header.addView(headerCell)
         }
         frozenRowHorizontal.visibility = android.view.View.VISIBLE
@@ -1332,13 +1501,25 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         )
     }
 
+    private fun matchesColumnFilter(value: String, encoded: String): Boolean {
+        val parts = encoded.split(":", limit = 2)
+        val mode = parts.firstOrNull() ?: "contains"
+        val expected = parts.getOrElse(1) { encoded }
+        return when (mode) {
+            "equal" -> value.equals(expected, ignoreCase = true)
+            "not-equal" -> !value.equals(expected, ignoreCase = true)
+            "blank" -> value.isBlank()
+            else -> value.contains(expected, ignoreCase = true)
+        }
+    }
+
     private fun rowPassesFilter(row: Int): Boolean {
         if (row <= (tableHeaderRow ?: 1)) return true
         val criteria = filterCriteria.toMap().ifEmpty {
             if (filterColumn != null && filterText != null) mapOf(filterColumn!! to filterText!!) else emptyMap()
         }
         return criteria.all { (column, query) ->
-            gridDisplay("${column}$row").contains(query, ignoreCase = true)
+            matchesColumnFilter(gridDisplay("${column}$row"), query)
         }
     }
 
@@ -1365,7 +1546,14 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         line.addView(rowHeader)
         for (c in 0 until colLimit) {
             val address = "${colName(c)}$row"
-            line.addView(makeCell(gridDisplay(address), columnWidths[c], false, address, rowHeight))
+            val cell = makeCell(gridDisplay(address), columnWidths[c], false, address, rowHeight)
+            // In All Columns filter mode the frozen worksheet heading row is also
+            // a filter target; tapping a heading opens that column's input dialog.
+            if (row == 1 && filterAllColumns) {
+                cell.isClickable = true
+                cell.setOnClickListener { showColumnFilterDialog(colName(c)) }
+            }
+            line.addView(cell)
         }
         return line
     }
@@ -1604,6 +1792,158 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
     private fun addOneRow() = addRows(1)
 
     /** Add rows at the end in one operation, rendering at most once for a batch. */
+    private fun showNativeShapesMenu() {
+        val names = arrayOf("Rectangle", "Rounded rectangle", "Oval / Circle", "Line", "Arrow", "Double arrow", "Triangle", "Diamond", "Hexagon", "Pentagon", "Callout", "Text box")
+        AlertDialog.Builder(this).setTitle("Insert shape")
+            .setItems(names) { _, which -> insertNativeShape(names[which]) }
+            .setNegativeButton("Cancel", null).show()
+    }
+
+    private fun insertNativeShape(kind: String) {
+        val anchorCell = cellViews[selected]
+        if (anchorCell == null || !::drawingOverlay.isInitialized) {
+            status.text = "Select a visible cell before inserting a shape"
+            return
+        }
+        // Resolve the anchor from the actual laid-out cell position. This accounts for
+        // variable column widths, row heights, frozen headers and the current scroll offset.
+        val cellLocation = IntArray(2)
+        val overlayLocation = IntArray(2)
+        anchorCell.getLocationOnScreen(cellLocation)
+        drawingOverlay.getLocationOnScreen(overlayLocation)
+        val left = (cellLocation[0] - overlayLocation[0]).toFloat()
+        val top = (cellLocation[1] - overlayLocation[1]).toFloat()
+        // Fit the inserted object to the selected cell's actual measured dimensions.
+        // A small inset keeps the cell grid visible around the shape.
+        val inset = dp(2).toFloat()
+        val cellWidth = anchorCell.width.toFloat()
+        val cellHeight = anchorCell.height.toFloat()
+        if (cellWidth <= inset * 2 || cellHeight <= inset * 2) {
+            status.text = "Selected cell is too small for a shape"
+            return
+        }
+        val rect = android.graphics.RectF(left + inset, top + inset, left + cellWidth - inset, top + cellHeight - inset)
+        val color = dayPalettes[dayPaletteIndex.coerceIn(dayPalettes.indices)].primary
+        val shape = NativeShape(java.util.UUID.randomUUID().toString(), kind, rect, Color.TRANSPARENT, color, dp(2).toFloat(), anchorCell = selected)
+        nativeShapes.getOrPut(sheetName) { mutableListOf() }.add(shape)
+        // Insertion should leave the shape visible without a persistent blue
+        // editing frame or resize handle.
+        selectedNativeShape = null
+        draggingNativeShape = null
+        resizingNativeShape = false
+        drawingOverlay.invalidate()
+        persistLastWorkbook()
+        status.text = "$kind inserted near $selected"
+    }
+
+    private fun metadataForSave(): String {
+        val root = org.json.JSONObject()
+        root.put("niceexcelNativeShapesVersion", 1)
+        if (!reportingMetadata.isNullOrBlank()) root.put("legacyReportingMetadata", reportingMetadata)
+        val all = org.json.JSONObject()
+        nativeShapes.forEach { (sheet, shapes) ->
+            val array = org.json.JSONArray()
+            shapes.forEach { shape ->
+                val item = org.json.JSONObject()
+                item.put("id", shape.id); item.put("kind", shape.kind)
+                item.put("left", shape.bounds.left.toDouble()); item.put("top", shape.bounds.top.toDouble())
+                item.put("right", shape.bounds.right.toDouble()); item.put("bottom", shape.bounds.bottom.toDouble())
+                item.put("fill", shape.fill); item.put("stroke", shape.stroke)
+                item.put("strokeWidth", shape.strokeWidth.toDouble()); item.put("text", shape.text); item.put("anchorCell", shape.anchorCell ?: "")
+                array.put(item)
+            }
+            all.put(sheet, array)
+        }
+        root.put("nativeShapes", all)
+        return root.toString()
+    }
+
+    private fun restoreNativeShapesFromMetadata() {
+        nativeShapes.clear()
+        val raw = reportingMetadata ?: return
+        try {
+            val root = org.json.JSONObject(raw)
+            if (root.optInt("niceexcelNativeShapesVersion", 0) != 1) return
+            val all = root.optJSONObject("nativeShapes") ?: org.json.JSONObject()
+            val keys = all.keys()
+            while (keys.hasNext()) {
+                val sheet = keys.next()
+                val array = all.optJSONArray(sheet) ?: continue
+                val shapes = mutableListOf<NativeShape>()
+                for (i in 0 until array.length()) {
+                    val item = array.optJSONObject(i) ?: continue
+                    val rect = android.graphics.RectF(
+                        item.optDouble("left").toFloat(), item.optDouble("top").toFloat(),
+                        item.optDouble("right").toFloat(), item.optDouble("bottom").toFloat()
+                    )
+                    if (rect.width() <= 0f || rect.height() <= 0f) continue
+                    shapes.add(NativeShape(
+                        item.optString("id", java.util.UUID.randomUUID().toString()),
+                        item.optString("kind", "Rectangle"), rect,
+                        item.optInt("fill", Color.TRANSPARENT), item.optInt("stroke", Color.rgb(105,55,150)),
+                        item.optDouble("strokeWidth", dp(2).toDouble()).toFloat(), item.optString("text", "Text"), item.optString("anchorCell").takeIf { it.isNotBlank() }
+                    ))
+                }
+                nativeShapes[sheet] = shapes
+            }
+            reportingMetadata = root.optString("legacyReportingMetadata").takeIf { it.isNotBlank() }
+        } catch (_: Exception) {
+            // Older workbooks may contain plain reporting metadata rather than our shape envelope.
+        }
+    }
+
+    private fun showNativeShapeOptions(shape: NativeShape) {
+        val choices = arrayOf("Purple fill", "Light purple fill", "No fill", "Purple outline", "Black outline", "Delete shape")
+        AlertDialog.Builder(this).setTitle(shape.kind)
+            .setItems(choices) { _, which ->
+                when (which) {
+                    0 -> shape.fill = Color.rgb(105,55,150)
+                    1 -> shape.fill = Color.rgb(237,224,255)
+                    2 -> shape.fill = Color.TRANSPARENT
+                    3 -> shape.stroke = Color.rgb(105,55,150)
+                    4 -> shape.stroke = Color.BLACK
+                    5 -> nativeShapes[sheetName]?.removeAll { it.id == shape.id }
+                }
+                if (which == 5) selectedNativeShape = null
+                drawingOverlay.invalidate()
+                persistLastWorkbook()
+            }.setNegativeButton("Cancel", null).show()
+    }
+
+    private fun showSymbolPickerMenu() {
+        val symbols = linkedMapOf(
+            "Currency" to listOf("₹","$","€","£","¥","₩","₽","₺","₫","฿","₱","₦"),
+            "Math" to listOf("±","×","÷","≠","≤","≥","≈","∞","√","∑","∏","∫","∆","π","°","µ","‰","∴"),
+            "Arrows" to listOf("←","→","↑","↓","↔","↕","↗","↘","↙","↖","⇒","⇐","⇑","⇓"),
+            "Checks & stars" to listOf("✓","✔","✗","✘","★","☆","●","○","◆","■","♥","♣","♦","♠"),
+            "Greek" to listOf("α","β","γ","δ","ε","ζ","η","θ","λ","μ","π","σ","φ","ω","Α","Β","Γ","Δ","Ω"),
+            "Fractions" to listOf("½","⅓","⅔","¼","¾","⅛","⅜","⅝","⅞","¹","²","³","⁴","₁","₂","₃","₄"),
+            "Legal & business" to listOf("©","®","™","§","¶","℠","№","℃","℉")
+        )
+        val labels = symbols.keys.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle("Insert symbol")
+            .setItems(labels) { _, which ->
+                val category = labels[which]
+                val choices = symbols[category].orEmpty().toTypedArray()
+                AlertDialog.Builder(this)
+                    .setTitle(category)
+                    .setItems(choices) { _, index ->
+                        val current = formula.text?.toString().orEmpty()
+                        val cursor = formula.selectionStart.coerceAtLeast(0).coerceAtMost(current.length)
+                        val updated = current.substring(0, cursor) + choices[index] + current.substring(cursor)
+                        formula.setText(updated)
+                        formula.setSelection((cursor + choices[index].length).coerceAtMost(updated.length))
+                        formula.requestFocus()
+                        status.text = "Symbol inserted for $selected · press Enter to apply"
+                    }
+                    .setNegativeButton("Cancel", null)
+                    .show()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
     private fun addRows(count: Int) {
         if (count <= 0) return
         val started = SystemClock.elapsedRealtime()
@@ -1682,14 +2022,15 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
     private fun applyCellBackground(view: TextView, address: String?, header: Boolean) {
         val st = if (address != null) sheetStyles[address] else null
         val isSelected = address != null && (address == selected || address in selectedRangeCells)
+        // Selection is a border-only visual state. Never replace a cell's
+        // saved fill or theme surface just because the user tapped the cell.
         val fill = when {
             header -> if (darkMode) Color.rgb(24, 34, 50) else dayPalettes[dayPaletteIndex.coerceIn(dayPalettes.indices)].light
-            isSelected -> if (darkMode) dayPalettes[dayPaletteIndex.coerceIn(dayPalettes.indices)].primary else dayPalettes[dayPaletteIndex.coerceIn(dayPalettes.indices)].highlight
             st != null -> if (darkMode && st.fillColor == Color.WHITE) Color.BLACK else st.fillColor
             else -> themedSurface(Color.WHITE)
         }
         val palette = dayPalettes[dayPaletteIndex.coerceIn(dayPalettes.indices)]
-        val isTableBorder = st?.border == true && st.thickBorder
+        val isTableBorder = st?.border == true
         val strokeColor = when {
             isSelected -> palette.primary
             isTableBorder -> palette.primary
@@ -1699,11 +2040,56 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         // paints its own four edges; using a dp-scaled 2dp stroke on both
         // neighbours made shared edges look like thick doubled separators.
         val strokeWidth = if (isSelected) dp(2) else if (isTableBorder) 1 else dp(1)
-        val signature = "$fill|$strokeColor|$strokeWidth"
+        val addressParts = address?.let { Regex("^([A-Z]+)([0-9]+)$").matchEntire(it) }
+        val columnIndexForBorder = addressParts?.groupValues?.get(1)?.let { columnIndex(it) } ?: -1
+        val rowForBorder = addressParts?.groupValues?.get(2)?.toIntOrNull() ?: -1
+        // Keep shared separators thick and also thicken the outer right/bottom edges.
+        // The left/top edge is drawn when the adjacent cell is not part of the thick range.
+        val thickRight = st?.thickBorder == true
+        val thickBottom = st?.thickBorder == true
+        val thickTop = st?.thickBorder == true
+        val thickLeft = st?.thickBorder == true
+        val signature = "$fill|$strokeColor|$strokeWidth|$address|$thickRight|$thickBottom|$thickTop|$thickLeft"
         if (appliedCellBackgrounds[view] == signature) return
-        view.background = android.graphics.drawable.GradientDrawable().apply {
-            setColor(fill)
-            setStroke(strokeWidth, strokeColor)
+        if (st?.thickBorder == true && address != null) {
+            view.background = object : android.graphics.drawable.Drawable() {
+                private val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+                override fun draw(canvas: android.graphics.Canvas) {
+                    val b = bounds
+                    // Drawable bounds do not automatically constrain drawColor().
+                    // Paint only this cell so applying borders cannot cover the worksheet.
+                    paint.color = fill
+                    paint.style = android.graphics.Paint.Style.FILL
+                    canvas.drawRect(b, paint)
+                    paint.color = strokeColor
+                    paint.style = android.graphics.Paint.Style.FILL
+                    val hairline = 1f
+                    val inner = dp(2).toFloat()
+                    val leftNeighbourThick = columnIndexForBorder > 0 &&
+                        sheetStyles["${colName(columnIndexForBorder - 1)}$rowForBorder"]?.thickBorder == true
+                    val upperNeighbourThick = rowForBorder > 1 &&
+                        sheetStyles["${colName(columnIndexForBorder)}${rowForBorder - 1}"]?.thickBorder == true
+                    // Paint shared inner separators only from their owning right/bottom
+                    // cell. Do not let the next cell's thin left/top edge cover them.
+                    if (!upperNeighbourThick) {
+                        canvas.drawRect(b.left.toFloat(), b.top.toFloat(), b.right.toFloat(), b.top + if (thickTop) inner else hairline, paint)
+                    }
+                    if (!leftNeighbourThick) {
+                        canvas.drawRect(b.left.toFloat(), b.top.toFloat(), b.left + if (thickLeft) inner else hairline, b.bottom.toFloat(), paint)
+                    }
+                    canvas.drawRect(b.right - if (thickRight) inner else hairline, b.top.toFloat(), b.right.toFloat(), b.bottom.toFloat(), paint)
+                    canvas.drawRect(b.left.toFloat(), b.bottom - if (thickBottom) inner else hairline, b.right.toFloat(), b.bottom.toFloat(), paint)
+                }
+                override fun setAlpha(alpha: Int) { }
+                override fun setColorFilter(colorFilter: android.graphics.ColorFilter?) { }
+                @Suppress("DEPRECATION")
+                override fun getOpacity(): Int = android.graphics.PixelFormat.OPAQUE
+            }
+        } else {
+            view.background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(fill)
+                setStroke(strokeWidth, strokeColor)
+            }
         }
         appliedCellBackgrounds[view] = signature
     }
@@ -2757,7 +3143,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         val actions = arrayOf(
             "Text color", "Cell fill color", "Text alignment", "Bold on/off",
             "Italic on/off", "Underline on/off", "Font size", "Number format",
-            "Cell borders on/off", "Clear formatting", "Clear cell contents now"
+            "Cell borders on/off", "Clear formatting"
         )
         AlertDialog.Builder(this)
             .setTitle("Range $rangeLabel · ${cells.size} cells")
@@ -2805,7 +3191,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                             }.setNegativeButton("Cancel") { _, _ -> showRangeActions(rangeLabel, cells, pendingStyles) }.showProfessional()
                     }
                     7 -> {
-                        val opts = arrayOf("General", "Number (2 decimals)", "Percentage", "Currency", "Date (text display)")
+                        val opts = arrayOf("General", "Number (2 decimals)", "Percentage", "Currency", "Date (text display)", "Time", "Date & Time", "Text", "Scientific")
                         AlertDialog.Builder(this).setTitle("Number format for $rangeLabel").setItems(opts) { _, index ->
                             cells.forEach { pendingStyles.getValue(it).numberFormat = opts[index] }
                             continueEditing("Number format selected")
@@ -2813,14 +3199,6 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                     }
                     8 -> { cells.forEach { val st = pendingStyles.getValue(it); st.border = !st.border }; continueEditing("Borders toggled") }
                     9 -> { cells.forEach { pendingStyles[it] = CellStyle() }; continueEditing("Clear formatting selected") }
-                    10 -> {
-                        // Content clearing is intentionally immediate; only format changes are staged.
-                        cells.forEach { data.remove(it) }
-                        formulaDisplayCache.clear()
-                        if (selected in cells) formula.setText("")
-                        refreshStyledCells(cells)
-                        status.text = "Contents cleared for $rangeLabel"
-                    }
                 }
             }
             .setPositiveButton("Apply") { _, _ ->
@@ -2837,12 +3215,23 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
             .showProfessional()
     }
 
-    private fun formattingMenu() {
-        val rangeCells = selectedRangeCells.toList()
-        val targetLabel = selectedRangeLabel ?: selected
+    private fun rangeFormattingInput() {
+        val input = EditText(this).apply { hint = "Range e.g. A1:C10"; setSingleLine(true); setText(selectedRangeLabel?.takeIf { it.contains(":") } ?: "") }
+        AlertDialog.Builder(this).setTitle("Format a range").setMessage("Enter the cell range to format. All changes can be applied together.").setView(input)
+            .setPositiveButton("Continue") { _, _ ->
+                val label = input.text.toString().trim().uppercase(Locale.ROOT)
+                val cells = parseCellRange(label)
+                if (cells.isEmpty() || !label.contains(":")) Toast.makeText(this, "Enter a valid range such as A1:C10", Toast.LENGTH_SHORT).show()
+                else showRangeActions(label, cells)
+            }.setNegativeButton("Cancel", null).showProfessional()
+    }
+
+    private fun formattingMenu(forceCell: Boolean = false) {
+        val rangeCells = if (forceCell) emptyList() else selectedRangeCells.toList()
+        val targetLabel = if (forceCell) selected else (selectedRangeLabel ?: selected)
         val options = arrayOf(
             "Bold on/off", "Italic on/off", "Underline on/off", "Font size", "Text color", "Cell fill color",
-            "Alignment", "Number format", "Cell borders", "Clear formatting", "Clear cell", "Find / replace"
+            "Alignment", "Number format", "Cell borders", "Clear formatting", "Find / replace"
         )
         AlertDialog.Builder(this).setTitle("Format $targetLabel").setItems(options) { _, which ->
             val targets = if (rangeCells.isNotEmpty()) rangeCells else listOf(selected)
@@ -2858,8 +3247,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                 7 -> if (rangeCells.isNotEmpty()) chooseRangeNumberFormat(targetLabel, targets) else chooseNumberFormat()
                 8 -> { targets.forEach { styleFor(it).border = !styleFor(it).border }; refresh("Borders updated") }
                 9 -> { targets.forEach { sheetStyles.remove(it) }; refresh("Formatting cleared") }
-                10 -> { if (rangeCells.isNotEmpty()) { targets.forEach { data.remove(it) }; formulaDisplayCache.clear(); formula.setText(""); refresh("Contents cleared") } else { putCell(selected, ""); formula.setText(""); render(); status.text = "Cell cleared: $selected" } }
-                11 -> findReplaceMenu()
+                10 -> findReplaceMenu()
             }
         }.showProfessional()
     }
@@ -2895,7 +3283,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
     }
 
     private fun chooseRangeNumberFormat(label: String, targets: List<String>) {
-        val opts = arrayOf("General", "Number (2 decimals)", "Percentage", "Currency", "Date (text display)")
+        val opts = arrayOf("General", "Number (2 decimals)", "Percentage", "Currency", "Date (text display)", "Time", "Date & Time", "Text", "Scientific")
         AlertDialog.Builder(this).setTitle("Number format for $label").setItems(opts) { _, index ->
             targets.forEach { styleFor(it).numberFormat = opts[index] }
             refreshStyledCells(targets)
@@ -2950,7 +3338,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
     }
 
     private fun chooseNumberFormat() {
-        val opts = arrayOf("General", "Number (2 decimals)", "Percentage", "Currency", "Date (text display)")
+        val opts = arrayOf("General", "Number (2 decimals)", "Percentage", "Currency", "Date (text display)", "Time", "Date & Time", "Text", "Scientific")
         AlertDialog.Builder(this).setTitle("Number format").setItems(opts) { _, i ->
             styleFor(selected).numberFormat = opts[i]
             refreshStyledCells(listOf(selected)); status.text = "Number format set: ${opts[i]}"
@@ -3003,7 +3391,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                         rangeInput.error = "Use a valid range such as A1:D20"
                     } else {
                         dialog.dismiss()
-                        applyTableRangeAction(index, cells, range)
+                        if (index == 1) chooseNativeTableStyle(cells, range) else applyTableRangeAction(index, cells, range)
                     }
                 }
             }
@@ -3017,7 +3405,19 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         dialog.show()
     }
 
-    private fun applyTableRangeAction(action: Int, cells: List<String>, range: String) {
+    private fun chooseNativeTableStyle(cells: List<String>, range: String) {
+        val styles = listOf(
+            "Blue" to "#1F4E78", "Green" to "#217346", "Purple" to "#7030A0",
+            "Orange" to "#C65911", "Teal" to "#0F6B78", "Gray" to "#595959",
+            "Dark" to "#263746", "Light Blue" to "#4472C4"
+        )
+        AlertDialog.Builder(this).setTitle("Choose table colour")
+            .setItems(styles.map { it.first }.toTypedArray()) { _, which ->
+                applyTableRangeAction(1, cells, range, styles[which].second)
+            }.setNegativeButton("Cancel", null).showProfessional()
+    }
+
+    private fun applyTableRangeAction(action: Int, cells: List<String>, range: String, tableHeaderHex: String? = null) {
         val affected = linkedSetOf<String>()
         val rows = cells.mapNotNull { Regex("[0-9]+").find(it)?.value?.toIntOrNull() }.distinct().sorted()
         val columns = cells.mapNotNull { Regex("^[A-Z]+").find(it)?.value }.distinct().sortedBy { columnIndex(it) }
@@ -3036,16 +3436,23 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                 status.text = "Header applied to ${columns.first()}${headerRow}:${columns.last()}${headerRow}"
             }
             1 -> {
+                val headerColor = Color.parseColor(tableHeaderHex ?: "#217346")
+                fun tint(component: Int, amount: Float): Int = (component * (1f - amount) + 255f * amount).toInt().coerceIn(0, 255)
+                val lightColor = Color.rgb(tint(Color.red(headerColor), 0.88f), tint(Color.green(headerColor), 0.88f), tint(Color.blue(headerColor), 0.88f))
+                val lighterColor = Color.rgb(tint(Color.red(headerColor), 0.94f), tint(Color.green(headerColor), 0.94f), tint(Color.blue(headerColor), 0.94f))
                 cells.forEach { address ->
                     affected.add(address)
                     val row = Regex("[0-9]+").find(address)?.value?.toIntOrNull() ?: headerRow
                     val col = Regex("^[A-Z]+").find(address)?.value ?: columns.first()
                     val st = styleFor(address)
-                    st.border = true
+                    // Table styles apply colour formatting only. Borders remain a separate command.
+                    st.border = false
+                    st.thickBorder = false
                     if (row == headerRow) {
-                        st.bold = true; st.fillColor = dayPalettes[dayPaletteIndex.coerceIn(dayPalettes.indices)].primary; st.textColor = themedColor(Color.WHITE)
+                        st.bold = true; st.fillColor = headerColor; st.textColor = Color.WHITE
                     } else {
-                        st.fillColor = if (darkMode) Color.rgb(18,26,43) else if ((columnIndex(col) + row) % 2 == 0) 0xFFE8F5E9.toInt() else themedSurface(Color.WHITE)
+                        st.fillColor = if (darkMode) Color.rgb(18,26,43) else if ((row - headerRow) % 2 == 0) lighterColor else lightColor
+                        st.textColor = themedCellTextColor(Color.rgb(24, 32, 39))
                     }
                 }
                 tableHeaderRow = headerRow
@@ -3255,52 +3662,76 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
             }.showProfessional()
     }
     private fun filterMenu() {
-        val selectedColumn = Regex("^([A-Z]+)[0-9]+$").matchEntire(selected)
-            ?.groupValues?.get(1)?.uppercase(Locale.ROOT) ?: "A"
-        val columnInput = EditText(this).apply {
-            hint = "Column letter (A, D, AA, AB...)"
-            setSingleLine(true); setText(selectedColumn)
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS
-        }
-        val queryInput = EditText(this).apply {
-            hint = "Contains text (blank removes this column filter)"
-            setSingleLine(true)
-            setText(filterCriteria[columnInput.text.toString().uppercase(Locale.ROOT)] ?: filterText.orEmpty())
-        }
-        val panel = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(4), dp(20), dp(4))
-            addView(TextView(this@MainActivity).apply {
-                text = "Add or update a filter for any column. Existing filters on other columns remain active."
-                textSize = 13f
-            })
-            addView(columnInput, LinearLayout.LayoutParams(-1, -2))
-            addView(queryInput, LinearLayout.LayoutParams(-1, -2))
-        }
-        AlertDialog.Builder(this).setTitle("Filter rows")
-            .setView(panel)
-            .setPositiveButton("Apply") { _, _ ->
-                val rawCol = columnInput.text.toString().trim().uppercase(Locale.ROOT)
-                val q = queryInput.text.toString().trim()
-                if (!Regex("^[A-Z]{1,3}$").matches(rawCol) || columnIndex(rawCol) !in 0 until colLimit) {
-                    status.text = "Invalid column. Available: A to ${colNameFromIndex(colLimit - 1)}."
-                    return@setPositiveButton
+        val choices = arrayOf("All Columns — tap any heading to filter", "Specific Column — choose one column")
+        AlertDialog.Builder(this).setTitle("Choose filter scope")
+            .setItems(choices) { _, which ->
+                if (which == 0) {
+                    filterAllColumns = true
+                    // Rebind the currently visible header cells immediately. This also
+                    // covers the case where filter mode is enabled after the sheet grid
+                    // was first rendered and avoids depending on a later full render.
+                    for (column in 0 until minOf(colLimit, columnHeader.childCount - 1)) {
+                        val headerCell = columnHeader.getChildAt(column + 1)
+                        headerCell.isClickable = true
+                        headerCell.isFocusable = true
+                        headerCell.setOnClickListener { showColumnFilterDialog(colName(column)) }
+                    }
+                    // Bind the visible worksheet heading cells (row 1) as well as
+                    // the A/B/C column-letter strip. Users commonly tap the actual
+                    // table headings to open each column's filter input.
+                    for (column in 0 until minOf(colLimit, frozenFirstRow.childCount - 1)) {
+                        val headingCell = frozenFirstRow.getChildAt(column + 1)
+                        headingCell.isClickable = true
+                        headingCell.setOnClickListener { showColumnFilterDialog(colName(column)) }
+                    }
+                    columnHeader.invalidate()
+                    frozenFirstRow.invalidate()
+                    headerHorizontal.invalidate()
+                    status.text = "All Columns filter mode enabled · tap a heading or column letter"
+                } else {
+                    filterAllColumns = false
+                    val current = Regex("^([A-Z]+)[0-9]+$").matchEntire(selected)?.groupValues?.get(1) ?: "A"
+                    showColumnFilterDialog(current)
                 }
-                val col = colNameFromIndex(columnIndex(rawCol))
-                if (q.isEmpty()) filterCriteria.remove(col) else filterCriteria[col] = q
+            }.setNegativeButton("Cancel", null).showProfessional()
+    }
+
+    private fun showColumnFilterDialog(columnName: String) {
+        val col = columnName.uppercase(Locale.ROOT)
+        val current = filterCriteria[col].orEmpty().split(":", limit = 2)
+        val currentMode = current.getOrNull(0)?.takeIf { it in listOf("equal", "not-equal", "blank") } ?: "equal"
+        val currentValue = current.getOrElse(1) { "" }
+        val choices = arrayOf("Equal", "Not equal", "Blank")
+        AlertDialog.Builder(this).setTitle("Filter column $col")
+            .setItems(choices) { _, which ->
+                val mode = when (which) { 0 -> "equal"; 1 -> "not-equal"; else -> "blank" }
+                if (mode == "blank") {
+                    filterCriteria[col] = "blank:"
+                    filterColumn = filterCriteria.keys.lastOrNull()
+                    filterText = filterColumn?.let { filterCriteria[it] }
+                    refreshFilterVisibility()
+                } else {
+                    val queryInput = EditText(this).apply {
+                        hint = if (mode == "equal") "Exact value to match" else "Value to exclude"
+                        setSingleLine(true)
+                        setText(if (currentMode == mode) currentValue else "")
+                    }
+                    AlertDialog.Builder(this).setTitle(if (mode == "equal") "Equal to…" else "Not equal to…")
+                        .setView(queryInput)
+                        .setPositiveButton("Apply") { _, _ ->
+                            val q = queryInput.text.toString().trim()
+                            if (q.isEmpty()) filterCriteria.remove(col) else filterCriteria[col] = mode + ":" + q
+                            filterColumn = filterCriteria.keys.lastOrNull()
+                            filterText = filterColumn?.let { filterCriteria[it] }
+                            refreshFilterVisibility()
+                        }.setNegativeButton("Cancel", null).showProfessional()
+                }
+            }.setNeutralButton("Clear this column") { _, _ ->
+                filterCriteria.remove(col)
                 filterColumn = filterCriteria.keys.lastOrNull()
                 filterText = filterColumn?.let { filterCriteria[it] }
                 refreshFilterVisibility()
-            }
-            .setNeutralButton("Clear this column") { _, _ ->
-                val rawCol = columnInput.text.toString().trim().uppercase(Locale.ROOT)
-                if (Regex("^[A-Z]{1,3}$").matches(rawCol)) filterCriteria.remove(colNameFromIndex(columnIndex(rawCol)))
-                filterColumn = filterCriteria.keys.lastOrNull()
-                filterText = filterColumn?.let { filterCriteria[it] }
-                refreshFilterVisibility()
-            }
-            .setNegativeButton("Cancel", null)
-            .showProfessional()
+            }.setNegativeButton("Cancel", null).showProfessional()
     }
 
     private fun sortColumn() {
@@ -3452,6 +3883,10 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         "Number (2 decimals)" -> String.format(Locale.US, "%.2f", value)
         "Percentage" -> String.format(Locale.US, "%.2f%%", value * 100.0)
         "Currency" -> String.format(Locale.US, "$%.2f", value)
+        "Date (text display)", "Date" -> java.text.SimpleDateFormat("yyyy-MM-dd", Locale.US).format(java.util.Date(((value - 25569.0) * 86400000.0).toLong()))
+        "Time" -> java.text.SimpleDateFormat("HH:mm:ss", Locale.US).format(java.util.Date(((value - Math.floor(value)) * 86400000.0).toLong()))
+        "Date & Time" -> java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US).format(java.util.Date(((value - 25569.0) * 86400000.0).toLong()))
+        "Scientific" -> String.format(Locale.US, "%.2E", value)
         else -> if (value % 1.0 == 0.0) value.toLong().toString() else String.format(Locale.US, "%.4f", value)
     }
 
@@ -3510,7 +3945,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
             cellStyles.mapValues { (_, style) -> style.copy() }
         }
         val mergeSnapshot = mergedRangesBySheet.mapValues { (_, ranges) -> ranges.toList() }
-        val metadataSnapshot = reportingMetadata
+        val metadataSnapshot = metadataForSave()
 
         try {
             backgroundExecutor.execute {
@@ -3634,6 +4069,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                 loaded.mergedRanges.forEach { (name, ranges) -> mergedRangesBySheet[name] = ranges.toMutableList() }
                 formulaDisplayCache.clear()
                 reportingMetadata = loaded.reportingMetadata
+                nativeShapes.clear(); restoreNativeShapesFromMetadata()
                 val lastCellRow = sheets.values.flatMap { it.keys }.mapNotNull { Regex("[A-Z]+([0-9]+)").matchEntire(it)?.groupValues?.get(1)?.toIntOrNull() }.maxOrNull() ?: 50
                 val lastMergeRow = mergedRangesBySheet.values.flatten().flatMap { it.split(":") }.mapNotNull { Regex("[A-Z]+([0-9]+)").matchEntire(it)?.groupValues?.get(1)?.toIntOrNull() }.maxOrNull() ?: 50
                 rowCount = max(50, max(lastCellRow, lastMergeRow))

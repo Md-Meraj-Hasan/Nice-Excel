@@ -172,8 +172,10 @@ class RangeRequest(BaseModel):
 
 
 class StyleRequest(RangeRequest):
+    clear_format: bool | None = None
     bold: bool | None = None
     italic: bool | None = None
+    underline: bool | None = None
     font_name: str | None = Field(default=None, max_length=80)
     font_size: float | None = Field(default=None, ge=6, le=96)
     font_color: str | None = Field(default=None, pattern=r"^#?[0-9A-Fa-f]{6}$")
@@ -276,11 +278,13 @@ def _cell_json(cell) -> dict[str, Any]:
         "style": {
             "bold": cell.font.bold,
             "italic": cell.font.italic,
+            "underline": bool(cell.font.underline),
             "font_name": cell.font.name,
             "font_size": cell.font.sz,
             "font_color": cell.font.color.rgb if cell.font.color and cell.font.color.type == "rgb" else None,
             "fill_color": cell.fill.fgColor.rgb if cell.fill.fgColor.type == "rgb" else None,
             "horizontal": cell.alignment.horizontal,
+            "number_format": cell.number_format,
         },
     }
 
@@ -673,9 +677,17 @@ def style_range(book_id: str, request: StyleRequest):
     _record_history(book_id)
     for row in ws.iter_rows(min_row=min_row, max_row=max_row, min_col=min_col, max_col=max_col):
         for cell in row:
+            if request.clear_format:
+                cell.font = Font()
+                cell.fill = PatternFill()
+                cell.alignment = Alignment()
+                cell.border = Border()
+                cell.number_format = "General"
+                continue
             f = copy(cell.font)
             if request.bold is not None: f.bold = request.bold
             if request.italic is not None: f.italic = request.italic
+            if request.underline is not None: f.underline = ('single' if request.underline else None)
             if request.font_name is not None: f.name = request.font_name
             if request.font_size is not None: f.sz = request.font_size
             if request.font_color is not None: f.color = _color(request.font_color)
