@@ -1938,7 +1938,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         // Table borders are drawn as a 1-physical-pixel hairline. Each cell
         // paints its own four edges; using a dp-scaled 2dp stroke on both
         // neighbours made shared edges look like thick doubled separators.
-        val strokeWidth = if (isSelected) dp(2) else if (st?.thickBorder == true || isTableBorder) 1 else dp(1)
+        val strokeWidth = if (isSelected) dp(2) else if (isTableBorder) 1 else dp(1)
         val signature = "$fill|$strokeColor|$strokeWidth"
         if (appliedCellBackgrounds[view] == signature) return
         view.background = android.graphics.drawable.GradientDrawable().apply {
