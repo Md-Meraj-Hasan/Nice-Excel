@@ -1511,7 +1511,14 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         line.addView(rowHeader)
         for (c in 0 until colLimit) {
             val address = "${colName(c)}$row"
-            line.addView(makeCell(gridDisplay(address), columnWidths[c], false, address, rowHeight))
+            val cell = makeCell(gridDisplay(address), columnWidths[c], false, address, rowHeight)
+            // In All Columns filter mode the frozen worksheet heading row is also
+            // a filter target; tapping a heading opens that column's input dialog.
+            if (row == 1 && filterAllColumns) {
+                cell.isClickable = true
+                cell.setOnClickListener { showColumnFilterDialog(colName(c)) }
+            }
+            line.addView(cell)
         }
         return line
     }
@@ -1784,7 +1791,11 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         val color = dayPalettes[dayPaletteIndex.coerceIn(dayPalettes.indices)].primary
         val shape = NativeShape(java.util.UUID.randomUUID().toString(), kind, rect, Color.TRANSPARENT, color, dp(2).toFloat(), anchorCell = selected)
         nativeShapes.getOrPut(sheetName) { mutableListOf() }.add(shape)
-        selectedNativeShape = shape
+        // Insertion should leave the shape visible without a persistent blue
+        // editing frame or resize handle.
+        selectedNativeShape = null
+        draggingNativeShape = null
+        resizingNativeShape = false
         drawingOverlay.invalidate()
         persistLastWorkbook()
         status.text = "$kind inserted near $selected"
@@ -1997,12 +2008,10 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         val addressParts = address?.let { Regex("^([A-Z]+)([0-9]+)$").matchEntire(it) }
         val columnIndexForBorder = addressParts?.groupValues?.get(1)?.let { columnIndex(it) } ?: -1
         val rowForBorder = addressParts?.groupValues?.get(2)?.toIntOrNull() ?: -1
-        // Thick-border ranges draw each shared separator once: the left/top cell owns
-        // its right/bottom inner edge. The outside perimeter stays a 1px hairline.
-        val thickRight = st?.thickBorder == true && columnIndexForBorder in 0 until (colLimit - 1) &&
-            sheetStyles["${colName(columnIndexForBorder + 1)}$rowForBorder"]?.thickBorder == true
-        val thickBottom = st?.thickBorder == true && rowForBorder > 0 &&
-            sheetStyles["${colName(columnIndexForBorder)}${rowForBorder + 1}"]?.thickBorder == true
+        // Keep shared separators thick and also thicken the outer right/bottom edges.
+        // The left/top edge is drawn when the adjacent cell is not part of the thick range.
+        val thickRight = st?.thickBorder == true
+        val thickBottom = st?.thickBorder == true
         val signature = "$fill|$strokeColor|$strokeWidth|$address|$thickRight|$thickBottom"
         if (appliedCellBackgrounds[view] == signature) return
         if (st?.thickBorder == true && address != null) {
@@ -2010,7 +2019,11 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                 private val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
                 override fun draw(canvas: android.graphics.Canvas) {
                     val b = bounds
-                    canvas.drawColor(fill)
+                    // Drawable bounds do not automatically constrain drawColor().
+                    // Paint only this cell so applying borders cannot cover the worksheet.
+                    paint.color = fill
+                    paint.style = android.graphics.Paint.Style.FILL
+                    canvas.drawRect(b, paint)
                     paint.color = strokeColor
                     paint.style = android.graphics.Paint.Style.FILL
                     val hairline = 1f
@@ -3624,9 +3637,18 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                         headerCell.isFocusable = true
                         headerCell.setOnClickListener { showColumnFilterDialog(colName(column)) }
                     }
+                    // Bind the visible worksheet heading cells (row 1) as well as
+                    // the A/B/C column-letter strip. Users commonly tap the actual
+                    // table headings to open each column's filter input.
+                    for (column in 0 until minOf(colLimit, frozenFirstRow.childCount - 1)) {
+                        val headingCell = frozenFirstRow.getChildAt(column + 1)
+                        headingCell.isClickable = true
+                        headingCell.setOnClickListener { showColumnFilterDialog(colName(column)) }
+                    }
                     columnHeader.invalidate()
+                    frozenFirstRow.invalidate()
                     headerHorizontal.invalidate()
-                    status.text = "All Columns filter mode enabled · tap a column heading"
+                    status.text = "All Columns filter mode enabled · tap a heading or column letter"
                 } else {
                     filterAllColumns = false
                     val current = Regex("^([A-Z]+)[0-9]+$").matchEntire(selected)?.groupValues?.get(1) ?: "A"
