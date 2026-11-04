@@ -360,7 +360,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
             setPadding(dp(6), dp(5), dp(6), dp(5))
             setBackgroundColor(themedColor(Color.rgb(17, 94, 57)))
         }
-        listOf("File", "Home", "Insert", "Format", "Data", "Advanced", "Formula", "View").forEach { label ->
+        listOf("File", "Home", "Insert", "Format", "Data", "Formula", "View", "Advanced").forEach { label ->
             val button = tool(label) { showTopMenu(label) }.apply {
                 textSize = 13f
                 minHeight = dp(34)
