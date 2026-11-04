@@ -360,7 +360,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
             setPadding(dp(6), dp(5), dp(6), dp(5))
             setBackgroundColor(themedColor(Color.rgb(17, 94, 57)))
         }
-        listOf("File", "Home", "Insert", "Format", "Data", "Formula", "View", "Advanced").forEach { label ->
+        listOf("File", "Home", "Insert", "Format", "Data", "View", "Advanced").forEach { label ->
             val button = tool(label) { showTopMenu(label) }.apply {
                 textSize = 13f
                 minHeight = dp(34)
@@ -1087,7 +1087,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                     val headerLimit = tableHeaderRow ?: 1
                     val visibleRows = (2..rowLimit).filter { row ->
                         row <= headerLimit || criteria.all { (col, query) ->
-                            columnValues[col]?.get(row).orEmpty().contains(query, ignoreCase = true)
+                            matchesColumnFilter(columnValues[col]?.get(row).orEmpty(), query)
                         }
                     }.toSet()
                     mainHandler.post {
@@ -1501,13 +1501,25 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         )
     }
 
+    private fun matchesColumnFilter(value: String, encoded: String): Boolean {
+        val parts = encoded.split("\\u0001", limit = 2)
+        val mode = parts.firstOrNull() ?: "contains"
+        val expected = parts.getOrElse(1) { encoded }
+        return when (mode) {
+            "equal" -> value.equals(expected, ignoreCase = true)
+            "not-equal" -> !value.equals(expected, ignoreCase = true)
+            "blank" -> value.isBlank()
+            else -> value.contains(expected, ignoreCase = true)
+        }
+    }
+
     private fun rowPassesFilter(row: Int): Boolean {
         if (row <= (tableHeaderRow ?: 1)) return true
         val criteria = filterCriteria.toMap().ifEmpty {
             if (filterColumn != null && filterText != null) mapOf(filterColumn!! to filterText!!) else emptyMap()
         }
         return criteria.all { (column, query) ->
-            gridDisplay("${column}$row").contains(query, ignoreCase = true)
+            matchesColumnFilter(gridDisplay("${column}$row"), query)
         }
     }
 
@@ -2035,7 +2047,9 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         // The left/top edge is drawn when the adjacent cell is not part of the thick range.
         val thickRight = st?.thickBorder == true
         val thickBottom = st?.thickBorder == true
-        val signature = "$fill|$strokeColor|$strokeWidth|$address|$thickRight|$thickBottom"
+        val thickTop = st?.thickBorder == true
+        val thickLeft = st?.thickBorder == true
+        val signature = "$fill|$strokeColor|$strokeWidth|$address|$thickRight|$thickBottom|$thickTop|$thickLeft"
         if (appliedCellBackgrounds[view] == signature) return
         if (st?.thickBorder == true && address != null) {
             view.background = object : android.graphics.drawable.Drawable() {
@@ -2058,10 +2072,10 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                     // Paint shared inner separators only from their owning right/bottom
                     // cell. Do not let the next cell's thin left/top edge cover them.
                     if (!upperNeighbourThick) {
-                        canvas.drawRect(b.left.toFloat(), b.top.toFloat(), b.right.toFloat(), b.top + hairline, paint)
+                        canvas.drawRect(b.left.toFloat(), b.top.toFloat(), b.right.toFloat(), b.top + if (thickTop) inner else hairline, paint)
                     }
                     if (!leftNeighbourThick) {
-                        canvas.drawRect(b.left.toFloat(), b.top.toFloat(), b.left + hairline, b.bottom.toFloat(), paint)
+                        canvas.drawRect(b.left.toFloat(), b.top.toFloat(), b.left + if (thickLeft) inner else hairline, b.bottom.toFloat(), paint)
                     }
                     canvas.drawRect(b.right - if (thickRight) inner else hairline, b.top.toFloat(), b.right.toFloat(), b.bottom.toFloat(), paint)
                     canvas.drawRect(b.left.toFloat(), b.bottom - if (thickBottom) inner else hairline, b.right.toFloat(), b.bottom.toFloat(), paint)
@@ -3684,29 +3698,40 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
 
     private fun showColumnFilterDialog(columnName: String) {
         val col = columnName.uppercase(Locale.ROOT)
-        val queryInput = EditText(this).apply {
-            hint = "Contains text (blank removes this column filter)"
-            setSingleLine(true)
-            setText(filterCriteria[col].orEmpty())
-        }
+        val current = filterCriteria[col].orEmpty().split("\\u0001", limit = 2)
+        val currentMode = current.getOrNull(0)?.takeIf { it in listOf("equal", "not-equal", "blank") } ?: "equal"
+        val currentValue = current.getOrElse(1) { "" }
+        val choices = arrayOf("Equal", "Not equal", "Blank")
         AlertDialog.Builder(this).setTitle("Filter column $col")
-            .setMessage("Show rows where column $col contains this text.")
-            .setView(queryInput)
-            .setPositiveButton("Apply") { _, _ ->
-                val q = queryInput.text.toString().trim()
-                if (q.isEmpty()) filterCriteria.remove(col) else filterCriteria[col] = q
-                filterColumn = filterCriteria.keys.lastOrNull()
-                filterText = filterColumn?.let { filterCriteria[it] }
-                refreshFilterVisibility()
-            }
-            .setNeutralButton("Clear this column") { _, _ ->
+            .setItems(choices) { _, which ->
+                val mode = when (which) { 0 -> "equal"; 1 -> "not-equal"; else -> "blank" }
+                if (mode == "blank") {
+                    filterCriteria[col] = "blank\\u0001"
+                    filterColumn = filterCriteria.keys.lastOrNull()
+                    filterText = filterColumn?.let { filterCriteria[it] }
+                    refreshFilterVisibility()
+                } else {
+                    val queryInput = EditText(this).apply {
+                        hint = if (mode == "equal") "Exact value to match" else "Value to exclude"
+                        setSingleLine(true)
+                        setText(if (currentMode == mode) currentValue else "")
+                    }
+                    AlertDialog.Builder(this).setTitle(if (mode == "equal") "Equal to…" else "Not equal to…")
+                        .setView(queryInput)
+                        .setPositiveButton("Apply") { _, _ ->
+                            val q = queryInput.text.toString().trim()
+                            if (q.isEmpty()) filterCriteria.remove(col) else filterCriteria[col] = mode + "\\u0001" + q
+                            filterColumn = filterCriteria.keys.lastOrNull()
+                            filterText = filterColumn?.let { filterCriteria[it] }
+                            refreshFilterVisibility()
+                        }.setNegativeButton("Cancel", null).showProfessional()
+                }
+            }.setNeutralButton("Clear this column") { _, _ ->
                 filterCriteria.remove(col)
                 filterColumn = filterCriteria.keys.lastOrNull()
                 filterText = filterColumn?.let { filterCriteria[it] }
                 refreshFilterVisibility()
-            }
-            .setNegativeButton("Cancel", null)
-            .showProfessional()
+            }.setNegativeButton("Cancel", null).showProfessional()
     }
 
     private fun sortColumn() {
