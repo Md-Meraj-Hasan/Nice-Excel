@@ -241,3 +241,10 @@ def test_web_table_header_contrast_handles_transparent_cell_backgrounds():
         html = path.read_text(encoding="utf-8")
         assert "getPropertyValue('--cell').trim()" in html
         assert "if(!rgb)return '#18202b'" in html
+
+
+def test_native_selected_table_range_keeps_single_edge_border_drawable():
+    native = (ROOT / "app" / "src" / "main" / "java" / "com" / "meraj" / "niceexcel" / "MainActivity.kt").read_text(encoding="utf-8")
+    assert "val edges = if (isTableBorder && address != null) tableBorderEdges(address)" in native
+    assert "view.background = if (isTableBorder) {" in native
+    assert "CellBorderDrawable(fill, strokeColor, strokeWidth.toFloat(), edges)" in native
