@@ -172,6 +172,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
     private val nativeShapes = mutableMapOf<String, MutableList<NativeShape>>()
     private var selectedNativeShape: NativeShape? = null
     private var draggingNativeShape: NativeShape? = null
+    private var resizingNativeShape = false
     private var lastShapeTouchX = 0f
     private var lastShapeTouchY = 0f
     private data class NativeShape(val id: String, val kind: String, val bounds: android.graphics.RectF, var fill: Int, var stroke: Int, var strokeWidth: Float = 2f, var text: String = "Text")
@@ -533,6 +534,8 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                         brush.color = Color.rgb(40, 120, 220); brush.strokeWidth = dp(2).toFloat()
                         brush.style = android.graphics.Paint.Style.STROKE
                         canvas.drawRect(android.graphics.RectF(rect.left-dp(4), rect.top-dp(4), rect.right+dp(4), rect.bottom+dp(4)), brush)
+                        brush.style = android.graphics.Paint.Style.FILL
+                        canvas.drawCircle(rect.right, rect.bottom, dp(6).toFloat(), brush)
                     }
                 }
             }
@@ -542,15 +545,20 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                     android.view.MotionEvent.ACTION_DOWN -> {
                         val hit = items.asReversed().firstOrNull { android.graphics.RectF(it.bounds).apply { inset(-dp(12).toFloat(), -dp(12).toFloat()) }.contains(event.x, event.y) } ?: return false
                         selectedNativeShape = hit; draggingNativeShape = hit
+                        resizingNativeShape = kotlin.math.hypot((event.x-hit.bounds.right).toDouble(), (event.y-hit.bounds.bottom).toDouble()) <= dp(20)
                         lastShapeTouchX = event.x; lastShapeTouchY = event.y; invalidate(); return true
                     }
                     android.view.MotionEvent.ACTION_MOVE -> {
                         val shape = draggingNativeShape ?: return false
                         val dx = event.x-lastShapeTouchX; val dy = event.y-lastShapeTouchY
-                        shape.bounds.offset(dx, dy); lastShapeTouchX=event.x; lastShapeTouchY=event.y; invalidate(); return true
+                        if (resizingNativeShape) {
+                            shape.bounds.right = max(shape.bounds.left + dp(36), shape.bounds.right + dx)
+                            shape.bounds.bottom = max(shape.bounds.top + dp(28), shape.bounds.bottom + dy)
+                        } else shape.bounds.offset(dx, dy)
+                        lastShapeTouchX=event.x; lastShapeTouchY=event.y; invalidate(); return true
                     }
                     android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
-                        draggingNativeShape = null; persistLastWorkbook(); performClick(); return true
+                        draggingNativeShape = null; resizingNativeShape = false; persistLastWorkbook(); performClick(); return true
                     }
                 }
                 return true
