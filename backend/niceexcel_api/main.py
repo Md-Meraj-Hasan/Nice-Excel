@@ -224,6 +224,7 @@ class SmartTableRequest(BaseModel):
     table_id: str | None = Field(default=None, max_length=64)
     has_header: bool = True
     style: str = Field(default="blue", pattern=r"^(blue|green|purple|orange|teal|gray|dark|light)$")
+    custom_color: str | None = Field(default=None, pattern=r"^#?[0-9A-Fa-f]{6}$")
     filter_enabled: bool = True
     total_row: bool = False
 
@@ -930,6 +931,13 @@ def create_smart_table(book_id: str, request: SmartTableRequest):
             "light": ("4472C4", "EAF2F8", "FFFFFF"),
         }
         header_hex, stripe_hex, alternate_hex = palette[request.style]
+        if request.custom_color:
+            header_hex = request.custom_color.lstrip("#").upper()
+            rgb = tuple(int(header_hex[i:i + 2], 16) for i in (0, 2, 4))
+            def _tint(amount: float) -> str:
+                return "".join(f"{round(channel + (255 - channel) * amount):02X}" for channel in rgb)
+            stripe_hex = _tint(0.78)
+            alternate_hex = _tint(0.92)
         for row in range(min_row, table_end_row + 1):
             for col in range(min_col, max_col + 1):
                 cell = ws.cell(row, col)
@@ -948,7 +956,7 @@ def create_smart_table(book_id: str, request: SmartTableRequest):
         definition = {
             "id": table_id, "name": request.name.strip(), "sheet": request.sheet,
             "source_range": source_range, "data_range": data_range, "has_header": request.has_header,
-            "style": request.style, "filter_enabled": request.filter_enabled,
+            "style": request.style, "custom_color": header_hex, "filter_enabled": request.filter_enabled,
             "total_row": request.total_row, "excel_table_name": excel_name,
         }
         meta["tables"].append(definition)
