@@ -1110,7 +1110,11 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                         }
                         frozenRowHorizontal.visibility = android.view.View.VISIBLE
                         grid.requestLayout()
-                        status.text = if (criteria.isEmpty()) "Filter cleared" else "Filters applied: " + criteria.entries.joinToString(" AND ") { "${it.key} contains '${it.value}'" }
+                        status.text = if (criteria.isEmpty()) "Filter cleared" else "Filters applied: " + criteria.entries.joinToString(" AND ") { (column, encoded) ->
+                            val parts = encoded.split(":", limit = 2)
+                            val label = when (parts.firstOrNull()) { "equal" -> "equals"; "starts-with" -> "starts with"; "not-equal" -> "not equal"; "blank" -> "is blank"; else -> "contains" }
+                            "$column $label '${parts.getOrElse(1) { "" }}'"
+                        }
                     }
                 } catch (error: Exception) {
                     mainHandler.post {
@@ -1507,6 +1511,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         val expected = parts.getOrElse(1) { encoded }
         return when (mode) {
             "equal" -> value.equals(expected, ignoreCase = true)
+            "starts-with" -> value.trim().startsWith(expected.trim(), ignoreCase = true)
             "not-equal" -> !value.equals(expected, ignoreCase = true)
             "blank" -> value.isBlank()
             else -> value.contains(expected, ignoreCase = true)
@@ -3699,12 +3704,12 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
     private fun showColumnFilterDialog(columnName: String) {
         val col = columnName.uppercase(Locale.ROOT)
         val current = filterCriteria[col].orEmpty().split(":", limit = 2)
-        val currentMode = current.getOrNull(0)?.takeIf { it in listOf("equal", "not-equal", "blank") } ?: "equal"
+        val currentMode = current.getOrNull(0)?.takeIf { it in listOf("equal", "starts-with", "not-equal", "blank") } ?: "equal"
         val currentValue = current.getOrElse(1) { "" }
-        val choices = arrayOf("Equal", "Not equal", "Blank")
+        val choices = arrayOf("Equal", "Starts with", "Not equal", "Blank")
         AlertDialog.Builder(this).setTitle("Filter column $col")
             .setItems(choices) { _, which ->
-                val mode = when (which) { 0 -> "equal"; 1 -> "not-equal"; else -> "blank" }
+                val mode = when (which) { 0 -> "equal"; 1 -> "starts-with"; 2 -> "not-equal"; else -> "blank" }
                 if (mode == "blank") {
                     filterCriteria[col] = "blank:"
                     filterColumn = filterCriteria.keys.lastOrNull()
@@ -3712,11 +3717,11 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                     refreshFilterVisibility()
                 } else {
                     val queryInput = EditText(this).apply {
-                        hint = if (mode == "equal") "Exact value to match" else "Value to exclude"
+                        hint = when (mode) { "equal" -> "Exact value to match"; "starts-with" -> "Beginning of value (e.g. 47)"; else -> "Value to exclude" }
                         setSingleLine(true)
                         setText(if (currentMode == mode) currentValue else "")
                     }
-                    AlertDialog.Builder(this).setTitle(if (mode == "equal") "Equal to…" else "Not equal to…")
+                    AlertDialog.Builder(this).setTitle(when (mode) { "equal" -> "Equal to…"; "starts-with" -> "Starts with…"; else -> "Not equal to…" })
                         .setView(queryInput)
                         .setPositiveButton("Apply") { _, _ ->
                             val q = queryInput.text.toString().trim()
