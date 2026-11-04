@@ -891,7 +891,10 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
             }
             view.text = text
             val st = sheetStyles[address]
-            view.setTextColor(themedCellTextColor(st?.textColor ?: Color.rgb(24, 32, 39)))
+            val isTableHeader = st?.bold == true && st.border && st.thickBorder
+            val textColor = if (isTableHeader && st != null) themedCellTextColor(tableHeaderTextColor(st.fillColor))
+                else themedCellTextColor(st?.textColor ?: Color.rgb(24, 32, 39))
+            view.setTextColor(textColor)
             view.textSize = st?.fontSize ?: 13f
             view.typeface = Typeface.create(
                 Typeface.DEFAULT,
@@ -1509,7 +1512,8 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
             gravity = if (header || key == null) Gravity.CENTER else Gravity.CENTER_VERTICAL or Gravity.START
             setPadding(dp(3), 0, dp(3), 0)
             val st = if (key != null) sheetStyles[key] else null
-            setTextColor(if (header) { if (darkMode) Color.WHITE else dayPalettes[dayPaletteIndex.coerceIn(dayPalettes.indices)].ink } else themedCellTextColor(st?.textColor ?: Color.rgb(24,32,39)))
+            val isTableHeader = st?.bold == true && st.border && st.thickBorder
+            setTextColor(if (header) { if (darkMode) Color.WHITE else dayPalettes[dayPaletteIndex.coerceIn(dayPalettes.indices)].ink } else if (isTableHeader && st != null) themedCellTextColor(tableHeaderTextColor(st.fillColor)) else themedCellTextColor(st?.textColor ?: Color.rgb(24,32,39)))
             textSize = st?.fontSize ?: 13f
             typeface = Typeface.create(Typeface.DEFAULT, (if (st?.bold == true || header) Typeface.BOLD else Typeface.NORMAL) or (if (st?.italic == true) Typeface.ITALIC else Typeface.NORMAL))
             paint.isUnderlineText = st?.underline == true
@@ -1686,6 +1690,50 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
             .showProfessional()
     }
 
+    private fun hasThickTableBorder(address: String): Boolean {
+        val style = sheetStyles[address]
+        return style?.border == true && style.thickBorder
+    }
+
+    private fun tableBorderEdges(address: String): BooleanArray {
+        val match = Regex("^([A-Z]+)(\\d+)$").matchEntire(address) ?: return booleanArrayOf(true, true, true, true)
+        val column = columnIndex(match.groupValues[1])
+        val row = match.groupValues[2].toIntOrNull() ?: return booleanArrayOf(true, true, true, true)
+        val left = if (column > 0) hasThickTableBorder("${colName(column - 1)}$row") else false
+        val above = if (row > 1) hasThickTableBorder("${colName(column)}${row - 1}") else false
+        // Ownership rule: the cell on the left owns a shared vertical edge;
+        // the cell above owns a shared horizontal edge. Every edge is painted once.
+        return booleanArrayOf(!above, true, true, !left)
+    }
+
+    private class CellBorderDrawable(
+        private val fillColor: Int,
+        private val borderColor: Int,
+        private val borderWidth: Float,
+        private val edges: BooleanArray
+    ) : android.graphics.drawable.Drawable() {
+        private val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+        override fun draw(canvas: android.graphics.Canvas) {
+            val b = bounds
+            paint.style = android.graphics.Paint.Style.FILL
+            paint.color = fillColor
+            canvas.drawRect(b, paint)
+            paint.style = android.graphics.Paint.Style.STROKE
+            paint.strokeWidth = borderWidth
+            paint.strokeCap = android.graphics.Paint.Cap.SQUARE
+            paint.color = borderColor
+            val inset = borderWidth / 2f
+            if (edges[0]) canvas.drawLine(b.left + inset, b.top + inset, b.right - inset, b.top + inset, paint)
+            if (edges[1]) canvas.drawLine(b.left + inset, b.top + inset, b.left + inset, b.bottom - inset, paint)
+            if (edges[2]) canvas.drawLine(b.right - inset, b.top + inset, b.right - inset, b.bottom - inset, paint)
+            if (edges[3]) canvas.drawLine(b.left + inset, b.bottom - inset, b.right - inset, b.bottom - inset, paint)
+        }
+        override fun setAlpha(alpha: Int) { paint.alpha = alpha; invalidateSelf() }
+        override fun setColorFilter(colorFilter: android.graphics.ColorFilter?) { paint.colorFilter = colorFilter; invalidateSelf() }
+        @Deprecated("Deprecated in Java")
+        override fun getOpacity(): Int = android.graphics.PixelFormat.TRANSLUCENT
+    }
+
     private fun applyCellBackground(view: TextView, address: String?, header: Boolean) {
         val st = if (address != null) sheetStyles[address] else null
         val isSelected = address != null && (address == selected || address in selectedRangeCells)
@@ -1699,19 +1747,20 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         val isTableBorder = st?.border == true && st.thickBorder
         val strokeColor = when {
             isSelected -> palette.primary
-            // The Black palette primary is intentionally near-black for fills; never reuse it for a border on a black worksheet.
             isTableBorder -> if (darkMode) palette.accent else palette.primary
             else -> if (darkMode) Color.rgb(65,82,106) else palette.gridLine
         }
-        // Table borders are drawn as a 1-physical-pixel hairline. Each cell
-        // paints its own four edges; using a dp-scaled 2dp stroke on both
-        // neighbours made shared edges look like thick doubled separators.
         val strokeWidth = if (isSelected || isTableBorder) dp(2) else dp(1)
-        val signature = "$fill|$strokeColor|$strokeWidth"
+        val edges = if (isTableBorder && !isSelected && address != null) tableBorderEdges(address) else booleanArrayOf(true, true, true, true)
+        val signature = "$fill|$strokeColor|$strokeWidth|${edges.joinToString("")}"
         if (appliedCellBackgrounds[view] == signature) return
-        view.background = android.graphics.drawable.GradientDrawable().apply {
-            setColor(fill)
-            setStroke(strokeWidth, strokeColor)
+        view.background = if (isTableBorder && !isSelected) {
+            CellBorderDrawable(fill, strokeColor, strokeWidth.toFloat(), edges)
+        } else {
+            android.graphics.drawable.GradientDrawable().apply {
+                setColor(fill)
+                setStroke(strokeWidth, strokeColor)
+            }
         }
         appliedCellBackgrounds[view] = signature
     }
