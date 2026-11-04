@@ -109,9 +109,15 @@
 <body>
 <header class="top web-native-toolbar" aria-label="Nice Excel main menu">
 <details class="toolgroup"><summary>File</summary><div class="toolmenu"><button class="primary" id="newBtn">New workbook</button><button id="recoverBtn">Recover</button><button id="openBtn">Open workbook…</button><button id="saveBtn">Save XLSX</button><button id="csvBtn">Export CSV…</button></div></details>
-<details class="toolgroup"><summary>Home</summary><div class="toolmenu"><button id="undoBtn">Undo</button><button id="redoBtn">Redo</button><button id="copyCellBtn">Copy cell</button><button id="pasteCellBtn">Paste cells</button><button id="clearCellBtn">Clear contents</button><button id="homeFormatBtn">Cell formatting…</button><button id="findBtn">Find / Replace…</button></div></details>
-<details class="toolgroup"><summary>Insert</summary><div class="toolmenu"><button id="insertRowBtn">Insert row at selection</button><button id="addSheetMenu">Add worksheet</button><button id="mergeBtn">Merge range</button><button id="smartTableBtn" class="primary">Smart Table</button><button id="chartBtn">Insert chart</button></div></details>
-<details class="toolgroup"><summary>Format</summary><div class="toolmenu format-menu"><button id="boldBtn"><b>B</b></button><button id="italicBtn"><i>I</i></button><label title="Font color"><input id="fontColor" type="color" value="#edf3ff" aria-label="Font color"></label><label title="Cell fill"><input id="fillColor" type="color" value="#243b5b" aria-label="Cell fill"></label><button type="button" id="fontThemeBtn" class="theme-palette-trigger" aria-expanded="false" title="Choose font theme color">A ▾</button><button type="button" id="fillThemeBtn" class="theme-palette-trigger" aria-expanded="false" title="Choose cell fill theme color">Fill ▾</button><select id="align" aria-label="Horizontal alignment"><option value="general">General</option><option value="left">Left</option><option value="center">Center</option><option value="right">Right</option></select><select id="numberFormat" aria-label="Number format"><option value="General">General</option><option value="0">Number</option><option value="0.00">Number (2 decimals)</option><option value="0%">Percent</option><option value="$#,##0.00">Currency</option><option value="yyyy-mm-dd">Date</option></select><button id="applyStyle">Apply format</button><button id="fontSizeBtn">Font size</button><button id="clearFormatBtn">Clear formatting</button></div></details>
+<details class="toolgroup"><summary>Home</summary><div class="toolmenu"><button id="undoBtn">Undo</button><button id="redoBtn">Redo</button><button id="copyCellBtn">Copy cell</button><button id="pasteCellBtn">Paste cells</button><button id="clearCellBtn">Clear contents</button></div></details>
+<details class="toolgroup"><summary>Insert</summary><div class="toolmenu insert-menu">
+<button id="insertRowsMenuBtn" type="button">＋ 10+ Rows</button>
+<button id="smartTableBtn" class="primary">Table</button>
+<button id="insertShapeBtn" type="button">Shapes</button>
+<button id="insertSymbolBtn" type="button">Symbols</button>
+<button id="aiFillBtn" type="button">AI-Fill</button>
+</div></details>
+<details class="toolgroup"><summary>Format</summary><div class="toolmenu"><button id="fontColorCellBtn" type="button">Font color</button><button id="fillColorCellBtn" type="button">Cell fill</button><button type="button" id="fontThemeBtn" class="theme-palette-trigger" aria-expanded="false" title="Choose font theme color">A ▾</button><button type="button" id="fillThemeBtn" class="theme-palette-trigger" aria-expanded="false" title="Choose cell fill theme color">Fill ▾</button><button id="boldBtn"><b>B</b></button><button id="italicBtn"><i>I</i></button><button id="clearFormatBtn">Clear formatting</button></div></details>
 <details class="toolgroup"><summary>Data</summary><div class="toolmenu"><button id="findBtnData" type="button">Find / Replace</button><button id="sortAscBtn" type="button">Sort A → Z</button><button id="sortDescBtn" type="button">Sort Z → A</button><button id="filterColumnBtn" type="button">Filter column</button><button id="clearFilterBtn" type="button">Clear filter</button><button id="retrieveDataBtn" type="button">Retrieve Data</button><button id="freezeBtn">Freeze panes</button><button id="dependenciesBtn">Dependencies</button></div></details>
 <details class="toolgroup"><summary>Advanced Data</summary><div class="toolmenu"><button id="filterColorBtn">Filter by Color</button><button id="clearColorFilterBtn">Clear Color Filter</button><button id="conditionalFormatBtn">Conditional Formatting</button><button id="dataValidationBtn">Data Validation</button><button id="dataCleaningBtn">Data Cleaning</button><button id="pivotTableBtn">Pivot Table</button><button id="dashboardBuilderBtn">Dashboard Builder</button></div></details>
 <details class="toolgroup"><summary>Formula</summary><div class="toolmenu"><button id="formulaPickerRibbonBtn" type="button">Insert function</button><button id="calculateBtn">ƒx Calculate</button><button id="dependenciesBtnFormula" type="button">Dependencies</button><button id="formulaHelpBtn" type="button">Formula help</button></div></details>
@@ -144,7 +150,7 @@
  function json(method,body){return {method,headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}}
  async function create(){const x=await api('/workbooks',json('POST',{sheet_name:'Sheet1'}));bookId=x.workbook_id;activeSheet=x.sheets[0];sheets=x.sheets;selected='A1';rememberBook();await refresh();setStatus('New workbook ready')}
  async function info(){const x=await api('/workbooks/'+bookId);sheets=x.sheets.map(s=>s.name);if(!sheets.includes(activeSheet))activeSheet=sheets[0]||'Sheet1';renderSheets();}
- async function refresh(){if(!bookId)return;const gridWrap=$('gridwrap');const savedTop=gridWrap?gridWrap.scrollTop:0;const savedLeft=gridWrap?gridWrap.scrollLeft:0;await info();const x=await api('/workbooks/'+bookId+'/range?sheet='+encodeURIComponent(activeSheet)+'&range=A1:Z40');data=x.rows;conditionalRules=x.conditional_formatting||[];try{const dv=await api('/workbooks/'+bookId+'/data-validation?sheet='+encodeURIComponent(activeSheet));validationRules=dv.rules||[];}catch{validationRules=[];}try{const m=await api('/workbooks/'+bookId+'/reporting/metadata');reportingTables=(m.metadata?.tables||[]).filter(t=>t.sheet===activeSheet)}catch{reportingTables=[]}renderGrid();renderSmartTableFilters();syncFormula();if(gridWrap){gridWrap.scrollTop=savedTop;gridWrap.scrollLeft=savedLeft;}}
+ async function refresh(){if(!bookId)return;const gridWrap=$('gridwrap');const savedTop=gridWrap?gridWrap.scrollTop:0;const savedLeft=gridWrap?gridWrap.scrollLeft:0;await info();const x=await api('/workbooks/'+bookId+'/range?sheet='+encodeURIComponent(activeSheet)+'&range=A1:Z40');data=x.rows;conditionalRules=x.conditional_formatting||[];try{const dv=await api('/workbooks/'+bookId+'/data-validation?sheet='+encodeURIComponent(activeSheet));validationRules=dv.rules||[];}catch{validationRules=[];}try{const m=await api('/workbooks/'+bookId+'/reporting/metadata');reportingTables=(m.metadata?.tables||[]).filter(t=>t.sheet===activeSheet)}catch{reportingTables=[]}renderGrid();renderSmartTableFilters();syncFormula();if(typeof renderObjectOverlay==='function')await renderObjectOverlay();if(gridWrap){gridWrap.scrollTop=savedTop;gridWrap.scrollLeft=savedLeft;}}
  function cellAt(a){const m=a.match(/^([A-Z]+)(\d+)$/);if(!m)return null;let c=0;for(const ch of m[1])c=c*26+ch.charCodeAt(0)-64;return {r:+m[2],c}}
  function cellData(a){const p=cellAt(a);return p&&data[p.r-1]&&data[p.r-1][p.c-1]}
  let frozenRows=1;
@@ -302,7 +308,7 @@ $('undoBtn').onclick=()=>queueHistoryAction('undo');$('redoBtn').onclick=()=>que
    strip.id='inlineTools'; strip.className='inline-tools'; strip.setAttribute('aria-label','Selected section tools');
    header.insertAdjacentElement('afterend',strip);
    let active=null;
-   const shortLabels={copyCellBtn:'Copy',pasteCellBtn:'Paste',clearCellBtn:'Clear',fontSizeBtn:'Font size',clearFormatBtn:'Clear format',sortAscBtn:'Sort A→Z',sortDescBtn:'Sort Z→A',filterColumnBtn:'Filter',clearFilterBtn:'Clear filter',formulaPickerRibbonBtn:'ƒx Insert',newBtn:'＋ New',recoverBtn:'↻ Recover',openBtn:'Open XLSX',saveBtn:'Save XLSX',csvBtn:'Export CSV',undoBtn:'↶ Undo',redoBtn:'↷ Redo',homeFormatBtn:'Format…',findBtn:'Find',insertRowBtn:'＋ Row',addSheetMenu:'＋ Sheet',mergeBtn:'Merge',chartBtn:'Chart',smartTableBtn:'Smart Table',boldBtn:'B',italicBtn:'I',applyStyle:'Apply',findBtnData:'Find',retrieveDataBtn:'Retrieve',freezeBtn:'Freeze',dependenciesBtn:'Links',calculateBtn:'ƒx Calc',dependenciesBtnFormula:'Links',formulaHelpBtn:'Help',nativeExcelBtn:'Native Excel',workbookInfoBtn:'Info'};
+   const shortLabels={copyCellBtn:'Copy',pasteCellBtn:'Paste',clearCellBtn:'Clear',clearFormatBtn:'Clear format',sortAscBtn:'Sort A→Z',sortDescBtn:'Sort Z→A',filterColumnBtn:'Filter',clearFilterBtn:'Clear filter',formulaPickerRibbonBtn:'ƒx Insert',newBtn:'＋ New',recoverBtn:'↻ Recover',openBtn:'Open XLSX',saveBtn:'Save XLSX',csvBtn:'Export CSV',undoBtn:'↶ Undo',redoBtn:'↷ Redo',insertRowsMenuBtn:'＋ 10+ Rows',insertShapeBtn:'Shapes',insertSymbolBtn:'Symbols',aiFillBtn:'AI-Fill',smartTableBtn:'Smart Table',boldBtn:'B',italicBtn:'I',findBtnData:'Find',retrieveDataBtn:'Retrieve',freezeBtn:'Freeze',dependenciesBtn:'Links',calculateBtn:'ƒx Calc',dependenciesBtnFormula:'Links',formulaHelpBtn:'Help',nativeExcelBtn:'Native Excel',workbookInfoBtn:'Info'};
    groups.forEach(group=>{
      const summary=group.querySelector('summary'), menu=group.querySelector('.toolmenu');
      summary.setAttribute('role','button'); summary.setAttribute('aria-label',summary.textContent.trim()+' tools');
@@ -343,7 +349,42 @@ $('undoBtn').onclick=()=>queueHistoryAction('undo');$('redoBtn').onclick=()=>que
  })();
 
 
- function setupFormulaPicker(){
+  
+<dialog id="shapeInsertDialog" class="insert-object-dialog" aria-labelledby="shapeDialogTitle">
+ <div class="st-head"><h2 id="shapeDialogTitle">Insert shape</h2><button type="button" id="shapeDialogClose" aria-label="Close">✕</button></div>
+ <div class="st-body">
+  <div class="st-field"><label for="shapeType">Shape</label><select id="shapeType">
+   <option value="rectangle">Rectangle</option><option value="roundRect">Rounded rectangle</option><option value="ellipse">Oval / Circle</option><option value="line">Line</option><option value="arrow">Arrow</option><option value="doubleArrow">Double arrow</option><option value="triangle">Triangle</option><option value="diamond">Diamond</option><option value="hexagon">Hexagon</option><option value="pentagon">Pentagon</option><option value="callout">Callout</option><option value="textBox">Text box</option>
+  </select></div>
+  <div class="st-field"><label for="shapeText">Text (optional)</label><input id="shapeText" maxlength="120" placeholder="Add a label"></div>
+  <div class="st-field"><label for="shapeFill">Fill color</label><input id="shapeFill" type="color" value="#4472C4"></div>
+  <div class="st-field"><label for="shapeOutline">Outline color</label><input id="shapeOutline" type="color" value="#1F2937"></div>
+  <div class="st-field"><label for="shapeWidth">Outline width</label><select id="shapeWidth"><option value="1">1 px</option><option value="2" selected>2 px</option><option value="3">3 px</option><option value="4">4 px</option></select></div>
+ </div>
+ <div class="st-foot"><button type="button" id="shapeInsertCancel">Cancel</button><button type="button" id="shapeInsertApply" class="primary">Insert shape</button></div>
+</dialog>
+<dialog id="symbolInsertDialog" class="insert-object-dialog" aria-labelledby="symbolDialogTitle">
+ <div class="st-head"><h2 id="symbolDialogTitle">Insert symbol</h2><button type="button" id="symbolDialogClose" aria-label="Close">✕</button></div>
+ <div class="st-body">
+  <div class="st-field"><label for="symbolCategory">Category</label><select id="symbolCategory">
+   <option value="currency">Currency</option><option value="math">Mathematics</option><option value="arrows">Arrows</option><option value="checks">Checks & stars</option><option value="greek">Greek letters</option><option value="fractions">Fractions & superscripts</option><option value="legal">Legal & business</option><option value="units">Units & miscellaneous</option>
+  </select></div>
+  <input id="symbolSearch" class="formula-search" type="search" placeholder="Search symbol or description…">
+  <div id="symbolGrid" class="symbol-grid" aria-label="Available symbols"></div>
+  <div class="st-field"><label for="symbolPreview">Selected symbol</label><input id="symbolPreview" readonly placeholder="Choose a symbol"></div>
+ </div>
+ <div class="st-foot"><button type="button" id="symbolInsertCancel">Cancel</button><button type="button" id="symbolInsertApply" class="primary" disabled>Insert into cell</button></div>
+</dialog>
+<style>
+.insert-object-dialog{width:min(560px,calc(100vw - 24px));max-height:85vh;overflow:auto;border:1px solid var(--line);border-radius:14px;background:var(--panel);color:var(--text);padding:0;box-shadow:0 22px 70px #0009}
+.insert-object-dialog::backdrop{background:#020617bb;backdrop-filter:blur(3px)}
+.insert-object-dialog .st-head,.insert-object-dialog .st-foot{position:sticky;background:var(--panel);z-index:1}
+.symbol-grid{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:6px;max-height:280px;overflow:auto}
+.symbol-cell{min-width:0;min-height:42px;padding:4px;font-size:21px;border-radius:7px}
+.symbol-cell[aria-pressed=true]{outline:2px solid var(--accent);background:var(--head)}
+@media(max-width:650px){.symbol-grid{grid-template-columns:repeat(6,minmax(0,1fr))}}
+</style>
+function setupFormulaPicker(){
    const toggle=$('formulaPickerToggle'), panel=$('formulaPicker'), search=$('formulaSearch'), list=$('formulaList');
    if(!toggle||!panel||!search||!list)return;
    const close=()=>{panel.hidden=true;toggle.setAttribute('aria-expanded','false')};
@@ -356,4 +397,112 @@ $('undoBtn').onclick=()=>queueHistoryAction('undo');$('redoBtn').onclick=()=>que
  async function startSession(){let saved=null;try{saved=localStorage.getItem('niceexcel.lastWorkbookId')}catch{}if(saved){try{const x=await api('/workbooks/'+saved);bookId=saved;sheets=x.sheets.map(s=>s.name);activeSheet=x.active_sheet||sheets[0]||'Sheet1';selected='A1';await refresh();setStatus('Restored last workbook')}catch{forgetBook()}}if(!bookId)await create()}
  startSession().catch(e=>{setStatus('API error: '+e.message);$('calcNote').textContent='Start backend at 127.0.0.1:8765; see backend README.'});
 })();
+
+ function insertAtCellCursor(symbol){
+   const input=$('formula');
+   const current=String(input.value??'');
+   const start=Number.isInteger(input.selectionStart)?input.selectionStart:current.length;
+   const end=Number.isInteger(input.selectionEnd)?input.selectionEnd:start;
+   input.value=current.slice(0,start)+symbol+current.slice(end);
+   input.focus();
+   const pos=start+symbol.length;
+   try{input.setSelectionRange(pos,pos);}catch(_){}
+   $('address').value=selected;
+   setStatus('Symbol inserted in formula bar for '+selected+' · press Enter to apply');
+ }
+ $('insertRowsMenuBtn').onclick=async()=>{
+   if(!bookId)return;
+   const p=cellAt(selected);const raw=prompt('How many rows should be inserted at '+(p?.r||1)+'? (10 or more)','10');
+   if(raw===null)return;const count=Number(raw);
+   if(!Number.isInteger(count)||count<10||count>ROWS){alert('Enter a whole number from 10 to '+ROWS+'.');return;}
+   const row=p?.r||1;
+   try{for(let n=0;n<count;n++)await api('/workbooks/'+bookId+'/rows',json('POST',{sheet:activeSheet,row}));
+     await refresh();select(addr(1,row));setStatus(count+' rows inserted at row '+row);
+   }catch(e){alert('Rows could not be inserted: '+e.message);}
+ };
+ $('fontColorCellBtn').onclick=()=>$('fontColor').click();
+ $('fillColorCellBtn').onclick=()=>$('fillColor').click();
+ $('fontColor').addEventListener('change',async()=>applyCellStyle({font_color:$('fontColor').value}));
+ $('fillColor').addEventListener('change',async()=>applyCellStyle({fill_color:$('fillColor').value}));
+ async function applyCellStyle(style){
+   if(!bookId)return;
+   try{await api('/workbooks/'+bookId+'/style',json('PATCH',{sheet:activeSheet,range:selected+':'+selected,...style}));updateOneCellFromData(selected);setStatus('Updated '+selected);}
+   catch(e){alert(e.message);}
+ }
+ function updateOneCellFromData(address){
+   const el=$('grid').querySelector('td[data-addr="'+address+'"]');if(!el)return;
+   const obj=cellData(address)||{value:null,style:{}},style=obj.style||{};
+   const raw=obj.value;const display=typeof raw==='string'&&raw.startsWith('=')?obj.calculated_value:raw;
+   const shown=Array.isArray(display)?(Array.isArray(display[0])?display[0][0]:display[0]):display;
+   el.textContent=shown==null?'':String(shown);el.title=raw==null?'':String(raw);
+   el.style.fontWeight=style.bold?'700':'';el.style.fontStyle=style.italic?'italic':'';
+   el.style.fontSize=style.font_size?style.font_size+'px':'';
+   el.style.color=style.font_color?readableThemeFontColor(el,'#'+style.font_color.slice(-6)):'';
+   el.style.background=style.fill_color?'#'+style.fill_color.slice(-6):'';
+   el.style.textAlign=style.horizontal||'';
+   const cf=conditionalStyleForCell(address,raw);if(cf){if(cf.fillColor)el.style.background=cf.fillColor;if(cf.fontColor)el.style.color=readableThemeFontColor(el,cf.fontColor);}
+ }
+ $('insertShapeBtn').onclick=()=>{$('shapeInsertDialog').showModal();};
+ $('shapeDialogClose').onclick=$('shapeInsertCancel').onclick=()=>$('shapeInsertDialog').close();
+ $('shapeInsertApply').onclick=async()=>{
+   if(!bookId)return;
+   const shape={id:'shape-'+Date.now()+'-'+Math.random().toString(36).slice(2,7),type:$('shapeType').value,text:$('shapeText').value.trim(),fill:$('shapeFill').value,outline:$('shapeOutline').value,outlineWidth:Number($('shapeWidth').value),anchor:selected,sheet:activeSheet};
+   try{
+     await api('/workbooks/'+bookId+'/objects',json('POST',{sheet:activeSheet,object_type:'shape',object:shape}));
+     $('shapeInsertDialog').close();setStatus('Shape added at '+selected+' (saved with workbook)');await renderObjectOverlay();
+   }catch(e){alert('Shape could not be added: '+e.message);}
+ };
+ async function renderObjectOverlay(){
+   let layer=$('sheetObjectLayer');if(!layer){layer=document.createElement('div');layer.id='sheetObjectLayer';layer.className='sheet-object-layer';$('gridwrap').append(layer);}
+   layer.replaceChildren();if(!bookId)return;
+   try{
+     const payload=await api('/workbooks/'+bookId+'/objects?sheet='+encodeURIComponent(activeSheet));
+     const objects=payload.objects||[];
+     for(const item of objects){const ob=item.object||item;if(ob.type!=='shape')continue;const p=cellAt(ob.anchor||'A1');if(!p)continue;
+       const cell=$('grid').querySelector('td[data-addr="'+(ob.anchor||'A1')+'"]');if(!cell)continue;
+       const rect=cell.getBoundingClientRect(),wrap=$('gridwrap').getBoundingClientRect();
+       const node=document.createElement('div');node.className='sheet-shape sheet-shape-'+ob.type;node.textContent=ob.text||'';
+       node.style.left=(rect.left-wrap.left+ $('gridwrap').scrollLeft)+'px';node.style.top=(rect.top-wrap.top+$('gridwrap').scrollTop)+'px';
+       node.style.background=ob.type==='line'?'transparent':(ob.fill||'#4472C4');node.style.borderColor=ob.outline||'#1F2937';node.style.borderWidth=(ob.outlineWidth||2)+'px';
+       node.dataset.objectId=ob.id||item.id||'';node.title='Shape · '+ob.type+' · select to remove';
+       node.addEventListener('click',async()=>{if(!confirm('Delete this shape?'))return;try{await api('/workbooks/'+bookId+'/objects/'+encodeURIComponent(node.dataset.objectId),{method:'DELETE'});await renderObjectOverlay();}catch(e){alert(e.message);}});
+       layer.append(node);
+     }
+   }catch(e){setStatus('Shape preview unavailable: '+e.message);}
+ }
+ const symbolCatalog={
+  currency:[['₹','Indian rupee'],['$','Dollar'],['€','Euro'],['£','Pound'],['¥','Yen'],['₩','Won'],['₽','Ruble'],['₺','Turkish lira'],['₫','Dong'],['฿','Baht'],['₱','Peso'],['₦','Naira']],
+  math:[['±','Plus minus'],['×','Multiplication'],['÷','Division'],['≠','Not equal'],['≤','Less than or equal'],['≥','Greater than or equal'],['≈','Approximately'],['∞','Infinity'],['√','Square root'],['∑','Summation'],['∏','Product'],['∫','Integral'],['∆','Delta'],['π','Pi'],['°','Degree'],['µ','Micro'],['‰','Per mille'],['∴','Therefore'],['∝','Proportional']],
+  arrows:[['←','Left arrow'],['→','Right arrow'],['↑','Up arrow'],['↓','Down arrow'],['↔','Left right arrow'],['↕','Up down arrow'],['↗','North east arrow'],['↘','South east arrow'],['↙','South west arrow'],['↖','North west arrow'],['⇒','Double right arrow'],['⇐','Double left arrow'],['⇑','Double up arrow'],['⇓','Double down arrow']],
+  checks:[['✓','Check mark'],['✔','Heavy check'],['✗','Cross'],['✘','Heavy cross'],['★','Star'],['☆','Outline star'],['●','Circle'],['○','Outline circle'],['◆','Diamond'],['■','Square'],['♥','Heart'],['♣','Club'],['♦','Card diamond'],['♠','Spade']],
+  greek:[['α','alpha'],['β','beta'],['γ','gamma'],['δ','delta'],['ε','epsilon'],['ζ','zeta'],['η','eta'],['θ','theta'],['λ','lambda'],['μ','mu'],['π','pi'],['σ','sigma'],['φ','phi'],['ω','omega'],['Α','Alpha'],['Β','Beta'],['Γ','Gamma'],['Δ','Delta'],['Ω','Omega']],
+  fractions:[['½','one half'],['⅓','one third'],['⅔','two thirds'],['¼','one quarter'],['¾','three quarters'],['⅛','one eighth'],['⅜','three eighths'],['⅝','five eighths'],['⅞','seven eighths'],['¹','superscript one'],['²','superscript two'],['³','superscript three'],['⁴','superscript four'],['₁','subscript one'],['₂','subscript two'],['₃','subscript three'],['₄','subscript four']],
+  legal:[['©','Copyright'],['®','Registered'],['™','Trademark'],['§','Section'],['¶','Paragraph'],['℠','Service mark'],['№','Numero'],['℃','Degrees Celsius'],['℉','Degrees Fahrenheit']],
+  units:[['‰','Per mille'],['′','Prime'],['″','Double prime'],['Å','Angstrom'],['Ω','Ohm'],['µ','Micro'],['√','Root'],['∅','Empty set'],['※','Reference mark']]
+ };
+ let selectedSymbol='';
+ function renderSymbolGrid(){
+   const category=$('symbolCategory').value,query=$('symbolSearch').value.trim().toLowerCase();
+   const grid=$('symbolGrid');grid.replaceChildren();
+   const values=(symbolCatalog[category]||[]).filter(([sym,label])=>!query||sym.includes(query)||label.toLowerCase().includes(query));
+   values.forEach(([sym,label])=>{const b=document.createElement('button');b.type='button';b.className='symbol-cell';b.textContent=sym;b.title=label;b.setAttribute('aria-label',label+' '+sym);b.setAttribute('aria-pressed',String(selectedSymbol===sym));b.onclick=()=>{selectedSymbol=sym;$('symbolPreview').value=sym+'  ·  '+label;$('symbolInsertApply').disabled=false;grid.querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));};grid.append(b);});
+ }
+ $('insertSymbolBtn').onclick=()=>{$('symbolInsertDialog').showModal();selectedSymbol='';$('symbolPreview').value='';$('symbolInsertApply').disabled=true;renderSymbolGrid();};
+ $('symbolDialogClose').onclick=$('symbolInsertCancel').onclick=()=>$('symbolInsertDialog').close();
+ $('symbolCategory').addEventListener('change',renderSymbolGrid);$('symbolSearch').addEventListener('input',renderSymbolGrid);
+ $('symbolInsertApply').onclick=()=>{if(!selectedSymbol)return;insertAtCellCursor(selectedSymbol);$('symbolInsertDialog').close();};
+ $('aiFillBtn').onclick=()=>alert('AI-Fill is not connected to an AI provider in this offline build yet. The menu action is reserved; it will not change workbook data until a provider or local model is configured.');
+ // Update the selected cell only after formatting; no whole-sheet render.
+ $('clearFormatBtn').onclick=async()=>{
+   if(!bookId)return;
+   try{await api('/workbooks/'+bookId+'/style',json('PATCH',{sheet:activeSheet,range:selected+':'+selected,bold:false,italic:false,font_color:'000000',fill_color:'FFFFFF',horizontal:'general',number_format:'General',font_size:11}));
+     const obj=cellData(selected);if(obj)obj.style={};
+     const cell=$('grid').querySelector('td[data-addr="'+selected+'"]');if(cell){cell.style.fontWeight='';cell.style.fontStyle='';cell.style.fontSize='';cell.style.color='';cell.style.background='';cell.style.textAlign='';}
+     setStatus('Basic formatting cleared for '+selected);
+   }catch(e){alert(e.message);}
+ };
+ $('applyStyle').onclick=async()=>{
+   const body={sheet:activeSheet,range:selected+':'+selected,bold:$('boldBtn').dataset.on==='1',italic:$('italicBtn').dataset.on==='1',font_color:$('fontColor').value,fill_color:$('fillColor').value,horizontal:'general',number_format:'General'};
+   try{await api('/workbooks/'+bookId+'/style',json('PATCH',body));const obj=cellData(selected)||{};obj.style={...(obj.style||{}),bold:body.bold,italic:body.italic,font_color:body.font_color.replace('#',''),fill_color:body.fill_color.replace('#','')};updateOneCellFromData(selected);setStatus('Formatting applied to '+selected);}catch(e){alert(e.message);}
+ };
 </script></body></html>
