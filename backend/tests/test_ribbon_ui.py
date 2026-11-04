@@ -216,3 +216,28 @@ def test_web_smart_table_header_text_contrasts_with_selected_fill():
         assert "function readableTableHeaderColor(td)" in html
         assert "td.style.color=readableTableHeaderColor(td)" in html
         assert ".grid td.table-cell.table-header-cell{font-weight:700}" in html
+
+
+def test_native_table_borders_draw_shared_inner_edges_only_once():
+    native = (ROOT / "app" / "src" / "main" / "java" / "com" / "meraj" / "niceexcel" / "MainActivity.kt").read_text(encoding="utf-8")
+    assert "private fun tableBorderEdges(address: String): BooleanArray" in native
+    assert "return booleanArrayOf(!above, !left, true, true)" in native
+    assert "CellBorderDrawable(fill, strokeColor, strokeWidth.toFloat(), edges)" in native
+    assert "column - 1" in native and "row - 1" in native
+
+
+def test_native_table_header_contrast_is_reapplied_after_grid_refresh():
+    native = (ROOT / "app" / "src" / "main" / "java" / "com" / "meraj" / "niceexcel" / "MainActivity.kt").read_text(encoding="utf-8")
+    assert "private fun isStyledTableHeader(address: String, style: CellStyle?): Boolean" in native
+    assert "themedCellTextColor(tableHeaderTextColor(st.fillColor))" in native
+    assert "tableHeaderRow = headerRow" in native
+
+
+def test_web_table_header_contrast_handles_transparent_cell_backgrounds():
+    for path in [
+        ROOT / "backend" / "niceexcel_api" / "static" / "index.html",
+        ROOT / "app" / "src" / "main" / "assets" / "niceexcel_index.html",
+    ]:
+        html = path.read_text(encoding="utf-8")
+        assert "getPropertyValue('--cell').trim()" in html
+        assert "if(!rgb)return '#18202b'" in html
