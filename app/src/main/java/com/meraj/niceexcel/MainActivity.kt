@@ -1502,7 +1502,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
     }
 
     private fun matchesColumnFilter(value: String, encoded: String): Boolean {
-        val parts = encoded.split("\\u0001", limit = 2)
+        val parts = encoded.split(":", limit = 2)
         val mode = parts.firstOrNull() ?: "contains"
         val expected = parts.getOrElse(1) { encoded }
         return when (mode) {
@@ -3698,7 +3698,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
 
     private fun showColumnFilterDialog(columnName: String) {
         val col = columnName.uppercase(Locale.ROOT)
-        val current = filterCriteria[col].orEmpty().split("\\u0001", limit = 2)
+        val current = filterCriteria[col].orEmpty().split(":", limit = 2)
         val currentMode = current.getOrNull(0)?.takeIf { it in listOf("equal", "not-equal", "blank") } ?: "equal"
         val currentValue = current.getOrElse(1) { "" }
         val choices = arrayOf("Equal", "Not equal", "Blank")
@@ -3706,7 +3706,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
             .setItems(choices) { _, which ->
                 val mode = when (which) { 0 -> "equal"; 1 -> "not-equal"; else -> "blank" }
                 if (mode == "blank") {
-                    filterCriteria[col] = "blank\\u0001"
+                    filterCriteria[col] = "blank:"
                     filterColumn = filterCriteria.keys.lastOrNull()
                     filterText = filterColumn?.let { filterCriteria[it] }
                     refreshFilterVisibility()
@@ -3720,7 +3720,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                         .setView(queryInput)
                         .setPositiveButton("Apply") { _, _ ->
                             val q = queryInput.text.toString().trim()
-                            if (q.isEmpty()) filterCriteria.remove(col) else filterCriteria[col] = mode + "\\u0001" + q
+                            if (q.isEmpty()) filterCriteria.remove(col) else filterCriteria[col] = mode + ":" + q
                             filterColumn = filterCriteria.keys.lastOrNull()
                             filterText = filterColumn?.let { filterCriteria[it] }
                             refreshFilterVisibility()
