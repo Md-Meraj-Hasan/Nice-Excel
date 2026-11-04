@@ -1944,11 +1944,42 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         // paints its own four edges; using a dp-scaled 2dp stroke on both
         // neighbours made shared edges look like thick doubled separators.
         val strokeWidth = if (isSelected) dp(2) else if (isTableBorder) 1 else dp(1)
-        val signature = "$fill|$strokeColor|$strokeWidth"
+        val addressParts = address?.let { Regex("^([A-Z]+)([0-9]+)$").matchEntire(it) }
+        val columnIndexForBorder = addressParts?.groupValues?.get(1)?.let { columnIndex(it) } ?: -1
+        val rowForBorder = addressParts?.groupValues?.get(2)?.toIntOrNull() ?: -1
+        // Thick-border ranges draw each shared separator once: the left/top cell owns
+        // its right/bottom inner edge. The outside perimeter stays a 1px hairline.
+        val thickRight = st?.thickBorder == true && columnIndexForBorder in 0 until (colLimit - 1) &&
+            sheetStyles["${colName(columnIndexForBorder + 1)}$rowForBorder"]?.thickBorder == true
+        val thickBottom = st?.thickBorder == true && rowForBorder > 0 &&
+            sheetStyles["${colName(columnIndexForBorder)}${rowForBorder + 1}"]?.thickBorder == true
+        val signature = "$fill|$strokeColor|$strokeWidth|$address|$thickRight|$thickBottom"
         if (appliedCellBackgrounds[view] == signature) return
-        view.background = android.graphics.drawable.GradientDrawable().apply {
-            setColor(fill)
-            setStroke(strokeWidth, strokeColor)
+        if (st?.thickBorder == true && address != null) {
+            view.background = object : android.graphics.drawable.Drawable() {
+                private val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+                override fun draw(canvas: android.graphics.Canvas) {
+                    val b = bounds
+                    canvas.drawColor(fill)
+                    paint.color = strokeColor
+                    paint.style = android.graphics.Paint.Style.FILL
+                    val hairline = 1f
+                    val inner = dp(2).toFloat()
+                    canvas.drawRect(b.left.toFloat(), b.top.toFloat(), b.right.toFloat(), b.top + hairline, paint)
+                    canvas.drawRect(b.left.toFloat(), b.top.toFloat(), b.left + hairline, b.bottom.toFloat(), paint)
+                    canvas.drawRect(b.right - if (thickRight) inner else hairline, b.top.toFloat(), b.right.toFloat(), b.bottom.toFloat(), paint)
+                    canvas.drawRect(b.left.toFloat(), b.bottom - if (thickBottom) inner else hairline, b.right.toFloat(), b.bottom.toFloat(), paint)
+                }
+                override fun setAlpha(alpha: Int) { }
+                override fun setColorFilter(colorFilter: android.graphics.ColorFilter?) { }
+                @Suppress("DEPRECATION")
+                override fun getOpacity(): Int = android.graphics.PixelFormat.OPAQUE
+            }
+        } else {
+            view.background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(fill)
+                setStroke(strokeWidth, strokeColor)
+            }
         }
         appliedCellBackgrounds[view] = signature
     }
