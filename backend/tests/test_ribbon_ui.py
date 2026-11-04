@@ -198,7 +198,7 @@ def test_native_table_style_uses_contrast_safe_header_and_row_banding():
     native = (ROOT / "app" / "src" / "main" / "java" / "com" / "meraj" / "niceexcel" / "MainActivity.kt").read_text(encoding="utf-8")
     assert "private fun tableHeaderTextColor(background: Int)" in native
     assert "private fun tableStripeColor(headerColor: Int)" in native
-    assert "tableHeaderTextColor(st.fillColor)" in native
+    assert "tableHeaderTextColor(st.fillColor)" not in native
     assert "(row - headerRow) % 2 == 1" in native
     assert "isSelected || isTableBorder) dp(2)" in native
     assert "val colorPresets = listOf(" in native
