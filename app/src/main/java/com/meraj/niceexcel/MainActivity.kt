@@ -543,7 +543,18 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                 val items = nativeShapes[sheetName] ?: return false
                 when (event.actionMasked) {
                     android.view.MotionEvent.ACTION_DOWN -> {
-                        val hit = items.asReversed().firstOrNull { android.graphics.RectF(it.bounds).apply { inset(-dp(12).toFloat(), -dp(12).toFloat()) }.contains(event.x, event.y) } ?: return false
+                        val hit = items.asReversed().firstOrNull { android.graphics.RectF(it.bounds).apply { inset(-dp(12).toFloat(), -dp(12).toFloat()) }.contains(event.x, event.y) }
+                        if (hit == null) {
+                            // A tap on a worksheet cell/background deselects the last shape.
+                            // Clear the blue resize frame immediately, including for the final shape.
+                            if (selectedNativeShape != null) {
+                                selectedNativeShape = null
+                                invalidate()
+                            }
+                            draggingNativeShape = null
+                            resizingNativeShape = false
+                            return false
+                        }
                         selectedNativeShape = hit; draggingNativeShape = hit
                         resizingNativeShape = kotlin.math.hypot((event.x-hit.bounds.right).toDouble(), (event.y-hit.bounds.bottom).toDouble()) <= dp(20)
                         lastShapeTouchX = event.x; lastShapeTouchY = event.y; invalidate(); return true
@@ -579,7 +590,16 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                         lastShapeTouchX=event.x; lastShapeTouchY=event.y; invalidate(); return true
                     }
                     android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
-                        draggingNativeShape = null; resizingNativeShape = false; persistLastWorkbook(); performClick(); return true
+                        val changed = draggingNativeShape != null
+                        draggingNativeShape = null
+                        resizingNativeShape = false
+                        // The blue selection frame and resize handle are transient editing
+                        // affordances, not part of the saved shape. Never leave them behind.
+                        selectedNativeShape = null
+                        invalidate()
+                        if (changed) persistLastWorkbook()
+                        performClick()
+                        return true
                     }
                 }
                 return true
@@ -1995,8 +2015,18 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                     paint.style = android.graphics.Paint.Style.FILL
                     val hairline = 1f
                     val inner = dp(2).toFloat()
-                    canvas.drawRect(b.left.toFloat(), b.top.toFloat(), b.right.toFloat(), b.top + hairline, paint)
-                    canvas.drawRect(b.left.toFloat(), b.top.toFloat(), b.left + hairline, b.bottom.toFloat(), paint)
+                    val leftNeighbourThick = columnIndexForBorder > 0 &&
+                        sheetStyles["${colName(columnIndexForBorder - 1)}$rowForBorder"]?.thickBorder == true
+                    val upperNeighbourThick = rowForBorder > 1 &&
+                        sheetStyles["${colName(columnIndexForBorder)}${rowForBorder - 1}"]?.thickBorder == true
+                    // Paint shared inner separators only from their owning right/bottom
+                    // cell. Do not let the next cell's thin left/top edge cover them.
+                    if (!upperNeighbourThick) {
+                        canvas.drawRect(b.left.toFloat(), b.top.toFloat(), b.right.toFloat(), b.top + hairline, paint)
+                    }
+                    if (!leftNeighbourThick) {
+                        canvas.drawRect(b.left.toFloat(), b.top.toFloat(), b.left + hairline, b.bottom.toFloat(), paint)
+                    }
                     canvas.drawRect(b.right - if (thickRight) inner else hairline, b.top.toFloat(), b.right.toFloat(), b.bottom.toFloat(), paint)
                     canvas.drawRect(b.left.toFloat(), b.bottom - if (thickBottom) inner else hairline, b.right.toFloat(), b.bottom.toFloat(), paint)
                 }
@@ -3585,6 +3615,17 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
             .setItems(choices) { _, which ->
                 if (which == 0) {
                     filterAllColumns = true
+                    // Rebind the currently visible header cells immediately. This also
+                    // covers the case where filter mode is enabled after the sheet grid
+                    // was first rendered and avoids depending on a later full render.
+                    for (column in 0 until minOf(colLimit, columnHeader.childCount - 1)) {
+                        val headerCell = columnHeader.getChildAt(column + 1)
+                        headerCell.isClickable = true
+                        headerCell.isFocusable = true
+                        headerCell.setOnClickListener { showColumnFilterDialog(colName(column)) }
+                    }
+                    columnHeader.invalidate()
+                    headerHorizontal.invalidate()
                     status.text = "All Columns filter mode enabled · tap a column heading"
                 } else {
                     filterAllColumns = false
