@@ -277,6 +277,7 @@ def _cell_json(cell) -> dict[str, Any]:
         "style": {
             "bold": cell.font.bold,
             "italic": cell.font.italic,
+            "underline": bool(cell.font.underline),
             "font_name": cell.font.name,
             "font_size": cell.font.sz,
             "font_color": cell.font.color.rgb if cell.font.color and cell.font.color.type == "rgb" else None,
