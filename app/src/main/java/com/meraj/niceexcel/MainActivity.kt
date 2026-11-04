@@ -2976,9 +2976,31 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS
         }
         val customColorInput = EditText(this).apply {
-            hint = "Optional header color hex, e.g. #4472C4"
+            hint = "Custom header color hex, e.g. #4472C4"
             setSingleLine(true)
             setText("#4472C4")
+        }
+        val colorPresets = listOf(
+            "#4472C4", "#217346", "#7030A0", "#C00000", "#ED7D31",
+            "#00A6A6", "#264478", "#7F6000", "#595959", "#000000"
+        )
+        val presetRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = android.view.Gravity.CENTER_VERTICAL
+        }
+        colorPresets.forEach { hex ->
+            val color = android.graphics.Color.parseColor(hex)
+            presetRow.addView(TextView(this).apply {
+                text = "  "
+                contentDescription = "Choose $hex"
+                setPadding(dp(5), dp(8), dp(5), dp(8))
+                background = roundedToolbarBackground(color, themedColor(Color.WHITE), 6)
+                isClickable = true
+                isFocusable = true
+                setOnClickListener { customColorInput.setText(hex) }
+            }, LinearLayout.LayoutParams(0, dp(34), 1f).apply {
+                setMargins(dp(2), dp(3), dp(2), dp(3))
+            })
         }
         val panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -2990,6 +3012,13 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                 setPadding(0, 0, 0, dp(8))
             })
             addView(rangeInput, LinearLayout.LayoutParams(-1, -2))
+            addView(TextView(this@MainActivity).apply {
+                text = "Header color — choose a preset or enter a HEX color"
+                textSize = 12f
+                setTextColor(themedCellTextColor(Color.rgb(24,32,39)))
+                setPadding(0, dp(10), 0, dp(3))
+            })
+            addView(presetRow, LinearLayout.LayoutParams(-1, dp(42)))
             addView(customColorInput, LinearLayout.LayoutParams(-1, -2))
         }
         val actions = listOf(
@@ -3079,7 +3108,14 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                         st.textColor = tableHeaderTextColor(st.fillColor)
                         st.thickBorder = true
                     } else {
-                        st.fillColor = if (darkMode) Color.rgb(18,26,43) else if ((row - headerRow) % 2 == 1) tableStripeColor(customColor ?: dayPalettes[dayPaletteIndex.coerceIn(dayPalettes.indices)].primary) else Color.WHITE
+                        st.fillColor = if ((row - headerRow) % 2 == 1) {
+                            val base = customColor ?: dayPalettes[dayPaletteIndex.coerceIn(dayPalettes.indices)].primary
+                            if (darkMode) Color.rgb(
+                                (Color.red(base) * 0.28).toInt().coerceAtLeast(18),
+                                (Color.green(base) * 0.28).toInt().coerceAtLeast(22),
+                                (Color.blue(base) * 0.28).toInt().coerceAtLeast(30)
+                            ) else tableStripeColor(base)
+                        } else if (darkMode) Color.rgb(30, 35, 45) else Color.WHITE
                     }
                 }
                 tableHeaderRow = headerRow
