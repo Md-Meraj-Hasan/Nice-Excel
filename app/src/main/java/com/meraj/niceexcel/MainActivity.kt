@@ -1711,9 +1711,10 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
     private fun applyCellBackground(view: TextView, address: String?, header: Boolean) {
         val st = if (address != null) sheetStyles[address] else null
         val isSelected = address != null && (address == selected || address in selectedRangeCells)
+        // Selection is a border-only visual state. Never replace a cell's
+        // saved fill or theme surface just because the user tapped the cell.
         val fill = when {
             header -> if (darkMode) Color.rgb(24, 34, 50) else dayPalettes[dayPaletteIndex.coerceIn(dayPalettes.indices)].light
-            isSelected -> if (darkMode) dayPalettes[dayPaletteIndex.coerceIn(dayPalettes.indices)].primary else dayPalettes[dayPaletteIndex.coerceIn(dayPalettes.indices)].highlight
             st != null -> if (darkMode && st.fillColor == Color.WHITE) Color.BLACK else st.fillColor
             else -> themedSurface(Color.WHITE)
         }
