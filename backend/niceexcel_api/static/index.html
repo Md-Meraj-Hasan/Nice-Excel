@@ -297,6 +297,7 @@ $('undoBtn').onclick=()=>queueHistoryAction('undo');$('redoBtn').onclick=()=>que
       const names=(infoResult.sheets||[]).map(x=>typeof x==='string'?x:x.name).filter(Boolean);
       const targets=$('pdfSheetScope').value==='active'?[activeSheet]:names;
       const sections=[];
+      const requestedScale=$('pdfScale').value;
       const esc=v=>String(v??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
       const color=v=>/^#?[0-9a-f]{6}$/i.test(String(v||''))?'#'+String(v).replace('#',''):'';
       const pdfColName=c=>{let n=c+1,out='';while(n){const r=(n-1)%26;out=String.fromCharCode(65+r)+out;n=Math.floor((n-1)/26);}return out;};
@@ -328,7 +329,8 @@ $('undoBtn').onclick=()=>queueHistoryAction('undo');$('redoBtn').onclick=()=>que
           table+='</tr>';
         }
         table+='</tbody></table>';
-        sections.push('<section class="sheet-page"><h2>'+esc(name)+'</h2>'+table+'</section>');
+        const fitZoom=requestedScale==='fit-sheet'?Math.min(1,38/lastRow,12/lastCol):1;
+        sections.push('<section class="sheet-page"><h2>'+esc(name)+'</h2><div class="sheet-content" style="zoom:'+fitZoom+'">'+table+'</div></section>');
       }
       const paper=$('pdfPaper').value,orientation=$('pdfOrientation').value,scale=$('pdfScale').value,margins=$('pdfMargins').value;
       const margin=margins==='narrow'?'5mm':margins==='wide'?'20mm':'10mm';
