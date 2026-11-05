@@ -42,6 +42,7 @@ _TABLE_STYLE_MAP = {
     "purple": "TableStyleMedium5", "orange": "TableStyleMedium6",
     "teal": "TableStyleMedium9", "gray": "TableStyleMedium1",
     "dark": "TableStyleMedium3", "light": "TableStyleLight9",
+    "ruby": "TableStyleMedium10", "gold": "TableStyleMedium12",
 }
 _RECOVERY_DIR = Path(os.environ.get("NICEEXCEL_RECOVERY_DIR", str(Path(__file__).resolve().parent.parent / "data" / "recovery")))
 _RECOVERY_DIR.mkdir(parents=True, exist_ok=True)
