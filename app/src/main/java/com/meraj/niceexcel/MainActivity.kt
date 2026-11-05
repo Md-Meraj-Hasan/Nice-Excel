@@ -4127,7 +4127,17 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                         // several blank PDF pages after the real data.
                         cells.forEach cellLoop@ { (address, rawValue) ->
                             if (rawValue.isBlank()) return@cellLoop
-                            val match = Regex("^([A-Z]+)([0-9]+)$").matchEntire(address.uppercase(Locale.US)) ?: return@cellLoop
+                            val normalizedAddress = address.uppercase(Locale.US)
+                            val match = Regex("^([A-Z]+)([0-9]+)$").matchEntire(normalizedAddress) ?: return@cellLoop
+                            // A formula whose last calculated display value is empty is
+                            // visually blank; it must not extend the PDF print area to the
+                            // right or create extra trailing pages.
+                            if (rawValue.trimStart().startsWith("=")) {
+                                val cellStyle = stMap[address]
+                                val cacheKey = "$name|$address|$rawValue|\u0024{cellStyle?.numberFormat ?: "General"}"
+                                val calculated = formulaSnapshot[cacheKey]
+                                if (calculated != null && calculated.isBlank()) return@cellLoop
+                            }
                             hasPrintableContent = true
                             maxCol = maxOf(maxCol, colNumber(match.groupValues[1]))
                             maxRow = maxOf(maxRow, match.groupValues[2].toIntOrNull() ?: 1)
