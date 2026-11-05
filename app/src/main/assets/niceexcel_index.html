@@ -284,7 +284,63 @@ $('undoBtn').onclick=()=>queueHistoryAction('undo');$('redoBtn').onclick=()=>que
  async function dataCleaningTool(){const range=askToolRange('Data cleaning range');if(!range)return;const b=parseToolRange(range);if(!b)return alert('Invalid range');const action=prompt('Action: trim, remove-duplicates, remove-blank-rows, uppercase, lowercase, proper-case','trim');if(!action)return;try{const x=await api('/workbooks/'+bookId+'/range?sheet='+encodeURIComponent(activeSheet)+'&range='+encodeURIComponent(range)),rows=x.rows||[],cells=[],key=v=>String(v??'').trim().toLowerCase();if(action==='remove-duplicates'){const seen=new Set();rows.forEach((row,i)=>{const sig=row.map(v=>key(v.value)).join('\u001f');if(i===0){seen.add(sig);return;}if(seen.has(sig))row.forEach((v,j)=>cells.push({cell:addr(b.minCol+j,b.minRow+i),value:null}));else seen.add(sig);});}else if(action==='remove-blank-rows'){rows.forEach((row,i)=>{if(row.every(v=>v.value==null||String(v.value).trim()===''))row.forEach((v,j)=>cells.push({cell:addr(b.minCol+j,b.minRow+i),value:null}));});}else{rows.forEach((row,i)=>row.forEach((v,j)=>{if(typeof v.value!=='string')return;let s=v.value;if(action==='trim')s=s.trim();else if(action==='uppercase')s=s.toUpperCase();else if(action==='lowercase')s=s.toLowerCase();else if(action==='proper-case')s=s.toLowerCase().replace(/\b\p{L}/gu,z=>z.toUpperCase());else return;if(s!==v.value)cells.push({cell:addr(b.minCol+j,b.minRow+i),value:s});}));}if(!['trim','remove-duplicates','remove-blank-rows','uppercase','lowercase','proper-case'].includes(action))return alert('Unknown action');if(cells.length){await api('/workbooks/'+bookId+'/cells',json('PATCH',{sheet:activeSheet,cells}));await refresh();}setStatus('Data cleaning complete · '+cells.length+' cell updates');}catch(e){alert(e.message)}}
  async function pivotOrDashboard(dash){const range=askToolRange(dash?'Dashboard source range':'Pivot source range');if(!range)return;const b=parseToolRange(range);if(!b||b.maxRow<=b.minRow)return alert('Select a header row and data rows');const group=prompt('Group-by column letter',colName(b.minCol));if(!group)return;const val=prompt('Values column letter',colName(Math.min(b.minCol+1,b.maxCol)));if(!val)return;const agg=prompt('Aggregation: sum, count, average','sum');if(!['sum','count','average'].includes(agg))return;const name=prompt('Output sheet name',dash?'Dashboard':'Pivot');if(!name)return;try{const x=await api('/workbooks/'+bookId+'/range?sheet='+encodeURIComponent(activeSheet)+'&range='+encodeURIComponent(range)),rows=x.rows||[],gi=cellAt(group.toUpperCase()+'1').c-b.minCol,vi=cellAt(val.toUpperCase()+'1').c-b.minCol;if(gi<0||vi<0||gi>=rows[0].length||vi>=rows[0].length)throw Error('Columns must be inside source range');const map=new Map();rows.slice(1).forEach(row=>{const k=String(row[gi]?.value??'(blank)'),n=Number(row[vi]?.value);if(!map.has(k))map.set(k,{sum:0,count:0});const g=map.get(k);if(Number.isFinite(n)){g.sum+=n;g.count++;}else if(agg==='count'&&row[vi]?.value!=null&&row[vi].value!=='')g.count++;});const out=[['Category',String(rows[0][vi]?.value||'Value')+' ('+agg+')'],...Array.from(map.entries()).sort((a,b)=>a[0].localeCompare(b[0])).map(([k,v])=>[k,agg==='count'?v.count:agg==='average'?(v.count?v.sum/v.count:0):v.sum])];await api('/workbooks/'+bookId+'/sheets',json('POST',{name}));const matrix=dash?[['NiceExcel Dashboard',null],['Total records',rows.length-1],['Groups',map.size],['Aggregate',out.slice(1).reduce((s,r)=>s+(Number(r[1])||0),0)],[],...out]:out;const cells=[];matrix.forEach((row,i)=>row.forEach((v,j)=>cells.push({cell:addr(j+1,i+1),value:v})));await api('/workbooks/'+bookId+'/cells',json('PATCH',{sheet:name,cells}));if(dash&&out.length>1)try{await api('/workbooks/'+bookId+'/charts',json('POST',{sheet:name,range:'A6:B'+(5+out.length),chart_type:'bar',title:'Dashboard summary',anchor:'D2'}));}catch(e){setStatus('Dashboard summary created; chart unavailable: '+e.message);}activeSheet=name;await refresh();setStatus((dash?'Dashboard':'Pivot Table')+' created in '+name);}catch(e){alert((dash?'Dashboard':'Pivot Table')+': '+e.message+' (Use a new output sheet name if it already exists.)')}}
 
- $('calculateBtn').onclick=async()=>{if(!bookId)return;try{const result=await api('/workbooks/'+bookId+'/calculate',{method:'POST'});await refresh();setStatus('Calculated '+result.formulas_evaluated+' formulas · '+result.errors+' formula errors');if(result.errors){const preview=result.formula_errors.slice(0,8).map(x=>x.sheet+'!'+x.cell+': '+x.formula_error).join('\n');alert('Formula calculation finished with '+result.errors+' error(s).\n\n'+preview+(result.errors>8?'\n…':'')+'\n\nNote: Nice Excel supports a limited formula set; unsupported formulas show #NAME?.')} }catch(e){alert(e.message)}};$('saveBtn').onclick=()=>download('/workbooks/'+bookId+'/save','NiceExcel.xlsx').then(()=>setStatus('Workbook downloaded')).catch(e=>alert(e.message));$('csvBtn').onclick=()=>download('/workbooks/'+bookId+'/csv/'+encodeURIComponent(activeSheet),'NiceExcel-'+activeSheet+'.csv','POST').catch(e=>alert(e.message));$('applyCell').onclick=applyCell;$('formula').addEventListener('input',scheduleFormulaPreview);$('formula').addEventListener('keydown',e=>{if(e.key==='Enter')applyCell()});$('address').addEventListener('keydown',e=>{if(e.key==='Enter')select($('address').value.trim().toUpperCase())});
+ $('calculateBtn').onclick=async()=>{if(!bookId)return;try{const result=await api('/workbooks/'+bookId+'/calculate',{method:'POST'});await refresh();setStatus('Calculated '+result.formulas_evaluated+' formulas · '+result.errors+' formula errors');if(result.errors){const preview=result.formula_errors.slice(0,8).map(x=>x.sheet+'!'+x.cell+': '+x.formula_error).join('\n');alert('Formula calculation finished with '+result.errors+' error(s).\n\n'+preview+(result.errors>8?'\n…':'')+'\n\nNote: Nice Excel supports a limited formula set; unsupported formulas show #NAME?.')} }catch(e){alert(e.message)}};
+  $('exportPdfBtn').onclick=()=>$('pdfExportDialog').showModal();
+  $('pdfSetupClose').onclick=$('pdfSetupCancel').onclick=()=>$('pdfExportDialog').close();
+  $('pdfExportGo').onclick=async()=>{
+    if(!bookId)return;
+    const printWin=window.open('','_blank');
+    if(!printWin){alert('Allow pop-ups to create the PDF preview.');return;}
+    const go=$('pdfExportGo');go.disabled=true;go.textContent='Preparing…';
+    try{
+      const infoResult=await api('/workbooks/'+bookId);
+      const names=(infoResult.sheets||[]).map(x=>typeof x==='string'?x:x.name).filter(Boolean);
+      const targets=$('pdfSheetScope').value==='active'?[activeSheet]:names;
+      const sections=[];
+      const esc=v=>String(v??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+      const color=v=>/^#?[0-9a-f]{6}$/i.test(String(v||''))?'#'+String(v).replace('#',''):'';
+      const pdfColName=c=>{let n=c+1,out='';while(n){const r=(n-1)%26;out=String.fromCharCode(65+r)+out;n=Math.floor((n-1)/26);}return out;};
+      for(const name of targets){
+        const response=await api('/workbooks/'+bookId+'/range?sheet='+encodeURIComponent(name)+'&range=A1:Z1000');
+        const rows=response.rows||[];
+        let lastRow=0,lastCol=0;
+        rows.forEach((row,ri)=>row.forEach((cell,ci)=>{
+          const value=cell?.value??cell?.raw_value??'';
+          const style=cell?.style||{};
+          if(String(value??'').trim()!==''||Object.keys(style).length){lastRow=Math.max(lastRow,ri+1);lastCol=Math.max(lastCol,ci+1);}
+        }));
+        lastRow=Math.max(1,lastRow);lastCol=Math.max(1,lastCol);
+        let table='<table><thead><tr><th class="row-num">#</th>'+Array.from({length:lastCol},(_,c)=>'<th>'+pdfColName(c)+'</th>').join('')+'</tr></thead><tbody>';
+        for(let r=0;r<lastRow;r++){
+          table+='<tr><th class="row-num">'+(r+1)+'</th>';
+          for(let c=0;c<lastCol;c++){
+            const cell=rows[r]?.[c]||{},st=cell.style||{};
+            let value=cell.calculated_value??cell.display_value??cell.value??'';
+            if(Array.isArray(value))value=value.map(x=>Array.isArray(x)?x.join(' '):x).join(' ');
+            const styles=[];
+            const bg=color(st.fill_color||st.fillColor);if(bg)styles.push('background:'+bg);
+            const fg=color(st.font_color||st.text_color||st.fontColor);if(fg)styles.push('color:'+fg);
+            if(st.bold)styles.push('font-weight:700');if(st.italic)styles.push('font-style:italic');
+            if(st.font_size)styles.push('font-size:'+Math.max(6,Math.min(18,Number(st.font_size)||10))+'pt');
+            if(st.horizontal)styles.push('text-align:'+({'center':'center','right':'right','left':'left'}[st.horizontal]||'left'));
+            table+='<td style="'+styles.join(';')+'">'+esc(value)+'</td>';
+          }
+          table+='</tr>';
+        }
+        table+='</tbody></table>';
+        sections.push('<section class="sheet-page"><h2>'+esc(name)+'</h2>'+table+'</section>');
+      }
+      const paper=$('pdfPaper').value,orientation=$('pdfOrientation').value,scale=$('pdfScale').value,margins=$('pdfMargins').value;
+      const margin=margins==='narrow'?'5mm':margins==='wide'?'20mm':'10mm';
+      const grid=$('pdfGridlines').checked,repeat=$('pdfRepeatHeader').checked;
+      printWin.document.write('<!doctype html><html><head><meta charset="utf-8"><title>NiceExcel PDF</title><style>'+
+        '@page{size:'+paper+' '+orientation+';margin:'+margin+'}*{box-sizing:border-box}body{font:9pt Arial,sans-serif;color:#111;margin:0}.sheet-page{break-after:page;page-break-after:always}.sheet-page:last-child{break-after:auto;page-break-after:auto}h2{font-size:14pt;margin:0 0 8mm}.sheet-page table{border-collapse:collapse;width:'+(scale==='actual'?'max-content':'100%')+';table-layout:'+(scale==='actual'?'auto':'fixed')+';font-size:'+(scale==='fit-sheet'?'6pt':scale==='fit-width'?'8pt':'9pt')+'}td,th{padding:'+(scale==='fit-sheet'?'2px':'4px')+';vertical-align:top;overflow-wrap:anywhere;'+(grid?'border:0.5pt solid #999;':'border:0.5pt solid transparent;')+'}thead{display:'+(repeat?'table-header-group':'table-row-group')+'}th{background:#edf1f5;font-weight:700}.row-num{width:28px;text-align:right;color:#666}tr{break-inside:avoid;page-break-inside:avoid}'+(scale==='fit-sheet'?'.sheet-page table{font-size:5.5pt}td,th{padding:1px}':'')+'</style></head><body>'+sections.join('')+'<script>window.onload=()=>{window.focus();window.print();};<\\/script></body></html>');
+      printWin.document.close();$('pdfExportDialog').close();setStatus('PDF print preview opened');
+    }catch(e){try{printWin.close();}catch{}alert('PDF export failed: '+e.message);}
+    finally{go.disabled=false;go.textContent='Export PDF';}
+  };
+
+  $('saveBtn').onclick=()=>download('/workbooks/'+bookId+'/save','NiceExcel.xlsx').then(()=>setStatus('Workbook downloaded')).catch(e=>alert(e.message));$('csvBtn').onclick=()=>download('/workbooks/'+bookId+'/csv/'+encodeURIComponent(activeSheet),'NiceExcel-'+activeSheet+'.csv','POST').catch(e=>alert(e.message));$('applyCell').onclick=applyCell;$('formula').addEventListener('input',scheduleFormulaPreview);$('formula').addEventListener('keydown',e=>{if(e.key==='Enter')applyCell()});$('address').addEventListener('keydown',e=>{if(e.key==='Enter')select($('address').value.trim().toUpperCase())});
  $('insertRowBtn').onclick=async()=>{if(!bookId)return;const p=cellAt(selected);const row=p?p.r:1;try{await api('/workbooks/'+bookId+'/rows',json('POST',{sheet:activeSheet,row}));await refresh();select(addr(1,row));setStatus('Inserted row '+row)}catch(e){alert(e.message)}};
  $('nativeExcelBtn').onclick=()=>{try{if(window.NiceExcelNative&&window.NiceExcelNative.goNative)window.NiceExcelNative.goNative();else alert('Use the green header back arrow to return to Native Excel.')}catch(e){alert('Use the green header back arrow to return to Native Excel.')}};
  const addSheetAction=async()=>{const name=prompt('New worksheet name','Sheet'+(sheets.length+1));if(!name)return;try{await api('/workbooks/'+bookId+'/sheets',json('POST',{name}));activeSheet=name;await refresh()}catch(e){alert(e.message)}};$('addSheet').onclick=addSheetAction;$('addSheetMenu').onclick=addSheetAction;$('renameSheetTab').onclick=async()=>{const name=prompt('Rename worksheet',activeSheet);if(!name||name===activeSheet)return;try{await api('/workbooks/'+bookId+'/sheets',json('PATCH',{old_name:activeSheet,new_name:name}));activeSheet=name;await refresh()}catch(e){alert(e.message)}};$('deleteSheetTab').onclick=async()=>{if(sheets.length<2){alert('A workbook must have at least one sheet');return}if(!confirm('Delete worksheet '+activeSheet+'?'))return;try{const x=await api('/workbooks/'+bookId+'/sheets/'+encodeURIComponent(activeSheet),{method:'DELETE'});sheets=x.sheets;activeSheet=x.active_sheet;await refresh()}catch(e){alert(e.message)}};
