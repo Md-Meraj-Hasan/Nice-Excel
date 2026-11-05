@@ -4153,13 +4153,16 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                         val totalW = widths.sum()
                         val rowH = 22f
                         val titleH = 22f
-                        val fitScale = minOf(1f, contentW / totalW)
-                        val sheetScale = minOf(fitScale, contentH / (titleH + (maxRow + 1) * rowH))
+                        // Fit-all-columns must use the full printable page width.
+                        // Do not cap this scale at 1x: narrower worksheets should expand
+                        // to the right edge instead of leaving a large empty strip.
+                        val widthScale = (contentW / totalW).coerceAtLeast(0.01f)
+                        val sheetScale = minOf(widthScale, contentH / (titleH + (maxRow + 1) * rowH))
                         val fitSinglePage = options.scaling == "Fit entire sheet on one page" && maxRow <= 120
                         val scale = when {
                             options.scaling == "Actual size (multiple pages)" -> 1f
                             fitSinglePage -> sheetScale.coerceAtLeast(0.01f)
-                            else -> fitScale.coerceAtLeast(0.01f)
+                            else -> widthScale
                         }
                         val colChunks: List<IntRange> = if (options.scaling == "Actual size (multiple pages)") {
                             val chunks = mutableListOf<IntRange>()
@@ -4186,6 +4189,9 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                                 pageNumber++
                                 val page = document!!.startPage(PdfDocument.PageInfo.Builder(pageW, pageH, pageNumber).create())
                                 val canvas = page.canvas
+                                // Give the entire PDF page a solid white background so
+                                // unused space never appears black in PDF viewers.
+                                canvas.drawColor(Color.WHITE)
                                 val paint = Paint(Paint.ANTI_ALIAS_FLAG)
                                 paint.color = Color.BLACK
                                 paint.textSize = 10f
