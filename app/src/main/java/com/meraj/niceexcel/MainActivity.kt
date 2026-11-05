@@ -4131,7 +4131,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                                 paint.color = Color.BLACK
                                 paint.textSize = 10f
                                 paint.typeface = android.graphics.Typeface.create("sans-serif", android.graphics.Typeface.BOLD)
-                                canvas.drawText(name + if (colChunks.size > 1) " · Columns \${cols.first}–\${cols.last}" else "", margin, margin + 10f, paint)
+                                canvas.drawText(name + if (colChunks.size > 1) " · Columns ${cols.first}–${cols.last}" else "", margin, margin + 10f, paint)
                                 val xStart = margin
                                 var y = margin + titleH
                                 val drawHeader = firstRow == 1 || options.repeatHeadings
@@ -4159,7 +4159,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                                         val address = colName(c - 1) + r
                                         val raw = cells[address].orEmpty()
                                         val style = stMap[address]
-                                        val formulaKey = "\$name|\$address|\$raw|\${style?.numberFormat ?: "General"}"
+                                        val formulaKey = "$name|$address|$raw|${style?.numberFormat ?: "General"}"
                                         val value = if (raw.trimStart().startsWith("=")) formulaSnapshot[formulaKey] ?: raw else {
                                             val number = raw.toDoubleOrNull()
                                             if (number != null && style != null) formatNumber(number, style.numberFormat, raw) else raw
@@ -4203,9 +4203,9 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                     }
                     val output = contentResolver.openOutputStream(uri) ?: error("Could not open PDF destination")
                     output.use { document!!.writeTo(it) }
-                    mainHandler.post { if (!isFinishing && !isDestroyed) status.text = "PDF exported successfully • \$pageNumber page(s)" }
+                    mainHandler.post { if (!isFinishing && !isDestroyed) status.text = "PDF exported successfully • $pageNumber page(s)" }
                 } catch (error: Exception) {
-                    mainHandler.post { if (!isFinishing && !isDestroyed) status.text = "PDF export failed: \${error.message ?: "unknown error"}" }
+                    mainHandler.post { if (!isFinishing && !isDestroyed) status.text = "PDF export failed: ${error.message ?: "unknown error"}" }
                 } finally {
                     document?.close()
                 }
