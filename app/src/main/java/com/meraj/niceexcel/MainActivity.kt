@@ -316,35 +316,72 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         }
     }
 
-    /** Atomic internal autosave; this is independent of the user's original file. */
+    // Recovery autosaves use a dedicated single-worker queue so XLSX compression and
+    // fsync never block Android's UI/lifecycle thread. A one-item queue keeps only the
+    // newest pending snapshot if edits trigger autosaves faster than storage can write.
+    private val autosaveExecutor = ThreadPoolExecutor(
+        1, 1,
+        30L, TimeUnit.SECONDS,
+        ArrayBlockingQueue<Runnable>(1),
+        { runnable -> Thread(runnable, "NiceExcel-Autosave").apply { isDaemon = true } },
+        ThreadPoolExecutor.AbortPolicy()
+    ).apply { allowCoreThreadTimeOut(true) }
+
+    /** Capture workbook state on the UI thread, then serialize and sync it in the background. */
     private fun persistLastWorkbook() {
         if (sheets.isEmpty()) return
         try {
+            // Commit an active editor before taking the immutable workbook snapshot.
             activeInlineCommit?.invoke()
             val snapshotSheets = sheets.mapValues { it.value.toMap() }
             val snapshotStyles = styles.mapValues { (_, values) -> values.mapValues { it.value.copy() } }
             val snapshotMerges = mergedRangesBySheet.mapValues { it.value.toList() }
-            val temp = java.io.File(filesDir, "niceexcel_last_session.tmp")
-            java.io.FileOutputStream(temp).use { output ->
-                XlsxCodec.write(output, snapshotSheets, snapshotStyles, metadataForSave(), snapshotMerges)
-                output.fd.sync()
-            }
-            val target = lastWorkbookFile()
-            if (!temp.renameTo(target)) {
-                temp.copyTo(target, overwrite = true)
-                temp.delete()
-            }
+            val snapshotMetadata = metadataForSave()
+            val snapshotSheetName = sheetName
+            val snapshotCell = selected
+
             getPreferences(MODE_PRIVATE).edit()
-                .putString("last_session_sheet", sheetName)
-                .putString("last_session_cell", selected)
+                .putString("last_session_sheet", snapshotSheetName)
+                .putString("last_session_cell", snapshotCell)
                 .apply()
+
+            val saveTask = Runnable {
+                val temp = java.io.File(filesDir, "niceexcel_last_session.tmp")
+                try {
+                    java.io.FileOutputStream(temp).use { output ->
+                        XlsxCodec.write(output, snapshotSheets, snapshotStyles, snapshotMetadata, snapshotMerges)
+                        output.fd.sync()
+                    }
+                    val target = lastWorkbookFile()
+                    if (!temp.renameTo(target)) {
+                        temp.copyTo(target, overwrite = true)
+                        temp.delete()
+                    }
+                    Log.d("NiceExcel", "Local workbook autosave completed")
+                } catch (error: Exception) {
+                    Log.e("NiceExcel", "Local workbook autosave failed", error)
+                    try { temp.delete() } catch (_: Exception) { }
+                }
+            }
+
+            try {
+                autosaveExecutor.execute(saveTask)
+            } catch (_: RejectedExecutionException) {
+                // Replace a stale queued snapshot with this newest workbook state.
+                autosaveExecutor.queue.poll()
+                try {
+                    autosaveExecutor.execute(saveTask)
+                } catch (error: RejectedExecutionException) {
+                    Log.e("NiceExcel", "Local workbook autosave queue is unavailable", error)
+                }
+            }
         } catch (error: Exception) {
-            Log.e("NiceExcel", "Local workbook autosave failed", error)
+            Log.e("NiceExcel", "Unable to prepare local workbook autosave", error)
         }
     }
 
     override fun onStop() {
-        // Save a recovery copy even when Android removes the app from recent tasks.
+        // Queue a recovery snapshot without performing XLSX serialization/fsync on the UI thread.
         persistLastWorkbook()
         super.onStop()
     }
