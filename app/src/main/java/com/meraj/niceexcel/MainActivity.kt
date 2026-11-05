@@ -4098,10 +4098,11 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                         val titleH = 22f
                         val fitScale = minOf(1f, contentW / totalW)
                         val sheetScale = minOf(fitScale, contentH / (titleH + (maxRow + 1) * rowH))
-                        val scale = when (options.scaling) {
-                            "Fit entire sheet on one page" -> sheetScale.coerceAtLeast(0.08f)
-                            "Actual size (multiple pages)" -> 1f
-                            else -> fitScale.coerceAtLeast(0.15f)
+                        val fitSinglePage = options.scaling == "Fit entire sheet on one page" && maxRow <= 120
+                        val scale = when {
+                            options.scaling == "Actual size (multiple pages)" -> 1f
+                            fitSinglePage -> sheetScale.coerceAtLeast(0.01f)
+                            else -> fitScale.coerceAtLeast(0.01f)
                         }
                         val colChunks: List<IntRange> = if (options.scaling == "Actual size (multiple pages)") {
                             val chunks = mutableListOf<IntRange>()
@@ -4118,7 +4119,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                             }
                             chunks
                         } else listOf(1..maxCol)
-                        val rowsPerPage = if (options.scaling == "Fit entire sheet on one page") maxRow
+                        val rowsPerPage = if (fitSinglePage) maxRow
                             else ((contentH / (rowH * scale)).toInt() - 1).coerceAtLeast(1)
                         for (cols in colChunks) {
                             var firstRow = 1
@@ -4173,7 +4174,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                                         val typefaceStyle = (if (style?.bold == true) android.graphics.Typeface.BOLD else 0) or
                                             (if (style?.italic == true) android.graphics.Typeface.ITALIC else 0)
                                         paint.typeface = android.graphics.Typeface.create("sans-serif", typefaceStyle)
-                                        paint.textSize = ((style?.fontSize ?: 9f) * scale).coerceIn(5f, 12f)
+                                        paint.textSize = ((style?.fontSize ?: 9f) * scale).coerceIn(1.5f, 12f)
                                         val text = value.replace("\n", " ")
                                         val textWidth = paint.measureText(text)
                                         val align = style?.alignment ?: Gravity.START
@@ -4196,7 +4197,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                                     y += rowH * scale
                                 }
                                 document!!.finishPage(page)
-                                if (options.scaling == "Fit entire sheet on one page") break
+                                if (fitSinglePage) break
                                 firstRow = lastRow + 1
                             }
                         }
