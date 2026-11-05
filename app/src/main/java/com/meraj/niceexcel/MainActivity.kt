@@ -4083,7 +4083,12 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                         }
                         var maxRow = 1
                         var maxCol = 1
-                        (cells.keys + stMap.keys).forEach { address ->
+                        // Determine the printable area from actual cell contents, not
+                        // style-only cells. Imported workbooks often carry formatting across
+                        // hundreds of otherwise empty cells; counting those styles creates
+                        // several blank PDF pages after the real data.
+                        cells.forEach { (address, rawValue) ->
+                            if (rawValue.isBlank()) return@forEach
                             val match = Regex("^([A-Z]+)([0-9]+)$").matchEntire(address.uppercase(Locale.US)) ?: return@forEach
                             maxCol = maxOf(maxCol, colNumber(match.groupValues[1]))
                             maxRow = maxOf(maxRow, match.groupValues[2].toIntOrNull() ?: 1)
