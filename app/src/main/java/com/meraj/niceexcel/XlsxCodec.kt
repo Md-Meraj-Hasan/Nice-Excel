@@ -185,9 +185,9 @@ internal object XlsxCodec {
                 "font" -> if(section=="fonts") { bold=false; italic=false; underline=false; size=11f; fontColor=Color.BLACK }
                 "b" -> if(section=="fonts") bold=true; "i" -> if(section=="fonts") italic=true; "u" -> if(section=="fonts") underline=true
                 "sz" -> if(section=="fonts") size=p.getAttributeValue(null,"val")?.toFloatOrNull()?:11f
-                "color" -> if(section=="fonts") fontColor=parseColor(p.getAttributeValue(null,"rgb"))?:Color.BLACK
+                "color" -> if(section=="fonts") fontColor=parseXlsxColor(p)?:Color.BLACK
                 "patternFill" -> if(section=="fills") fillColor=Color.WHITE
-                "fgColor" -> if(section=="fills") fillColor=parseColor(p.getAttributeValue(null,"rgb"))?:Color.WHITE
+                "fgColor" -> if(section=="fills") fillColor=parseXlsxColor(p)?:Color.WHITE
                 "border" -> if(section=="borders") { border=false; thickBorder=false }
                 "left","right","top","bottom" -> if(section=="borders") {
                     val weight = p.getAttributeValue(null,"style")
@@ -237,6 +237,32 @@ internal object XlsxCodec {
     private fun parseSharedStrings(xml:ByteArray):List<String>{val p=parser(xml);val out=mutableListOf<String>();var inside=false;var b=StringBuilder();while(p.eventType!=XmlPullParser.END_DOCUMENT){if(p.eventType==XmlPullParser.START_TAG&&p.name=="si"){inside=true;b=StringBuilder()}else if(inside&&p.eventType==XmlPullParser.START_TAG&&p.name=="t")b.append(readText(p))else if(p.eventType==XmlPullParser.END_TAG&&p.name=="si"){out.add(b.toString());inside=false};p.next()};return out}
     private fun styleKey(s:CellStyle)="${s.bold}|${s.italic}|${s.underline}|${s.textColor}|${s.fillColor}|${s.fontSize}|${s.alignment}|${s.numberFormat}|${s.border}|${s.thickBorder}"
     private fun parseColor(s:String?):Int? { if(s==null)return null; val h=s.removePrefix("#").uppercase(); return try { when(h.length){6->Color.parseColor("#$h");8->Color.parseColor("#${h.substring(2)}");else->null} }catch(_:Exception){null} }
+    // Excel stores many font/fill colors as theme or indexed references rather than RGB.
+    // Treating those as null silently turns colored cells into black text / white fill on reopen.
+    private fun parseXlsxColor(p: XmlPullParser): Int? {
+        p.getAttributeValue(null, "rgb")?.let { parseColor(it)?.let { color -> return color } }
+        p.getAttributeValue(null, "theme")?.toIntOrNull()?.let { theme ->
+            val palette = intArrayOf(
+                Color.WHITE, Color.BLACK, Color.rgb(231,230,230), Color.rgb(68,84,106),
+                Color.rgb(68,114,196), Color.rgb(237,125,49), Color.rgb(165,165,165),
+                Color.rgb(255,192,0), Color.rgb(91,155,213), Color.rgb(112,173,71),
+                Color.rgb(5,99,193), Color.rgb(149,79,114)
+            )
+            palette.getOrNull(theme)?.let { return it }
+        }
+        p.getAttributeValue(null, "indexed")?.toIntOrNull()?.let { indexed ->
+            val palette = intArrayOf(
+                Color.BLACK, Color.WHITE, Color.rgb(255,0,0), Color.rgb(0,255,0),
+                Color.rgb(0,0,255), Color.rgb(255,255,0), Color.rgb(255,0,255), Color.rgb(0,255,255),
+                Color.BLACK, Color.WHITE, Color.rgb(255,0,0), Color.rgb(0,255,0),
+                Color.rgb(0,0,255), Color.rgb(255,255,0), Color.rgb(255,0,255), Color.rgb(0,255,255),
+                Color.rgb(128,0,0), Color.rgb(0,128,0), Color.rgb(0,0,128), Color.rgb(128,128,0),
+                Color.rgb(128,0,128), Color.rgb(0,128,128), Color.rgb(192,192,192), Color.rgb(128,128,128)
+            )
+            palette.getOrNull(indexed)?.let { return it }
+        }
+        return null
+    }
     private fun argb(c:Int)="FF"+String.format("%06X", c and 0xFFFFFF)
     private fun decodeFmt(s:String)=when { s.contains('%')->"Percentage"; s.contains("yy",true)||s.contains("dd",true)->"Date (text display)"; s.contains("$",true)||s.contains("€")||s.contains("£")->"Currency"; s.contains("0.00")->"Number (2 decimals)"; else->"General" }
     private fun readText(p:XmlPullParser)=try{p.nextText()}catch(_:Exception){""}
