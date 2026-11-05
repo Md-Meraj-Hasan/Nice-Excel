@@ -5,6 +5,8 @@ import android.app.AlertDialog
 import android.content.Context
 import android.content.Intent
 import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.pdf.PdfDocument
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.ColorDrawable
@@ -796,7 +798,8 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                 "Open workbook…" to { openMenu() },
                 "Save" to { saveMenu() },
                 "Save As…" to { saveMenu() },
-                "Export CSV…" to { saveCsv() }
+                "Export CSV…" to { saveCsv() },
+                "Export PDF…" to { savePdfMenu() }
             )
             "Home" -> listOf(
                 "Undo" to { undo() }, "Redo" to { redo() },
@@ -3984,6 +3987,234 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         }
     }
 
+
+    private data class PdfExportOptions(
+        val paper: String = "A4",
+        val orientation: String = "Landscape",
+        val scaling: String = "Fit all columns",
+        val margins: String = "Normal",
+        val allSheets: Boolean = true,
+        val gridlines: Boolean = true,
+        val repeatHeadings: Boolean = true
+    )
+    private var pendingPdfOptions = PdfExportOptions()
+
+    private fun savePdfMenu() {
+        val panel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(8), dp(18), dp(4))
+        }
+        fun addChoice(label: String, values: Array<String>, selectedIndex: Int = 0): Spinner {
+            panel.addView(TextView(this).apply {
+                text = label
+                textSize = 12f
+                setTextColor(themedColor(Color.rgb(75, 90, 105)))
+                setPadding(0, dp(8), 0, dp(3))
+            })
+            return Spinner(this).also { spinner ->
+                spinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, values)
+                spinner.setSelection(selectedIndex)
+                panel.addView(spinner)
+            }
+        }
+        val sheetsChoice = addChoice("Worksheets", arrayOf("All worksheets", "Current worksheet only"))
+        val paperChoice = addChoice("Paper size", arrayOf("A4", "A3", "Letter", "Legal"))
+        val orientationChoice = addChoice("Orientation", arrayOf("Landscape", "Portrait"))
+        val scaleChoice = addChoice("Content adjustment", arrayOf("Fit all columns", "Fit entire sheet on one page", "Actual size (multiple pages)"))
+        val marginChoice = addChoice("Page margins", arrayOf("Normal", "Narrow", "Wide"))
+        val gridCheck = CheckBox(this).apply { text = "Show cell gridlines"; isChecked = true }
+        val headingCheck = CheckBox(this).apply { text = "Repeat column headings"; isChecked = true }
+        panel.addView(gridCheck)
+        panel.addView(headingCheck)
+        AlertDialog.Builder(this)
+            .setTitle("Export Excel to PDF")
+            .setView(ScrollView(this).apply { addView(panel) })
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Continue") { _, _ ->
+                pendingPdfOptions = PdfExportOptions(
+                    paper = paperChoice.selectedItem.toString(),
+                    orientation = orientationChoice.selectedItem.toString(),
+                    scaling = scaleChoice.selectedItem.toString(),
+                    margins = marginChoice.selectedItem.toString(),
+                    allSheets = sheetsChoice.selectedItemPosition == 0,
+                    gridlines = gridCheck.isChecked,
+                    repeatHeadings = headingCheck.isChecked
+                )
+                val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                    type = "application/pdf"
+                    putExtra(Intent.EXTRA_TITLE, "NiceExcel.pdf")
+                }
+                startActivityForResult(intent, 15)
+            }
+            .showProfessional()
+    }
+
+    private fun saveWorkbookPdf(uri: android.net.Uri, options: PdfExportOptions) {
+        val cellSnapshot = if (options.allSheets) sheets.mapValues { it.value.toMap() }
+            else linkedMapOf(sheetName to (sheets[sheetName]?.toMap() ?: emptyMap()))
+        val styleSnapshot = if (options.allSheets) styles.mapValues { (_, map) -> map.mapValues { it.value.copy() } }
+            else linkedMapOf(sheetName to (styles[sheetName]?.mapValues { it.value.copy() } ?: emptyMap()))
+        val formulaSnapshot = formulaDisplayCache.toMap()
+        val widthSnapshot = columnWidthsBySheet.mapValues { it.value.toList() }
+        try {
+            backgroundExecutor.execute {
+                var document: PdfDocument? = null
+                try {
+                    document = PdfDocument()
+                    val base = when (options.paper) {
+                        "A3" -> 842 to 1191
+                        "Letter" -> 612 to 792
+                        "Legal" -> 612 to 1008
+                        else -> 595 to 842
+                    }
+                    val pageW = if (options.orientation == "Landscape") maxOf(base.first, base.second) else minOf(base.first, base.second)
+                    val pageH = if (options.orientation == "Landscape") minOf(base.first, base.second) else maxOf(base.first, base.second)
+                    val margin = when (options.margins) { "Narrow" -> 18f; "Wide" -> 54f; else -> 30f }
+                    val contentW = pageW - margin * 2f
+                    val contentH = pageH - margin * 2f - 28f
+                    var pageNumber = 0
+                    cellSnapshot.forEach { (name, cells) ->
+                        val stMap = styleSnapshot[name].orEmpty()
+                        fun colNumber(label: String): Int {
+                            var n = 0
+                            label.forEach { ch -> if (ch in 'A'..'Z') n = n * 26 + (ch - 'A' + 1) }
+                            return n
+                        }
+                        var maxRow = 1
+                        var maxCol = 1
+                        (cells.keys + stMap.keys).forEach { address ->
+                            val match = Regex("^([A-Z]+)([0-9]+)$").matchEntire(address.uppercase(Locale.US)) ?: return@forEach
+                            maxCol = maxOf(maxCol, colNumber(match.groupValues[1]))
+                            maxRow = maxOf(maxRow, match.groupValues[2].toIntOrNull() ?: 1)
+                        }
+                        maxRow = maxRow.coerceAtMost(10000)
+                        maxCol = maxCol.coerceIn(1, colLimit)
+                        val widths = (1..maxCol).map { c ->
+                            (widthSnapshot[name]?.getOrNull(c - 1)?.toFloat() ?: 82f).coerceIn(42f, 180f)
+                        }
+                        val totalW = widths.sum()
+                        val rowH = 22f
+                        val titleH = 22f
+                        val fitScale = minOf(1f, contentW / totalW)
+                        val sheetScale = minOf(fitScale, contentH / (titleH + (maxRow + 1) * rowH))
+                        val scale = when (options.scaling) {
+                            "Fit entire sheet on one page" -> sheetScale.coerceAtLeast(0.08f)
+                            "Actual size (multiple pages)" -> 1f
+                            else -> fitScale.coerceAtLeast(0.15f)
+                        }
+                        val colChunks: List<IntRange> = if (options.scaling == "Actual size (multiple pages)") {
+                            val chunks = mutableListOf<IntRange>()
+                            var start = 1
+                            while (start <= maxCol) {
+                                var end = start
+                                var used = 0f
+                                while (end <= maxCol && (used + widths[end - 1]) <= contentW) {
+                                    used += widths[end - 1]; end++
+                                }
+                                if (end == start) end++
+                                chunks.add(start until end)
+                                start = end
+                            }
+                            chunks
+                        } else listOf(1..maxCol)
+                        val rowsPerPage = if (options.scaling == "Fit entire sheet on one page") maxRow
+                            else ((contentH / (rowH * scale)).toInt() - 1).coerceAtLeast(1)
+                        for (cols in colChunks) {
+                            var firstRow = 1
+                            while (firstRow <= maxRow) {
+                                val lastRow = minOf(maxRow, firstRow + rowsPerPage - 1)
+                                pageNumber++
+                                val page = document!!.startPage(PdfDocument.PageInfo.Builder(pageW, pageH, pageNumber).create())
+                                val canvas = page.canvas
+                                val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+                                paint.color = Color.BLACK
+                                paint.textSize = 10f
+                                paint.typeface = android.graphics.Typeface.create("sans-serif", android.graphics.Typeface.BOLD)
+                                canvas.drawText(name + if (colChunks.size > 1) " · Columns \${cols.first}–\${cols.last}" else "", margin, margin + 10f, paint)
+                                val xStart = margin
+                                var y = margin + titleH
+                                val drawHeader = firstRow == 1 || options.repeatHeadings
+                                if (drawHeader) {
+                                    var x = xStart
+                                    cols.forEach { c ->
+                                        val w = widths[c - 1] * scale
+                                        paint.color = Color.rgb(232, 238, 245)
+                                        canvas.drawRect(x, y, x + w, y + rowH * scale, paint)
+                                        paint.color = Color.DKGRAY
+                                        paint.textSize = 8f * scale.coerceAtLeast(0.65f)
+                                        canvas.drawText(colName(c - 1), x + 4f * scale, y + 14f * scale, paint)
+                                        if (options.gridlines) {
+                                            paint.color = Color.LTGRAY; paint.style = Paint.Style.STROKE
+                                            canvas.drawRect(x, y, x + w, y + rowH * scale, paint)
+                                            paint.style = Paint.Style.FILL
+                                        }
+                                        x += w
+                                    }
+                                    y += rowH * scale
+                                }
+                                for (r in firstRow..lastRow) {
+                                    var x = xStart
+                                    cols.forEach { c ->
+                                        val address = colName(c - 1) + r
+                                        val raw = cells[address].orEmpty()
+                                        val style = stMap[address]
+                                        val formulaKey = "\$name|\$address|\$raw|\${style?.numberFormat ?: "General"}"
+                                        val value = if (raw.trimStart().startsWith("=")) formulaSnapshot[formulaKey] ?: raw else {
+                                            val number = raw.toDoubleOrNull()
+                                            if (number != null && style != null) formatNumber(number, style.numberFormat, raw) else raw
+                                        }
+                                        val w = widths[c - 1] * scale
+                                        paint.color = style?.fillColor ?: Color.WHITE
+                                        canvas.drawRect(x, y, x + w, y + rowH * scale, paint)
+                                        canvas.save()
+                                        canvas.clipRect(x + 2f, y + 1f, x + w - 2f, y + rowH * scale - 1f)
+                                        paint.color = style?.textColor ?: Color.BLACK
+                                        val typefaceStyle = (if (style?.bold == true) android.graphics.Typeface.BOLD else 0) or
+                                            (if (style?.italic == true) android.graphics.Typeface.ITALIC else 0)
+                                        paint.typeface = android.graphics.Typeface.create("sans-serif", typefaceStyle)
+                                        paint.textSize = ((style?.fontSize ?: 9f) * scale).coerceIn(5f, 12f)
+                                        val text = value.replace("\n", " ")
+                                        val textWidth = paint.measureText(text)
+                                        val align = style?.alignment ?: Gravity.START
+                                        val tx = when {
+                                            (align and Gravity.CENTER_HORIZONTAL) == Gravity.CENTER_HORIZONTAL -> x + (w - textWidth) / 2f
+                                            (align and Gravity.RIGHT) == Gravity.RIGHT -> x + w - textWidth - 4f
+                                            else -> x + 4f * scale
+                                        }
+                                        canvas.drawText(text, tx, y + rowH * scale * 0.68f, paint)
+                                        canvas.restore()
+                                        if (options.gridlines || style?.border == true || style?.thickBorder == true) {
+                                            paint.color = if (style?.thickBorder == true) Color.DKGRAY else Color.LTGRAY
+                                            paint.style = Paint.Style.STROKE
+                                            paint.strokeWidth = if (style?.thickBorder == true) 1.5f else 0.45f
+                                            canvas.drawRect(x, y, x + w, y + rowH * scale, paint)
+                                            paint.style = Paint.Style.FILL
+                                        }
+                                        x += w
+                                    }
+                                    y += rowH * scale
+                                }
+                                document!!.finishPage(page)
+                                if (options.scaling == "Fit entire sheet on one page") break
+                                firstRow = lastRow + 1
+                            }
+                        }
+                    }
+                    val output = contentResolver.openOutputStream(uri) ?: error("Could not open PDF destination")
+                    output.use { document!!.writeTo(it) }
+                    mainHandler.post { if (!isFinishing && !isDestroyed) status.text = "PDF exported successfully • \$pageNumber page(s)" }
+                } catch (error: Exception) {
+                    mainHandler.post { if (!isFinishing && !isDestroyed) status.text = "PDF export failed: \${error.message ?: "unknown error"}" }
+                } finally {
+                    document?.close()
+                }
+            }
+        } catch (error: RejectedExecutionException) {
+            status.text = "PDF export unavailable: background worker is closing"
+        }
+    }
+
     private fun buildCsvContent(): String {
         // Snapshot the active worksheet before the Android save picker opens.
         return (1..rowCount).joinToString("\r\n") { r ->
@@ -4021,6 +4252,8 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                 status.text = "CSV saved • $sheetName.csv"
             } else if(requestCode==13) {
                 saveXlsxWithCalc(intent.data!!)
+            } else if(requestCode==15) {
+                saveWorkbookPdf(intent.data!!, pendingPdfOptions)
             } else if(requestCode==12) {
                 val csvText = contentResolver.openInputStream(intent.data!!)?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
                     ?: error("Could not read the selected CSV file")
