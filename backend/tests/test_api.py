@@ -489,3 +489,53 @@ def test_conditional_formatting_rejects_invalid_rule_without_mutating_workbook()
     assert response.status_code == 422
     assert client.get(f"/workbooks/{book_id}/conditional-formatting",
                       query_string={"sheet": "Sheet1"}).get_json()["rules"] == []
+
+
+def test_symbol_display_number_formats_preserve_values_and_formula_on_save_reopen():
+    from io import BytesIO
+    from openpyxl import load_workbook
+
+    book_id = client.post('/workbooks', json={}).get_json()['workbook_id']
+    created = client.patch(f'/workbooks/{book_id}/cells', json={
+        'sheet': 'Sheet1', 'cells': [
+            {'cell': 'A1', 'value': 1234.5678},
+            {'cell': 'A2', 'value': '=A1*2'},
+            {'cell': 'B1', 'value': 50},
+            {'cell': 'B2', 'value': '=B1+25'},
+        ]
+    })
+    assert created.status_code == 200
+
+    before = client.patch(f'/workbooks/{book_id}/style', json={
+        'sheet': 'Sheet1', 'range': 'A1:A2',
+        'number_format': '"₹"#,##0.############'
+    })
+    after = client.patch(f'/workbooks/{book_id}/style', json={
+        'sheet': 'Sheet1', 'range': 'B1:B2',
+        'number_format': '#,##0.############"%"'
+    })
+    assert before.status_code == 200
+    assert after.status_code == 200
+
+    live = client.get(f'/workbooks/{book_id}/range', query_string={
+        'sheet': 'Sheet1', 'range': 'A1:B2'
+    }).get_json()['rows']
+    assert live[0][0]['value'] == 1234.5678
+    assert live[1][0]['value'] == '=A1*2'
+    assert live[0][0]['style']['number_format'] == '"₹"#,##0.############'
+    assert live[1][0]['style']['number_format'] == '"₹"#,##0.############'
+    assert live[0][1]['value'] == 50
+    assert live[1][1]['value'] == '=B1+25'
+    assert live[0][1]['style']['number_format'] == '#,##0.############"%"'
+
+    saved = client.get(f'/workbooks/{book_id}/save')
+    assert saved.status_code == 200 and saved.data[:2] == b'PK'
+    reopened = load_workbook(BytesIO(saved.data), data_only=False)
+    ws = reopened['Sheet1']
+    assert ws['A1'].value == 1234.5678
+    assert ws['A2'].value == '=A1*2'
+    assert ws['A1'].number_format == '"₹"#,##0.############'
+    assert ws['A2'].number_format == '"₹"#,##0.############'
+    assert ws['B1'].value == 50
+    assert ws['B2'].value == '=B1+25'
+    assert ws['B1'].number_format == '#,##0.############"%"'
