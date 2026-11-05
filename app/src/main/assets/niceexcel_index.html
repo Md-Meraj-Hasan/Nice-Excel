@@ -121,10 +121,21 @@
 .theme-swatch:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .theme-palette-help{font-size:10px;color:var(--muted);margin-top:2px}
 
+
+/* PDF page setup */
+#pdfExportDialog{width:min(460px,calc(100vw - 24px));max-height:88vh;overflow:auto;border:1px solid var(--line);border-radius:14px;background:var(--panel);color:var(--text);padding:0;box-shadow:0 22px 70px #0009}
+#pdfExportDialog::backdrop{background:#020617bb;backdrop-filter:blur(3px)}
+.pdf-setup-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:15px}
+.pdf-setup-grid label{display:grid;gap:5px;font-size:12px;color:var(--muted);font-weight:700}
+.pdf-setup-grid select{width:100%;min-width:0;padding:9px;border:1px solid var(--line);border-radius:7px;background:#0b1220;color:var(--text)}
+.pdf-setup-checks{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:14px;color:var(--text)}
+.pdf-setup-checks label{display:flex;align-items:center;gap:6px;color:var(--text)}
+.pdf-setup-foot{display:flex;justify-content:flex-end;gap:8px;padding:12px 15px;border-top:1px solid var(--line)}
+@media(max-width:420px){.pdf-setup-grid{grid-template-columns:1fr}}
 </style></head>
 <body>
 <header class="top web-native-toolbar" aria-label="Nice Excel main menu">
-<details class="toolgroup"><summary>File</summary><div class="toolmenu"><button class="primary" id="newBtn">New workbook</button><button id="recoverBtn">Recover</button><button id="openBtn">Open workbook…</button><button id="saveBtn">Save XLSX</button><button id="csvBtn">Export CSV…</button></div></details>
+<details class="toolgroup"><summary>File</summary><div class="toolmenu"><button class="primary" id="newBtn">New workbook</button><button id="recoverBtn">Recover</button><button id="openBtn">Open workbook…</button><button id="saveBtn">Save XLSX</button><button id="csvBtn">Export CSV…</button><button id="exportPdfBtn">Export PDF…</button></div></details>
 <details class="toolgroup"><summary>Home</summary><div class="toolmenu"><button id="undoBtn">Undo</button><button id="redoBtn">Redo</button><button id="copyCellBtn">Copy cell</button><button id="pasteCellBtn">Paste cells</button><button id="clearCellBtn">Clear contents</button></div></details>
 <details class="toolgroup"><summary>Insert</summary><div class="toolmenu insert-menu"><button id="insertRowsMenuBtn" type="button">＋ 10+ Rows</button><button id="smartTableBtn" class="primary">Table</button><button id="insertShapeBtn" type="button">Shapes</button><button id="insertSymbolBtn" type="button">Symbols</button><button id="aiFillBtn" type="button">AI-Fill</button><button id="clearInsertFormatBtn" type="button">Clear formatting</button></div></details>
 <details class="toolgroup"><summary>Format</summary><div class="toolmenu"><button type="button" id="openCellFormatBtn">Cells…</button><button type="button" id="openRangeFormatBtn">Range…</button><button type="button" id="fontColorCellBtn">Font color</button><button type="button" id="fillColorCellBtn">Cell fill</button><button type="button" id="fontThemeBtn" class="theme-palette-trigger" aria-expanded="false" title="Choose font theme color">A ▾</button><button type="button" id="fillThemeBtn" class="theme-palette-trigger" aria-expanded="false" title="Choose cell fill theme color">Fill ▾</button><button id="boldBtn"><b>B</b></button><button id="italicBtn"><i>I</i></button><button id="clearFormatBtn">Clear formatting</button></div></details>
@@ -153,6 +164,20 @@
 
 <footer class="foot"><span id="selectionInfo">A1 selected</span><span class="note" id="calcNote">Formula subset calculates locally; not full Excel compatibility.</span></footer>
 <dialog id="cellFormatDialog" class="professional-dialog"><form method="dialog" id="cellFormatForm"><h3>Format cells</h3><label>Cell or range (e.g. A1 or A1:C10)<input id="formatRangeInput" value="A1" autocomplete="off"></label><div class="format-dialog-grid"><label>Number format<select id="formatNumberSelect"><option value="General">General</option><option value="0.00">Number (2 decimals)</option><option value="$#,##0.00">Currency</option><option value="0.00%">Percentage</option><option value="yyyy-mm-dd">Date</option><option value="hh:mm:ss">Time</option><option value="yyyy-mm-dd hh:mm">Date &amp; Time</option><option value="@">Text</option><option value="0.00E+00">Scientific</option></select></label><label>Alignment<select id="formatAlignSelect"><option value="general">General</option><option value="left">Left</option><option value="center">Center</option><option value="right">Right</option></select></label><label>Font size<input id="formatFontSize" type="number" min="6" max="96" value="11"></label><label>Font color<input id="formatFontColor" type="color" value="#000000"></label><label>Cell fill<input id="formatFillColor" type="color" value="#ffffff"></label></div><div class="format-dialog-checks"><label><input id="formatBold" type="checkbox"> Bold</label><label><input id="formatItalic" type="checkbox"> Italic</label><label><input id="formatUnderline" type="checkbox"> Underline</label></div><menu><button type="button" id="formatCancelBtn">Cancel</button><button type="submit" class="primary">Apply to selection</button></menu></form></dialog>
+
+<dialog id="pdfExportDialog">
+ <div class="st-head"><h2>Export workbook to PDF</h2><button type="button" id="pdfSetupClose">✕</button></div>
+ <div class="pdf-setup-grid">
+  <label>Sheets<select id="pdfSheetScope"><option value="all">All worksheets</option><option value="active">Current worksheet only</option></select></label>
+  <label>Paper size<select id="pdfPaper"><option value="A4">A4</option><option value="A3">A3</option><option value="Letter">Letter</option><option value="Legal">Legal</option></select></label>
+  <label>Orientation<select id="pdfOrientation"><option value="landscape">Landscape</option><option value="portrait">Portrait</option></select></label>
+  <label>Content scaling<select id="pdfScale"><option value="fit-width">Fit all columns to page width</option><option value="fit-sheet">Fit sheet on one page</option><option value="actual">Actual size (paginate)</option></select></label>
+  <label>Margins<select id="pdfMargins"><option value="normal">Normal</option><option value="narrow">Narrow</option><option value="wide">Wide</option></select></label>
+  <div class="pdf-setup-checks"><label><input id="pdfGridlines" type="checkbox" checked> Show gridlines</label><label><input id="pdfRepeatHeader" type="checkbox" checked> Repeat column headings</label></div>
+ </div>
+ <div class="pdf-setup-foot"><button type="button" id="pdfSetupCancel">Cancel</button><button type="button" id="pdfExportGo" class="primary">Export PDF</button></div>
+</dialog>
+
 <script>
 (() => {
  const $=id=>document.getElementById(id); let bookId=null, activeSheet='Sheet1', selected='A1', data=[], sheets=[], editing=false;
