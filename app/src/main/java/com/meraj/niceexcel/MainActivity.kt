@@ -4124,8 +4124,9 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                             }
                             chunks
                         } else listOf(1..maxCol)
+                        // Reserve an extra line for the repeated worksheet heading row.
                         val rowsPerPage = if (fitSinglePage) maxRow
-                            else ((contentH / (rowH * scale)).toInt() - 1).coerceAtLeast(1)
+                            else ((contentH / (rowH * scale)).toInt() - 1 - if (options.repeatHeadings) 1 else 0).coerceAtLeast(1)
                         for (cols in colChunks) {
                             var firstRow = 1
                             while (firstRow <= maxRow) {
@@ -4156,6 +4157,42 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                                             paint.style = Paint.Style.FILL
                                         }
                                         x += w
+                                    }
+                                    y += rowH * scale
+                                }
+                                // Repeat the actual worksheet heading row (usually row 1)
+                                // on every continuation page, not just the A/B/C column labels.
+                                if (firstRow > 1 && options.repeatHeadings) {
+                                    var hx = xStart
+                                    cols.forEach { c ->
+                                        val address = colName(c - 1) + 1
+                                        val raw = cells[address].orEmpty()
+                                        val style = stMap[address]
+                                        val key = name + "|" + address + "|" + raw + "|" + (style?.numberFormat ?: "General")
+                                        val value = if (raw.trimStart().startsWith("=")) formulaSnapshot[key] ?: raw else {
+                                            val number = raw.toDoubleOrNull()
+                                            if (number != null && style != null) formatNumber(number, style.numberFormat, raw) else raw
+                                        }
+                                        val w = widths[c - 1] * scale
+                                        paint.color = style?.fillColor ?: Color.rgb(232, 238, 245)
+                                        canvas.drawRect(hx, y, hx + w, y + rowH * scale, paint)
+                                        canvas.save()
+                                        canvas.clipRect(hx + 2f, y + 1f, hx + w - 2f, y + rowH * scale - 1f)
+                                        paint.color = style?.textColor ?: Color.DKGRAY
+                                        val typefaceStyle = (if (style?.bold == true) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL) or
+                                            (if (style?.italic == true) android.graphics.Typeface.ITALIC else 0)
+                                        paint.typeface = android.graphics.Typeface.create("sans-serif", typefaceStyle)
+                                        paint.textSize = ((style?.fontSize ?: 9f) * scale).coerceIn(1.5f, 12f)
+                                        canvas.drawText(value.replace("\n", " "), hx + 4f * scale, y + rowH * scale * 0.68f, paint)
+                                        canvas.restore()
+                                        if (options.gridlines || style?.border == true || style?.thickBorder == true) {
+                                            paint.color = if (style?.thickBorder == true) Color.DKGRAY else Color.LTGRAY
+                                            paint.style = Paint.Style.STROKE
+                                            paint.strokeWidth = if (style?.thickBorder == true) 1.5f else 0.45f
+                                            canvas.drawRect(hx, y, hx + w, y + rowH * scale, paint)
+                                            paint.style = Paint.Style.FILL
+                                        }
+                                        hx += w
                                     }
                                     y += rowH * scale
                                 }
