@@ -4134,7 +4134,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                             // right or create extra trailing pages.
                             if (rawValue.trimStart().startsWith("=")) {
                                 val cellStyle = stMap[address]
-                                val cacheKey = "$name|$address|$rawValue|\u0024{cellStyle?.numberFormat ?: "General"}"
+                                val cacheKey = "$name|$address|$rawValue|${cellStyle?.numberFormat ?: "General"}"
                                 val calculated = formulaSnapshot[cacheKey]
                                 if (calculated != null && calculated.isBlank()) return@cellLoop
                             }
