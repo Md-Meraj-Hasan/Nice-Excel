@@ -112,6 +112,24 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         return if (luminance < 145) Color.rgb(235,241,250) else color
     }
 
+    private fun contrastAwareCellTextColor(foreground: Int, background: Int): Int {
+        fun channel(value: Int): Double {
+            val c = value / 255.0
+            return if (c <= 0.04045) c / 12.92 else Math.pow((c + 0.055) / 1.055, 2.4)
+        }
+        fun luminance(color: Int): Double =
+            0.2126 * channel(Color.red(color)) +
+            0.7152 * channel(Color.green(color)) +
+            0.0722 * channel(Color.blue(color))
+        val fg = luminance(foreground)
+        val bg = luminance(background)
+        val ratio = (a: Double, b: Double) -> (maxOf(a, b) + 0.05) / (minOf(a, b) + 0.05)
+        if (ratio(fg, bg) >= 4.5) return foreground
+        val blackRatio = ratio(0.0, bg)
+        val whiteRatio = ratio(1.0, bg)
+        return if (blackRatio >= whiteRatio) Color.BLACK else Color.WHITE
+    }
+
     private fun updateSystemBars() {
         // Black Theme must override the selected day-palette accent.
         window.statusBarColor = if (darkMode) Color.BLACK
@@ -1092,7 +1110,15 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
             }
             view.text = text
             val st = sheetStyles[address]
-            view.setTextColor(themedCellTextColor(st?.textColor ?: Color.rgb(24, 32, 39)))
+            val cellBackground = when {
+                st == null -> themedSurface(Color.WHITE)
+                darkMode && st.fillColor == Color.WHITE -> Color.BLACK
+                else -> st.fillColor
+            }
+            view.setTextColor(contrastAwareCellTextColor(
+                themedCellTextColor(st?.textColor ?: Color.rgb(24, 32, 39)),
+                cellBackground
+            ))
             view.textSize = st?.fontSize ?: 13f
             view.typeface = Typeface.create(
                 Typeface.DEFAULT,
@@ -3454,7 +3480,11 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         val styles = listOf(
             "Blue" to "#1F4E78", "Green" to "#217346", "Purple" to "#7030A0",
             "Orange" to "#C65911", "Teal" to "#0F6B78", "Gray" to "#595959",
-            "Dark" to "#263746", "Light Blue" to "#4472C4"
+            "Dark" to "#263746", "Light" to "#4472C4", "Ruby" to "#7F1D1D",
+            "Gold" to "#806000", "Navy" to "#172554", "Cyan" to "#0891B2",
+            "Rose" to "#BE123C", "Lime" to "#4D7C0F", "Indigo" to "#4338CA",
+            "Coral" to "#E05D4F", "Mint" to "#0F766E", "Plum" to "#7E22CE",
+            "Slate" to "#475569", "Bronze" to "#92400E"
         )
         AlertDialog.Builder(this).setTitle("Choose table colour")
             .setItems(styles.map { it.first }.toTypedArray()) { _, which ->
@@ -3494,10 +3524,14 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                     st.border = false
                     st.thickBorder = false
                     if (row == headerRow) {
-                        st.bold = true; st.fillColor = headerColor; st.textColor = Color.WHITE
+                        st.bold = true
+                        st.fillColor = headerColor
+                        st.textColor = contrastAwareCellTextColor(Color.WHITE, headerColor)
                     } else {
-                        st.fillColor = if (darkMode) Color.rgb(18,26,43) else if ((row - headerRow) % 2 == 0) lighterColor else lightColor
-                        st.textColor = themedCellTextColor(Color.rgb(24, 32, 39))
+                        val bandFill = if (darkMode) Color.rgb(18,26,43)
+                            else if ((row - headerRow) % 2 == 0) lighterColor else lightColor
+                        st.fillColor = bandFill
+                        st.textColor = contrastAwareCellTextColor(Color.rgb(24, 32, 39), bandFill)
                     }
                 }
                 tableHeaderRow = headerRow
