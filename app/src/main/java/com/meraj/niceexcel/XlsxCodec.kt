@@ -165,7 +165,7 @@ internal object XlsxCodec {
         }
         val fmtId = numFormats.withIndex().associate { it.value to (164 + it.index) }
         val fmtXml = numFormats.map { fmt ->
-            val code = when (fmt) { "Currency" -> "$#,##0.00"; else -> fmt }
+            val code = when (fmt) { "Currency" -> "\\$#,##0.00"; else -> fmt }
             "<numFmt numFmtId=\\"${fmtId[fmt]}\\" formatCode=\\"${esc(code)}\\"/>"
         }.joinToString("")
         val xfs = buildList {
