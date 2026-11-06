@@ -4083,7 +4083,8 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         val margins: String = "Normal",
         val allSheets: Boolean = true,
         val gridlines: Boolean = true,
-        val repeatHeadings: Boolean = true
+        val repeatHeadings: Boolean = true,
+        val showSheetName: Boolean = true
     )
     private var pendingPdfOptions = PdfExportOptions()
 
@@ -4112,8 +4113,10 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         val marginChoice = addChoice("Page margins", arrayOf("Normal", "Narrow", "Wide"))
         val gridCheck = CheckBox(this).apply { text = "Show cell gridlines"; isChecked = true }
         val headingCheck = CheckBox(this).apply { text = "Repeat worksheet header row"; isChecked = true }
+        val sheetNameCheck = CheckBox(this).apply { text = "Show worksheet name"; isChecked = true }
         panel.addView(gridCheck)
         panel.addView(headingCheck)
+        panel.addView(sheetNameCheck)
         AlertDialog.Builder(this)
             .setTitle("Export Excel to PDF")
             .setView(ScrollView(this).apply { addView(panel) })
@@ -4126,7 +4129,8 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                     margins = marginChoice.selectedItem.toString(),
                     allSheets = sheetsChoice.selectedItemPosition == 0,
                     gridlines = gridCheck.isChecked,
-                    repeatHeadings = headingCheck.isChecked
+                    repeatHeadings = headingCheck.isChecked,
+                    showSheetName = sheetNameCheck.isChecked
                 )
                 val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
                     addCategory(Intent.CATEGORY_OPENABLE)
@@ -4203,7 +4207,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                         }
                         val totalW = widths.sum()
                         val rowH = 22f
-                        val titleH = 22f
+                        val titleH = if (options.showSheetName) 22f else 0f
                         // Fit-all-columns must use the full printable page width.
                         // Do not cap this scale at 1x: narrower worksheets should expand
                         // to the right edge instead of leaving a large empty strip.
@@ -4248,7 +4252,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                                 paint.textSize = 10f
                                 paint.typeface = android.graphics.Typeface.create("sans-serif", android.graphics.Typeface.BOLD)
                                 val xStart = margin
-                                canvas.drawText(name, margin, margin + 10f, paint)
+                                if (options.showSheetName) canvas.drawText(name, margin, margin + 10f, paint)
                                 var y = margin + titleH
                                 // Repeat the actual worksheet heading row (usually row 1)
                                 // on every continuation page, not just the A/B/C column labels.
