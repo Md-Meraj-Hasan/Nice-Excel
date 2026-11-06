@@ -475,8 +475,7 @@ $('clearFormatBtn').onclick=async()=>{try{await api('/workbooks/'+bookId+'/style
  setupFormulaPicker();
  async function startSession(){let saved=null;try{saved=localStorage.getItem('niceexcel.lastWorkbookId')}catch{}if(saved){try{const x=await api('/workbooks/'+saved);bookId=saved;sheets=x.sheets.map(s=>s.name);activeSheet=x.active_sheet||sheets[0]||'Sheet1';selected='A1';await refresh();setStatus('Restored last workbook')}catch{forgetBook()}}if(!bookId)await create()}
  startSession().catch(e=>{setStatus('API error: '+e.message);$('calcNote').textContent='Start backend at 127.0.0.1:8765; see backend README.'});
-})();
- function insertAtCellCursor(symbol){
+function insertAtCellCursor(symbol){
  const input=$('formula'),value=String(input.value??''),start=Number.isInteger(input.selectionStart)?input.selectionStart:value.length,end=Number.isInteger(input.selectionEnd)?input.selectionEnd:start;
  input.value=value.slice(0,start)+symbol+value.slice(end);input.focus();const pos=start+symbol.length;try{input.setSelectionRange(pos,pos)}catch(_){};setStatus('Symbol staged for '+selected+' · press Enter to apply');
  }
@@ -535,4 +534,5 @@ $('clearFormatBtn').onclick=async()=>{
     setStatus('Cleared formatting for '+selected);
   }catch(e){alert(e.message);}
 };
+})();
 </script></body></html>
