@@ -1771,7 +1771,17 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
             gravity = if (header || key == null) Gravity.CENTER else Gravity.CENTER_VERTICAL or Gravity.START
             setPadding(dp(3), 0, dp(3), 0)
             val st = if (key != null) sheetStyles[key] else null
-            setTextColor(if (header) { if (darkMode) Color.WHITE else dayPalettes[dayPaletteIndex.coerceIn(dayPalettes.indices)].ink } else themedCellTextColor(st?.textColor ?: Color.rgb(24,32,39)))
+            setTextColor(
+                if (header) {
+                    if (darkMode) Color.WHITE else dayPalettes[dayPaletteIndex.coerceIn(dayPalettes.indices)].ink
+                } else if (st != null) {
+                    // A saved cell style contains an explicit user-selected font colour.
+                    // Do not run it through theme conversion; that turns dark colours white.
+                    st.textColor
+                } else {
+                    themedCellTextColor(Color.rgb(24,32,39))
+                }
+            )
             textSize = st?.fontSize ?: 13f
             typeface = Typeface.create(Typeface.DEFAULT, (if (st?.bold == true || header) Typeface.BOLD else Typeface.NORMAL) or (if (st?.italic == true) Typeface.ITALIC else Typeface.NORMAL))
             paint.isUnderlineText = st?.underline == true
