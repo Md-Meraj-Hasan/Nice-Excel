@@ -57,7 +57,7 @@ class FlaskActivity : Activity() {
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
             settings.allowFileAccess = false
-            settings.allowContentAccess = false
+            settings.allowContentAccess = true
             webViewClient = object : WebViewClient() {
                 override fun onReceivedError(view: WebView?, request: android.webkit.WebResourceRequest?, error: android.webkit.WebResourceError?) {
                     if (request?.isForMainFrame == true && !mainFrameErrorShown) {
