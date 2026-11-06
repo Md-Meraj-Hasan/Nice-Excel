@@ -847,6 +847,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
             "Insert" -> listOf(
                 "Insert 10 rows at selection" to { addRows(10) },
                 "Table tools…" to { tableMenu() },
+                "Table styles…" to { tableMenu() },
                 "Shapes…" to { showNativeShapesMenu() },
                 "Symbols…" to { showSymbolPickerMenu() },
                 "AI Auto Fill…" to { autoFillDialog() },
@@ -858,7 +859,6 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                 "Font size…" to { chooseFontSize() },
                 "Alignment…" to { chooseAlignmentForTargets(listOf(selected), selected) },
                 "Number format…" to { chooseNumberFormat() },
-                "Table styles…" to { tableMenu() },
                 "Clear formatting" to { clearFormattingSelection() }
             )
             "Data" -> listOf(
