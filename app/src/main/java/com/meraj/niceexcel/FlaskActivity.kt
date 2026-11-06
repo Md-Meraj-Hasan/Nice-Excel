@@ -1,10 +1,13 @@
 package com.meraj.niceexcel
 
 import android.app.Activity
+import android.content.Intent
+import android.net.Uri
 import android.graphics.Color
 import android.os.Bundle
 import android.view.ViewGroup
 import android.webkit.WebChromeClient
+import android.webkit.ValueCallback
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.webkit.JavascriptInterface
@@ -24,6 +27,8 @@ class FlaskActivity : Activity() {
     private lateinit var webView: WebView
     private lateinit var loadingText: TextView
     private val localUrl = "http://127.0.0.1:8765/"
+    private var pendingFileChooser: ValueCallback<Array<Uri>>? = null
+    private val fileChooserRequestCode = 4107
     @Volatile private var engineReady = false
     @Volatile private var engineFailed = false
     private var mainFrameErrorShown = false
@@ -63,7 +68,36 @@ class FlaskActivity : Activity() {
                     }
                 }
             }
-            webChromeClient = WebChromeClient()
+            webChromeClient = object : WebChromeClient() {
+                override fun onShowFileChooser(
+                    view: WebView?,
+                    filePathCallback: ValueCallback<Array<Uri>>?,
+                    fileChooserParams: FileChooserParams?
+                ): Boolean {
+                    pendingFileChooser?.onReceiveValue(null)
+                    pendingFileChooser = filePathCallback
+                    val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                        addCategory(Intent.CATEGORY_OPENABLE)
+                        type = "*/*"
+                        putExtra(Intent.EXTRA_MIME_TYPES, arrayOf(
+                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            "application/vnd.ms-excel.sheet.macroEnabled.12",
+                            "text/csv",
+                            "application/csv"
+                        ))
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                    return try {
+                        startActivityForResult(intent, fileChooserRequestCode)
+                        true
+                    } catch (e: Exception) {
+                        pendingFileChooser?.onReceiveValue(null)
+                        pendingFileChooser = null
+                        Toast.makeText(this@FlaskActivity, "Unable to open device storage: ${e.message}", Toast.LENGTH_LONG).show()
+                        false
+                    }
+                }
+            }
         }
         webView.addJavascriptInterface(object {
             @JavascriptInterface
@@ -175,12 +209,25 @@ class FlaskActivity : Activity() {
         }
     }
 
+
+    @Deprecated("Deprecated in Android API; required for WebView file chooser callback compatibility")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != fileChooserRequestCode) return
+        val callback = pendingFileChooser ?: return
+        pendingFileChooser = null
+        val uri = if (resultCode == RESULT_OK) data?.data else null
+        callback.onReceiveValue(if (uri != null) arrayOf(uri) else null)
+    }
+
     @Suppress("DEPRECATION")
     override fun onBackPressed() {
         if (::webView.isInitialized && webView.canGoBack()) webView.goBack() else super.onBackPressed()
     }
 
     override fun onDestroy() {
+        pendingFileChooser?.onReceiveValue(null)
+        pendingFileChooser = null
         if (::webView.isInitialized) webView.destroy()
         super.onDestroy()
     }
