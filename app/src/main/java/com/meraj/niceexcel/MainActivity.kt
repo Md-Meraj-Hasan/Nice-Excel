@@ -3995,17 +3995,36 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         // Never synchronously invoke POI or the legacy local FormulaEngine here.
         return formulaDisplayCache[cacheKey] ?: "…"
     }
-    private fun formatNumber(value: Double, format: String, fallback: String): String = when (format) {
-        "Number (2 decimals)" -> String.format(Locale.US, "%.2f", value)
-        "Percentage" -> String.format(Locale.US, "%.2f%%", value * 100.0)
-        "Currency" -> String.format(Locale.US, "$%.2f", value)
-        "Date (text display)", "Date" -> java.text.SimpleDateFormat("yyyy-MM-dd", Locale.US).format(java.util.Date(((value - 25569.0) * 86400000.0).toLong()))
-        "Time" -> java.text.SimpleDateFormat("HH:mm:ss", Locale.US).format(java.util.Date(((value - Math.floor(value)) * 86400000.0).toLong()))
-        "Date & Time" -> java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US).format(java.util.Date(((value - 25569.0) * 86400000.0).toLong()))
-        "Scientific" -> String.format(Locale.US, "%.2E", value)
-        else -> if (value % 1.0 == 0.0) value.toLong().toString() else String.format(Locale.US, "%.4f", value)
+    private fun formatNumber(value: Double, format: String, fallback: String): String {
+        when (format) {
+            "Number (2 decimals)" -> return String.format(Locale.US, "%.2f", value)
+            "Percentage" -> return String.format(Locale.US, "%.2f%%", value * 100.0)
+            "Currency" -> return String.format(Locale.US, "$%.2f", value)
+            "Date (text display)", "Date" -> return java.text.SimpleDateFormat("yyyy-MM-dd", Locale.US).format(java.util.Date(((value - 25569.0) * 86400000.0).toLong()))
+            "Time" -> return java.text.SimpleDateFormat("HH:mm:ss", Locale.US).format(java.util.Date(((value - Math.floor(value)) * 86400000.0).toLong()))
+            "Date & Time" -> return java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US).format(java.util.Date(((value - 25569.0) * 86400000.0).toLong()))
+            "Scientific" -> return String.format(Locale.US, "%.2E", value)
+        }
+        if (format == "General" || format.isBlank() || format == "Text") return if (value % 1.0 == 0.0) value.toLong().toString() else String.format(Locale.US, "%.4f", value)
+        var pattern = format; var prefix = ""; var suffix = ""
+        if (pattern.startsWith("\"")) {
+            val end = pattern.indexOf("\"", 1)
+            if (end > 0) { prefix = pattern.substring(1, end).replace("\"\"", "\""); pattern = pattern.substring(end + 1) }
+        }
+        if (pattern.endsWith("\"")) {
+            val start = pattern.lastIndexOf("\"", pattern.lastIndex - 1)
+            if (start >= 0) { suffix = pattern.substring(start + 1, pattern.lastIndex).replace("\"\"", "\""); pattern = pattern.substring(0, start) }
+        }
+        if (prefix.isEmpty() && suffix.isEmpty()) return if (value % 1.0 == 0.0) value.toLong().toString() else String.format(Locale.US, "%.4f", value)
+        val decimals = pattern.substringAfter(".", "").takeWhile { it == '0' || it == '#' || it == '?' }
+        val maxDecimals = decimals.length.coerceIn(0, 12)
+        val minDecimals = decimals.count { it == '0' }.coerceIn(0, maxDecimals)
+        val number = java.text.NumberFormat.getNumberInstance(Locale.US).apply {
+            isGroupingUsed = pattern.substringBefore(".").contains(",")
+            minimumFractionDigits = minDecimals; maximumFractionDigits = maxDecimals
+        }.format(kotlin.math.abs(value))
+        return (if (value < 0) "-" else "") + prefix + number + suffix
     }
-
     private fun colName(index:Int):String {
         var n=index+1; var out=""
         while(n>0) { val r=(n-1)%26; out=('A'.code+r).toChar()+out; n=(n-1)/26 }
