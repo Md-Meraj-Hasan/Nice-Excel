@@ -4111,7 +4111,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         val scaleChoice = addChoice("Content adjustment", arrayOf("Fit all columns", "Fit entire sheet on one page", "Actual size (multiple pages)"))
         val marginChoice = addChoice("Page margins", arrayOf("Normal", "Narrow", "Wide"))
         val gridCheck = CheckBox(this).apply { text = "Show cell gridlines"; isChecked = true }
-        val headingCheck = CheckBox(this).apply { text = "Repeat column headings"; isChecked = true }
+        val headingCheck = CheckBox(this).apply { text = "Repeat worksheet header row"; isChecked = true }
         panel.addView(gridCheck)
         panel.addView(headingCheck)
         AlertDialog.Builder(this)
@@ -4160,7 +4160,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                     val pageH = if (options.orientation == "Landscape") minOf(base.first, base.second) else maxOf(base.first, base.second)
                     val margin = when (options.margins) { "Narrow" -> 18f; "Wide" -> 54f; else -> 30f }
                     val contentW = pageW - margin * 2f
-                    val contentH = pageH - margin * 2f - 28f
+                    val contentH = pageH - margin * 2f
                     var pageNumber = 0
                     cellSnapshot.forEach { (name, cells) ->
                         val stMap = styleSnapshot[name].orEmpty()
@@ -4203,12 +4203,12 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                         }
                         val totalW = widths.sum()
                         val rowH = 22f
-                        val titleH = 22f
+                        val titleH = 0f
                         // Fit-all-columns must use the full printable page width.
                         // Do not cap this scale at 1x: narrower worksheets should expand
                         // to the right edge instead of leaving a large empty strip.
                         val widthScale = (contentW / totalW).coerceAtLeast(0.01f)
-                        val sheetScale = minOf(widthScale, contentH / (titleH + (maxRow + 1) * rowH))
+                        val sheetScale = minOf(widthScale, contentH / (titleH + maxRow * rowH))
                         val fitSinglePage = options.scaling == "Fit entire sheet on one page" && maxRow <= 120
                         val scale = when {
                             options.scaling == "Actual size (multiple pages)" -> 1f
@@ -4232,7 +4232,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                         } else listOf(1..maxCol)
                         // Reserve an extra line for the repeated worksheet heading row.
                         val rowsPerPage = if (fitSinglePage) maxRow
-                            else ((contentH / (rowH * scale)).toInt() - 1 - if (options.repeatHeadings) 1 else 0).coerceAtLeast(1)
+                            else ((contentH / (rowH * scale)).toInt() - if (options.repeatHeadings) 1 else 0).coerceAtLeast(1)
                         for (cols in colChunks) {
                             var firstRow = 1
                             while (firstRow <= maxRow) {
@@ -4247,28 +4247,8 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                                 paint.color = Color.BLACK
                                 paint.textSize = 10f
                                 paint.typeface = android.graphics.Typeface.create("sans-serif", android.graphics.Typeface.BOLD)
-                                canvas.drawText(name + if (colChunks.size > 1) " · Columns ${cols.first}–${cols.last}" else "", margin, margin + 10f, paint)
                                 val xStart = margin
-                                var y = margin + titleH
-                                val drawHeader = firstRow == 1 || options.repeatHeadings
-                                if (drawHeader) {
-                                    var x = xStart
-                                    cols.forEach { c ->
-                                        val w = widths[c - 1] * scale
-                                        paint.color = Color.rgb(232, 238, 245)
-                                        canvas.drawRect(x, y, x + w, y + rowH * scale, paint)
-                                        paint.color = Color.DKGRAY
-                                        paint.textSize = 8f * scale.coerceAtLeast(0.65f)
-                                        canvas.drawText(colName(c - 1), x + 4f * scale, y + 14f * scale, paint)
-                                        if (options.gridlines) {
-                                            paint.color = Color.LTGRAY; paint.style = Paint.Style.STROKE
-                                            canvas.drawRect(x, y, x + w, y + rowH * scale, paint)
-                                            paint.style = Paint.Style.FILL
-                                        }
-                                        x += w
-                                    }
-                                    y += rowH * scale
-                                }
+                                var y = margin
                                 // Repeat the actual worksheet heading row (usually row 1)
                                 // on every continuation page, not just the A/B/C column labels.
                                 if (firstRow > 1 && options.repeatHeadings) {
