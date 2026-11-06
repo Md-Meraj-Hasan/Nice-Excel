@@ -325,11 +325,11 @@ $('undoBtn').onclick=()=>queueHistoryAction('undo');$('redoBtn').onclick=()=>que
         lastRow=Math.max(1,lastRow);lastCol=Math.max(1,lastCol);
         const pdfRowHtml=(r)=>{let html='<tr><th class="row-num">'+(r+1)+'</th>';for(let c=0;c<lastCol;c++){const cell=rows[r]?.[c]||{},st=cell.style||{};let value=cell.calculated_value??cell.display_value??cell.value??'';if(Array.isArray(value))value=value.map(x=>Array.isArray(x)?x.join(' '):x).join(' ');const styles=[];const bg=color(st.fill_color||st.fillColor);if(bg)styles.push('background:'+bg);const fg=color(st.font_color||st.text_color||st.fontColor);if(fg)styles.push('color:'+fg);if(st.bold)styles.push('font-weight:700');if(st.italic)styles.push('font-style:italic');if(st.font_size)styles.push('font-size:'+Math.max(6,Math.min(18,Number(st.font_size)||10))+'pt');if(st.horizontal)styles.push('text-align:'+({'center':'center','right':'right','left':'left'}[st.horizontal]||'left'));html+='<td style="'+styles.join(';')+'">'+esc(value)+'</td>';}return html+'</tr>';};
         const repeat=$('pdfRepeatHeader').checked;
-        let table='<table><thead><tr><th class="row-num">#</th>'+Array.from({length:lastCol},(_,c)=>'<th>'+pdfColName(c)+'</th>').join('')+'</tr>'+(repeat&&lastRow>0?pdfRowHtml(0):'')+'</thead><tbody>';
+        let table='<table><thead>'+(repeat&&lastRow>0?pdfRowHtml(0):'')+'</thead><tbody>';
         for(let r=repeat?1:0;r<lastRow;r++)table+=pdfRowHtml(r);
         table+='</tbody></table>';
         const fitZoom=requestedScale==='fit-sheet'?Math.min(1,38/lastRow,12/lastCol):1;
-        sections.push('<section class="sheet-page"><h2>'+esc(name)+'</h2><div class="sheet-content" style="zoom:'+fitZoom+'">'+table+'</div></section>');
+        sections.push('<section class="sheet-page"><div class="sheet-content" style="zoom:'+fitZoom+'">'+table+'</div></section>');
       }
       const paper=$('pdfPaper').value,orientation=$('pdfOrientation').value,scale=$('pdfScale').value,margins=$('pdfMargins').value;
       const margin=margins==='narrow'?'5mm':margins==='wide'?'20mm':'10mm';
