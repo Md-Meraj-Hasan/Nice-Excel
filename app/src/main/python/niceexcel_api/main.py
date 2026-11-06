@@ -11,12 +11,15 @@ from copy import copy
 from typing import Any
 
 from .flask_compat import create_app, File, HTTPException, Query, UploadFile, FileResponse, StreamingResponse, BackgroundTask
-from flask import send_from_directory
+from flask import send_from_directory, request
 from pathlib import Path
 from openpyxl import Workbook, load_workbook
 from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.chart import BarChart, LineChart, PieChart, Reference
+from openpyxl.worksheet.table import Table, TableStyleInfo
+from .reporting_metadata import empty_metadata, validate_metadata
+from .reporting_store import (META_SHEET_NAME as _REPORTING_META_SHEET, get_reporting_metadata as _store_get_reporting_metadata, set_reporting_metadata as _store_set_reporting_metadata, visible_sheetnames as _store_visible_sheetnames, ensure_excel_tables as _ensure_excel_tables)
 from openpyxl.utils import get_column_letter, range_boundaries
 from pydantic import BaseModel, Field
 from .formula_engine import calculate_cell
@@ -34,11 +37,22 @@ _workbooks: dict[str, Workbook] = {}
 _undo_history: dict[str, list[bytes]] = {}
 _redo_history: dict[str, list[bytes]] = {}
 _HISTORY_LIMIT = 20
+_TABLE_STYLE_MAP = {
+    "blue": "TableStyleMedium2", "green": "TableStyleMedium4",
+    "purple": "TableStyleMedium5", "orange": "TableStyleMedium6",
+    "teal": "TableStyleMedium9", "gray": "TableStyleMedium1",
+    "dark": "TableStyleMedium3", "light": "TableStyleLight9",
+    "ruby": "TableStyleMedium10", "gold": "TableStyleMedium12",
+    "navy": "TableStyleMedium7", "cyan": "TableStyleMedium8",
+    "rose": "TableStyleMedium11", "lime": "TableStyleMedium13",
+    "indigo": "TableStyleMedium14", "coral": "TableStyleMedium15",
+    "mint": "TableStyleMedium16", "plum": "TableStyleMedium17",
+    "slate": "TableStyleMedium18", "bronze": "TableStyleMedium19",
+}
 _RECOVERY_DIR = Path(os.environ.get("NICEEXCEL_RECOVERY_DIR", str(Path(__file__).resolve().parent.parent / "data" / "recovery")))
 _RECOVERY_DIR.mkdir(parents=True, exist_ok=True)
 _TEMP_DIR = Path(os.environ.get("NICEEXCEL_TEMP_DIR", str(_RECOVERY_DIR.parent / "temp"))).expanduser().resolve()
 _TEMP_DIR.mkdir(parents=True, exist_ok=True)
-# Route Python tempfile defaults to writable local disk, never an in-memory buffer.
 os.environ["TMPDIR"] = str(_TEMP_DIR)
 os.environ["TMP"] = str(_TEMP_DIR)
 os.environ["TEMP"] = str(_TEMP_DIR)
@@ -54,29 +68,29 @@ def _recovery_path(book_id: str) -> Path:
     return _RECOVERY_DIR / f"{safe_id}.xlsx"
 
 
+_OBJECTS_META_SHEET = "_NiceExcelObjects"
+
+
+def _visible_sheetnames(wb: Workbook) -> list[str]:
+    return [name for name in _store_visible_sheetnames(wb) if name != _OBJECTS_META_SHEET]
+
+
+def _get_reporting_metadata(wb: Workbook) -> dict[str, Any]:
+    return _store_get_reporting_metadata(wb)
+
+
+def _set_reporting_metadata(wb: Workbook, document: Any) -> dict[str, Any]:
+    return _store_set_reporting_metadata(wb, document)
+
+
 def _persist_workbook(book_id: str) -> None:
-    """Atomically persist recovery data and always remove the temporary file."""
     wb = _workbooks.get(book_id)
     if wb is None:
         return
     path = _recovery_path(book_id)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temp_path: Path | None = None
-    try:
-        # Unique temp names avoid collisions if two requests save the same workbook.
-        with tempfile.NamedTemporaryFile(
-            prefix=f"{book_id}_", suffix=".tmp", dir=str(path.parent), delete=False
-        ) as temp_file:
-            temp_path = Path(temp_file.name)
-        wb.save(temp_path)
-        os.replace(str(temp_path), str(path))
-        temp_path = None  # os.replace moved the temp file to the recovery path.
-    finally:
-        if temp_path is not None:
-            try:
-                temp_path.unlink(missing_ok=True)
-            except OSError:
-                pass
+    temp = path.with_suffix(".tmp")
+    wb.save(temp)
+    temp.replace(path)
 
 
 
@@ -97,6 +111,7 @@ def _record_history(book_id: str) -> None:
 
 def _restore_snapshot(book_id: str, payload: bytes, persist: bool = True) -> Workbook:
     wb = load_workbook(io.BytesIO(payload), data_only=False)
+    _ensure_excel_tables(wb)
     _workbooks[book_id] = wb
     if persist:
         _persist_workbook(book_id)
@@ -108,7 +123,9 @@ def _load_recovery(book_id: str) -> Workbook | None:
     if not path.exists():
         return None
     try:
-        return load_workbook(path, data_only=False)
+        wb = load_workbook(path, data_only=False)
+        _ensure_excel_tables(wb)
+        return wb
     except Exception:
         return None
 
@@ -127,18 +144,12 @@ class UpdateCellsRequest(BaseModel):
     cells: list[CellUpdate] = Field(min_items=1, max_items=5000)
 
 
-class ConditionalFormattingRequest(BaseModel):
-    sheet: str = Field(min_length=1, max_length=31)
-    rules: list[dict[str, Any]] = Field(default_factory=list, max_items=200)
 
 
-class DataValidationRequest(BaseModel):
-    sheet: str = Field(min_length=1, max_length=31)
-    rules: list[dict[str, Any]] = Field(default_factory=list, max_items=200)
-
-
-
-
+class FormulaPreviewRequest(BaseModel):
+    sheet: str = "Sheet1"
+    cell: str = Field(pattern=r"^[A-Za-z]{1,3}[1-9][0-9]*$")
+    formula: str = Field(max_length=10000)
 
 
 class RetrieveDataRequest(BaseModel):
@@ -152,12 +163,7 @@ class RetrieveDataRequest(BaseModel):
 
 class RowInsertRequest(BaseModel):
     sheet: str = "Sheet1"
-    row: int = Field(default=1, ge=1, le=100000)
-
-class FormulaPreviewRequest(BaseModel):
-    sheet: str = "Sheet1"
-    cell: str = Field(pattern=r"^[A-Za-z]{1,3}[1-9][0-9]*$")
-    formula: str = Field(max_length=10000)
+    row: int = Field(ge=1, le=100000)
 
 
 class SheetRequest(BaseModel):
@@ -175,8 +181,10 @@ class RangeRequest(BaseModel):
 
 
 class StyleRequest(RangeRequest):
+    clear_format: bool | None = None
     bold: bool | None = None
     italic: bool | None = None
+    underline: bool | None = None
     font_name: str | None = Field(default=None, max_length=80)
     font_size: float | None = Field(default=None, ge=6, le=96)
     font_color: str | None = Field(default=None, pattern=r"^#?[0-9A-Fa-f]{6}$")
@@ -206,6 +214,31 @@ class SortRequest(RangeRequest):
     descending: bool = False
 
 
+class ReportingMetadataRequest(BaseModel):
+    metadata: dict[str, Any]
+
+
+class ConditionalFormattingRequest(BaseModel):
+    sheet: str = Field(min_length=1, max_length=31)
+    rules: list[dict[str, Any]] = Field(default_factory=list, max_items=200)
+
+
+class DataValidationRequest(BaseModel):
+    sheet: str = Field(min_length=1, max_length=31)
+    rules: list[dict[str, Any]] = Field(default_factory=list, max_items=200)
+
+
+class SmartTableRequest(BaseModel):
+    sheet: str = Field(min_length=1, max_length=31)
+    source_range: str = Field(min_length=2, max_length=100)
+    name: str = Field(default="Table", min_length=1, max_length=120)
+    table_id: str | None = Field(default=None, max_length=64)
+    has_header: bool = True
+    style: str = Field(default="blue", pattern=r"^(blue|green|purple|orange|teal|gray|dark|light)$")
+    filter_enabled: bool = True
+    total_row: bool = False
+
+
 def _book(book_id: str) -> Workbook:
     wb = _workbooks.get(book_id)
     if wb is None:
@@ -218,10 +251,100 @@ def _book(book_id: str) -> Workbook:
 
 
 def _sheet(wb: Workbook, name: str):
-    if name in {"_NiceExcelCF", "_NiceExcelDV"} or name not in wb.sheetnames:
+    if name in {_REPORTING_META_SHEET, "_NiceExcelCF", "_NiceExcelDV", _OBJECTS_META_SHEET} or name not in wb.sheetnames:
         raise HTTPException(status_code=404, detail=f"Worksheet not found: {name}")
     return wb[name]
 
+
+def _objects_meta_sheet(wb: Workbook):
+    ws = wb[_OBJECTS_META_SHEET] if _OBJECTS_META_SHEET in wb.sheetnames else wb.create_sheet(_OBJECTS_META_SHEET)
+    ws.sheet_state = "veryHidden"
+    return ws
+
+def _get_workbook_objects(wb: Workbook, sheet_name: str | None = None) -> list[dict[str, Any]]:
+    if _OBJECTS_META_SHEET not in wb.sheetnames:
+        return []
+    result = []
+    for row in wb[_OBJECTS_META_SHEET].iter_rows(min_row=2, values_only=True):
+        values = list(row[:4]) + [None] * 4
+        object_id, target_sheet, object_type, payload = values[:4]
+        if not object_id or not payload or (sheet_name is not None and target_sheet != sheet_name):
+            continue
+        try:
+            obj = json.loads(str(payload))
+        except (ValueError, TypeError):
+            continue
+        if isinstance(obj, dict):
+            result.append({"id": str(object_id), "sheet": str(target_sheet or ""), "object_type": str(object_type or ""), "object": obj})
+    return result
+
+def _write_workbook_objects(wb: Workbook, records: list[dict[str, Any]]) -> None:
+    ws = _objects_meta_sheet(wb)
+    ws.delete_rows(1, ws.max_row)
+    ws.append(["id", "sheet", "object_type", "payload"])
+    for record in records:
+        payload = json.dumps(record["object"], ensure_ascii=False, separators=(",", ":"))
+        ws.append([record["id"], record["sheet"], record["object_type"], payload])
+    ws.sheet_state = "veryHidden"
+
+@app.get("/workbooks/{book_id}/objects")
+def get_workbook_objects(book_id: str, sheet: str | None = Query(default=None)):
+    wb = _book(book_id)
+    if sheet is not None:
+        _sheet(wb, sheet)
+    return {"objects": _get_workbook_objects(wb, sheet)}
+
+@app.post("/workbooks/{book_id}/objects")
+def create_workbook_object(book_id: str):
+    wb = _book(book_id)
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="A JSON object body is required")
+    sheet_name = str(payload.get("sheet", "")).strip()
+    _sheet(wb, sheet_name)
+    object_type = str(payload.get("object_type", "")).strip().lower()
+    obj = payload.get("object")
+    if object_type != "shape" or not isinstance(obj, dict):
+        raise HTTPException(status_code=422, detail="Only shape objects are supported")
+    object_id = str(obj.get("id", "")).strip()
+    if not object_id or len(object_id) > 128:
+        raise HTTPException(status_code=422, detail="Shape object requires a valid id")
+    allowed = {"rect", "rectangle", "roundRect", "ellipse", "diamond", "triangle", "hexagon", "pentagon", "callout", "line", "arrow", "doubleArrow", "textBox"}
+    if str(obj.get("type", "")) not in allowed:
+        raise HTTPException(status_code=422, detail="Unsupported shape type")
+    anchor = str(obj.get("anchor", "A1")).upper()
+    if not re.fullmatch(r"[A-Z]{1,3}[1-9][0-9]*", anchor):
+        raise HTTPException(status_code=422, detail="Shape anchor must be a valid cell address")
+    clean_obj = dict(obj)
+    clean_obj.update({"id": object_id, "anchor": anchor, "sheet": sheet_name})
+    records = _get_workbook_objects(wb)
+    record = {"id": object_id, "sheet": sheet_name, "object_type": object_type, "object": clean_obj}
+    replaced = False
+    for index, existing in enumerate(records):
+        if existing["id"] == object_id:
+            records[index] = record
+            replaced = True
+            break
+    if not replaced:
+        if len(records) >= 1000:
+            raise HTTPException(status_code=413, detail="Workbook object limit reached (1,000)")
+        records.append(record)
+    _record_history(book_id)
+    _write_workbook_objects(wb, records)
+    _persist_workbook(book_id)
+    return {"object": record, "autosaved": True, "created": not replaced}
+
+@app.delete("/workbooks/{book_id}/objects/{object_id}")
+def delete_workbook_object(book_id: str, object_id: str):
+    wb = _book(book_id)
+    records = _get_workbook_objects(wb)
+    remaining = [record for record in records if record["id"] != object_id]
+    if len(remaining) == len(records):
+        raise HTTPException(status_code=404, detail="Workbook object not found")
+    _record_history(book_id)
+    _write_workbook_objects(wb, remaining)
+    _persist_workbook(book_id)
+    return {"deleted": True, "id": object_id, "autosaved": True}
 
 def _color(value: str | None) -> str | None:
     if value is None:
@@ -239,9 +362,10 @@ def _safe_value(value: Any) -> Any:
 
 def _new_session(wb: Workbook) -> dict[str, Any]:
     book_id = str(uuid.uuid4())
+    _ensure_excel_tables(wb)
     _workbooks[book_id] = wb
     _persist_workbook(book_id)
-    return {"workbook_id": book_id, "sheets": [n for n in wb.sheetnames if n not in {"_NiceExcelCF", "_NiceExcelDV"}]}
+    return {"workbook_id": book_id, "sheets": _visible_sheetnames(wb)}
 
 
 def _cell_json(cell) -> dict[str, Any]:
@@ -253,11 +377,13 @@ def _cell_json(cell) -> dict[str, Any]:
         "style": {
             "bold": cell.font.bold,
             "italic": cell.font.italic,
+            "underline": bool(cell.font.underline),
             "font_name": cell.font.name,
             "font_size": cell.font.sz,
             "font_color": cell.font.color.rgb if cell.font.color and cell.font.color.type == "rgb" else None,
             "fill_color": cell.fill.fgColor.rgb if cell.fill.fgColor.type == "rgb" else None,
             "horizontal": cell.alignment.horizontal,
+            "number_format": cell.number_format,
         },
     }
 
@@ -324,7 +450,7 @@ def workbook_info(book_id: str):
             {"name": ws.title, "max_row": ws.max_row, "max_column": ws.max_column,
              "freeze_panes": str(ws.freeze_panes) if ws.freeze_panes else None,
              "merged_ranges": [str(r) for r in ws.merged_cells.ranges]}
-            for ws in wb.worksheets if ws.title not in {"_NiceExcelCF", "_NiceExcelDV"}
+            for ws in wb.worksheets if ws.title in _visible_sheetnames(wb)
         ],
         "active_sheet": wb.active.title,
         "formula_calculation": "limited_nice_excel_subset_evaluator",
@@ -355,66 +481,6 @@ def get_range(book_id: str, sheet: str, cell_range: str = Query(default="A1:Z50"
     return {"sheet": sheet, "range": cell_range, "rows": rows, "formula_engine": "Nice Excel subset evaluator", "conditional_formatting": _get_conditional_rules(wb, sheet)}
 
 
-
-
-
-def _conditional_formatting_sheet(wb: Workbook):
-    name = "_NiceExcelCF"
-    if name not in wb.sheetnames:
-        ws = wb.create_sheet(name)
-        ws.sheet_state = "veryHidden"
-        ws["A1"] = "{}"
-    return wb[name]
-
-
-def _get_conditional_rules(wb: Workbook, sheet_name: str) -> list[dict[str, Any]]:
-    if "_NiceExcelCF" not in wb.sheetnames: return []
-    try:
-        doc = json.loads(str(wb["_NiceExcelCF"]["A1"].value or "{}"))
-        rules = doc.get(sheet_name, []) if isinstance(doc, dict) else []
-        return [normalize_rule(rule) for rule in rules]
-    except (ValueError, TypeError, json.JSONDecodeError): return []
-
-
-def _set_conditional_rules(wb: Workbook, sheet_name: str, rules: list[dict[str, Any]]) -> None:
-    ws = _conditional_formatting_sheet(wb)
-    try:
-        doc = json.loads(str(ws["A1"].value or "{}"))
-        if not isinstance(doc, dict): doc = {}
-    except (ValueError, TypeError, json.JSONDecodeError): doc = {}
-    doc[sheet_name] = rules
-    serialized = json.dumps(doc, ensure_ascii=False, separators=(",", ":"))
-    if len(serialized) > 30000: raise HTTPException(status_code=413, detail="Conditional-format metadata exceeds workbook limit")
-    ws["A1"] = serialized
-    ws.sheet_state = "veryHidden"
-
-
-@app.get("/workbooks/{book_id}/conditional-formatting")
-def get_conditional_formatting(book_id: str, sheet: str):
-    wb = _book(book_id)
-    _sheet(wb, sheet)
-    return {"sheet": sheet, "rules": _get_conditional_rules(wb, sheet)}
-
-
-@app.put("/workbooks/{book_id}/conditional-formatting")
-def put_conditional_formatting(book_id: str, request: ConditionalFormattingRequest):
-    wb = _book(book_id)
-    _sheet(wb, request.sheet)
-    normalized, seen = [], set()
-    try:
-        for raw in request.rules:
-            rule = normalize_rule(raw)
-            bounds = range_boundaries(rule["range"])
-            if not all(bounds) or (bounds[2]-bounds[0]+1)*(bounds[3]-bounds[1]+1) > 10000: raise ValueError("Each conditional-format range must contain at most 10,000 cells")
-            rule_id = rule["id"] or uuid.uuid4().hex
-            if rule_id in seen: raise ValueError("Conditional-format rule IDs must be unique within a sheet")
-            seen.add(rule_id); rule["id"] = rule_id; normalized.append(rule)
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    _record_history(book_id)
-    _set_conditional_rules(wb, request.sheet, normalized)
-    _persist_workbook(book_id)
-    return {"sheet": request.sheet, "rules": normalized, "autosaved": True}
 
 
 
@@ -557,8 +623,6 @@ def update_cells(book_id: str, request: UpdateCellsRequest):
     return {"updated": len(request.cells), "sheet": request.sheet, "autosaved": True}
 
 
-
-
 @app.post("/workbooks/{book_id}/retrieve-data")
 def retrieve_data(book_id: str, request: RetrieveDataRequest):
     """Copy every source row whose match-column value is in lookup_ids to a destination range."""
@@ -610,14 +674,54 @@ def retrieve_data(book_id: str, request: RetrieveDataRequest):
 
 @app.post("/workbooks/{book_id}/rows")
 def insert_row(book_id: str, request: RowInsertRequest):
+    """Insert one worksheet row at the requested 1-based row index."""
     wb = _book(book_id)
     ws = _sheet(wb, request.sheet)
-    if request.row > 100000:
-        raise HTTPException(status_code=422, detail="Row number is too large")
     _record_history(book_id)
     ws.insert_rows(request.row, 1)
+    # Keep reporting table ranges aligned with inserted worksheet rows. A row
+    # inserted inside a table, or immediately before its first data row/after
+    # its last row, becomes part of that table. Rows inserted above a table
+    # shift the entire table down without changing its size.
+    metadata = _get_reporting_metadata(wb)
+    changed = False
+    for definition in metadata.get("tables", []):
+        if definition.get("sheet") != request.sheet:
+            continue
+        try:
+            min_col, min_row, max_col, max_row = range_boundaries(definition["source_range"])
+        except Exception:
+            continue
+        old_ref = definition["source_range"]
+        if request.row <= min_row:
+            min_row += 1
+            max_row += 1
+        elif min_row <= request.row <= max_row + 1:
+            max_row += 1
+        else:
+            continue
+        definition["source_range"] = f"{get_column_letter(min_col)}{min_row}:{get_column_letter(max_col)}{max_row}"
+        if definition.get("data_range"):
+            try:
+                dmin_col, dmin_row, dmax_col, dmax_row = range_boundaries(definition["data_range"])
+                if request.row <= dmin_row:
+                    dmin_row += 1
+                    dmax_row += 1
+                elif dmin_row <= request.row <= dmax_row + 1:
+                    dmax_row += 1
+                definition["data_range"] = f"{get_column_letter(dmin_col)}{dmin_row}:{get_column_letter(dmax_col)}{dmax_row}"
+            except Exception:
+                pass
+        # Update any in-memory native table object as well as the persisted metadata.
+        excel_name = definition.get("excel_table_name")
+        if excel_name and excel_name in ws.tables:
+            ws.tables[excel_name].ref = definition["source_range"]
+        changed = changed or old_ref != definition["source_range"]
+    if changed:
+        _set_reporting_metadata(wb, metadata)
     _persist_workbook(book_id)
-    return {"inserted_row": request.row, "sheet": request.sheet, "autosaved": True}
+    return {"inserted_row": request.row, "sheet": request.sheet, "tables_updated": changed, "autosaved": True}
+
 
 @app.post("/workbooks/{book_id}/sheets")
 def add_sheet(book_id: str, request: SheetRequest):
@@ -630,7 +734,7 @@ def add_sheet(book_id: str, request: SheetRequest):
     _record_history(book_id)
     ws = wb.create_sheet(name)
     _persist_workbook(book_id)
-    return {"name": ws.title, "sheets": wb.sheetnames, "autosaved": True}
+    return {"name": ws.title, "sheets": _visible_sheetnames(wb), "autosaved": True}
 
 
 @app.patch("/workbooks/{book_id}/sheets")
@@ -645,19 +749,19 @@ def rename_sheet(book_id: str, request: RenameSheetRequest):
     _record_history(book_id)
     wb[request.old_name].title = name
     _persist_workbook(book_id)
-    return {"sheets": wb.sheetnames, "autosaved": True}
+    return {"sheets": _visible_sheetnames(wb), "autosaved": True}
 
 
 @app.delete("/workbooks/{book_id}/sheets/{sheet_name}")
 def delete_sheet(book_id: str, sheet_name: str):
     wb = _book(book_id)
     ws = _sheet(wb, sheet_name)
-    if len([n for n in wb.sheetnames if n not in {"_NiceExcelCF", "_NiceExcelDV"}]) <= 1:
+    if len(_visible_sheetnames(wb)) == 1:
         raise HTTPException(status_code=409, detail="A workbook must retain at least one worksheet")
     _record_history(book_id)
     wb.remove(ws)
     _persist_workbook(book_id)
-    return {"sheets": wb.sheetnames, "active_sheet": wb.active.title, "autosaved": True}
+    return {"sheets": _visible_sheetnames(wb), "active_sheet": wb.active.title, "autosaved": True}
 
 
 @app.patch("/workbooks/{book_id}/style")
@@ -672,9 +776,17 @@ def style_range(book_id: str, request: StyleRequest):
     _record_history(book_id)
     for row in ws.iter_rows(min_row=min_row, max_row=max_row, min_col=min_col, max_col=max_col):
         for cell in row:
+            if request.clear_format:
+                cell.font = Font()
+                cell.fill = PatternFill()
+                cell.alignment = Alignment()
+                cell.border = Border()
+                cell.number_format = "General"
+                continue
             f = copy(cell.font)
             if request.bold is not None: f.bold = request.bold
             if request.italic is not None: f.italic = request.italic
+            if request.underline is not None: f.underline = ('single' if request.underline else None)
             if request.font_name is not None: f.name = request.font_name
             if request.font_size is not None: f.sz = request.font_size
             if request.font_color is not None: f.color = _color(request.font_color)
@@ -754,6 +866,215 @@ def sort_range(book_id: str, request: SortRequest):
             ws.cell(min_row + offset, min_col + j).value = value
     _persist_workbook(book_id)
     return {"sorted_range": request.cell_range, "rows": len(rows), "autosaved": True}
+
+
+@app.get("/workbooks/{book_id}/reporting/metadata")
+def get_reporting_metadata(book_id: str):
+    wb = _book(book_id)
+    return {"metadata": _get_reporting_metadata(wb)}
+
+
+@app.put("/workbooks/{book_id}/reporting/metadata")
+def put_reporting_metadata(book_id: str, request: ReportingMetadataRequest):
+    wb = _book(book_id)
+    try:
+        normalized = validate_metadata(request.metadata)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    _record_history(book_id)
+    _set_reporting_metadata(wb, normalized)
+    _persist_workbook(book_id)
+    return {"metadata": normalized, "autosaved": True}
+
+
+def _conditional_formatting_sheet(wb: Workbook):
+    """Dedicated hidden metadata sheet; never mixes with Smart Table metadata."""
+    name = "_NiceExcelCF"
+    if name not in wb.sheetnames:
+        ws = wb.create_sheet(name)
+        ws.sheet_state = "veryHidden"
+        ws["A1"] = "[]"
+    return wb[name]
+
+
+def _get_conditional_rules(wb: Workbook, sheet_name: str) -> list[dict[str, Any]]:
+    ws = wb["_NiceExcelCF"] if "_NiceExcelCF" in wb.sheetnames else None
+    if ws is None:
+        return []
+    try:
+        document = json.loads(str(ws["A1"].value or "{}"))
+        rules = document.get(sheet_name, []) if isinstance(document, dict) else []
+        return [normalize_rule(rule) for rule in rules]
+    except (ValueError, TypeError, json.JSONDecodeError):
+        return []
+
+
+def _set_conditional_rules(wb: Workbook, sheet_name: str, rules: list[dict[str, Any]]) -> None:
+    ws = _conditional_formatting_sheet(wb)
+    try:
+        document = json.loads(str(ws["A1"].value or "{}"))
+        if not isinstance(document, dict):
+            document = {}
+    except (ValueError, TypeError, json.JSONDecodeError):
+        document = {}
+    document[sheet_name] = rules
+    serialized = json.dumps(document, ensure_ascii=False, separators=(",", ":"))
+    if len(serialized) > 30000:
+        raise HTTPException(status_code=413, detail="Conditional-format metadata exceeds the workbook limit")
+    ws["A1"] = serialized
+    ws.sheet_state = "veryHidden"
+
+
+@app.get("/workbooks/{book_id}/conditional-formatting")
+def get_conditional_formatting(book_id: str, sheet: str):
+    wb = _book(book_id)
+    _sheet(wb, sheet)
+    return {"sheet": sheet, "rules": _get_conditional_rules(wb, sheet)}
+
+
+@app.put("/workbooks/{book_id}/conditional-formatting")
+def put_conditional_formatting(book_id: str, request: ConditionalFormattingRequest):
+    wb = _book(book_id)
+    _sheet(wb, request.sheet)
+    normalized = []
+    seen_ids = set()
+    try:
+        for raw in request.rules:
+            rule = normalize_rule(raw)
+            from openpyxl.utils.cell import range_boundaries as _range_boundaries
+            bounds = _range_boundaries(rule["range"])
+            if not all(bounds) or (bounds[2] - bounds[0] + 1) * (bounds[3] - bounds[1] + 1) > 10000:
+                raise ValueError("Each conditional-format range must contain at most 10,000 cells")
+            rule_id = rule["id"] or uuid.uuid4().hex
+            if rule_id in seen_ids:
+                raise ValueError("Conditional-format rule IDs must be unique within a sheet")
+            seen_ids.add(rule_id)
+            rule["id"] = rule_id
+            normalized.append(rule)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    _record_history(book_id)
+    _set_conditional_rules(wb, request.sheet, normalized)
+    _persist_workbook(book_id)
+    return {"sheet": request.sheet, "rules": normalized, "autosaved": True}
+
+
+@app.post("/workbooks/{book_id}/tables")
+def create_smart_table(book_id: str, request: SmartTableRequest):
+    """Create a formatted Excel table and persist its editable NiceExcel definition."""
+    wb = _book(book_id)
+    ws = _sheet(wb, request.sheet)
+    try:
+        min_col, min_row, max_col, max_row = range_boundaries(request.source_range.replace("$", "").replace(" ", ""))
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail="Invalid table source range") from exc
+    if not all((min_col, min_row, max_col, max_row)) or max_row < min_row or max_col < min_col:
+        raise HTTPException(status_code=422, detail="Table source must be a rectangular cell range")
+    if (max_row - min_row + 1) * (max_col - min_col + 1) > 100000:
+        raise HTTPException(status_code=413, detail="Smart Table is limited to 100,000 cells per table")
+    data_range = f"{get_column_letter(min_col)}{min_row}:{get_column_letter(max_col)}{max_row}"
+    table_end_row = max_row + 1 if request.total_row else max_row
+    if request.total_row and any(ws.cell(max_row + 1, col).value is not None for col in range(min_col, max_col + 1)):
+        raise HTTPException(status_code=409, detail="Cannot add a totals row because the next row already contains data in the selected columns")
+    source_range = f"{get_column_letter(min_col)}{min_row}:{get_column_letter(max_col)}{table_end_row}"
+    if request.has_header and max_row == min_row:
+        raise HTTPException(status_code=422, detail="A table with headers needs at least one data row")
+    # Excel table headers must be non-empty and unique. Repair blanks/duplicates deterministically.
+    headers = []
+    if request.has_header:
+        seen = set()
+        for col in range(min_col, max_col + 1):
+            raw = ws.cell(min_row, col).value
+            header = str(raw).strip() if raw is not None else ""
+            if not header:
+                header = f"Column{col - min_col + 1}"
+            base = header
+            suffix = 2
+            while header.casefold() in seen:
+                header = f"{base}_{suffix}"
+                suffix += 1
+            seen.add(header.casefold())
+            headers.append(header)
+    else:
+        headers = [f"Column{i + 1}" for i in range(max_col - min_col + 1)]
+    if not request.has_header:
+        raise HTTPException(status_code=422, detail="Smart Table currently requires a header row so sorting and filters remain reliable. Add column headers first.")
+    meta = _get_reporting_metadata(wb)
+    table_id = request.table_id or f"table_{uuid.uuid4().hex[:12]}"
+    if any(item["id"] == table_id for item in meta["tables"]):
+        raise HTTPException(status_code=409, detail="A Smart Table with this ID already exists")
+    excel_name = "tbl_" + re.sub(r"[^A-Za-z0-9_]", "_", table_id)
+    existing_names = {t.displayName.casefold() for sheet in wb.worksheets for t in getattr(sheet, "tables", {}).values()}
+    if excel_name.casefold() in existing_names:
+        excel_name = f"{excel_name}_{uuid.uuid4().hex[:6]}"
+    _record_history(book_id)
+    try:
+        # Normalize invalid/duplicate headers only after recording the undo snapshot.
+        for col, header in zip(range(min_col, max_col + 1), headers):
+            ws.cell(min_row, col).value = header
+        if request.total_row:
+            ws.cell(table_end_row, min_col).value = "Total"
+            for col in range(min_col + 1, max_col + 1):
+                letter = get_column_letter(col)
+                ws.cell(table_end_row, col).value = f"=SUBTOTAL(109,{letter}{min_row + 1}:{letter}{max_row})"
+        table = Table(displayName=excel_name, ref=source_range)
+        table.tableStyleInfo = TableStyleInfo(name=_TABLE_STYLE_MAP[request.style], showFirstColumn=False,
+                                              showLastColumn=False, showRowStripes=True, showColumnStripes=False)
+        table.totalsRowShown = request.total_row
+        if request.filter_enabled:
+            ws.add_table(table)
+        else:
+            # Keep the structured table definition but disable the worksheet AutoFilter.
+            table.autoFilter = None
+            ws.add_table(table)
+        # Apply native cell styles as well as the Excel table style. This keeps the
+        # design visible in NiceExcel's lightweight Android grid, which does not
+        # render OOXML table-style metadata directly.
+        palette = {
+            "blue": ("1F4E78", "D9EAF7", "F2F7FC"),
+            "green": ("217346", "E2F0D9", "F4F9F0"),
+            "purple": ("7030A0", "E4DFEC", "F6F2FA"),
+            "orange": ("C65911", "FCE4D6", "FFF7F0"),
+            "teal": ("0F6B78", "DDEBF7", "F1F8FA"),
+            "gray": ("595959", "D9E1F2", "F5F6F8"),
+            "dark": ("263746", "D6E0E8", "EEF2F5"),
+            "light": ("4472C4", "EAF2F8", "FFFFFF"),
+        }
+        header_hex, stripe_hex, alternate_hex = palette[request.style]
+        for row in range(min_row, table_end_row + 1):
+            for col in range(min_col, max_col + 1):
+                cell = ws.cell(row, col)
+                if row == min_row:
+                    cell.fill = PatternFill(fill_type="solid", fgColor=header_hex)
+                    cell.font = copy(cell.font)
+                    cell.font = Font(name=cell.font.name, sz=cell.font.sz, b=True, i=cell.font.i,
+                                     color="FFFFFF", underline=cell.font.underline)
+                elif request.total_row and row == table_end_row:
+                    cell.fill = PatternFill(fill_type="solid", fgColor=header_hex)
+                    cell.font = Font(name=cell.font.name, sz=cell.font.sz, b=True, color="FFFFFF")
+                elif (row - min_row) % 2 == 1:
+                    cell.fill = PatternFill(fill_type="solid", fgColor=stripe_hex)
+                else:
+                    cell.fill = PatternFill(fill_type="solid", fgColor=alternate_hex)
+        definition = {
+            "id": table_id, "name": request.name.strip(), "sheet": request.sheet,
+            "source_range": source_range, "data_range": data_range, "has_header": request.has_header,
+            "style": request.style, "filter_enabled": request.filter_enabled,
+            "total_row": request.total_row, "excel_table_name": excel_name,
+        }
+        meta["tables"].append(definition)
+        _set_reporting_metadata(wb, meta)
+        _persist_workbook(book_id)
+    except Exception as exc:
+        # Restore from the last pre-operation snapshot rather than leave a partial table behind.
+        history = _undo_history.get(book_id, [])
+        if history:
+            _restore_snapshot(book_id, history.pop())
+        if isinstance(exc, HTTPException):
+            raise
+        raise HTTPException(status_code=422, detail=f"Could not create Smart Table: {type(exc).__name__}") from exc
+    return {"table": definition, "autosaved": True,
+            "header_adjustments": [headers[i] for i in range(len(headers))] if request.has_header else []}
 
 
 class ChartRequest(BaseModel):
@@ -882,7 +1203,7 @@ def list_recovery_workbooks():
     for path in sorted(_RECOVERY_DIR.glob("*.xlsx"), key=lambda p: p.stat().st_mtime, reverse=True)[:100]:
         try:
             wb = load_workbook(path, read_only=True, data_only=False)
-            items.append({"workbook_id": path.stem, "sheets": wb.sheetnames, "modified": path.stat().st_mtime})
+            items.append({"workbook_id": path.stem, "sheets": _visible_sheetnames(wb), "modified": path.stat().st_mtime})
             wb.close()
         except Exception:
             continue
@@ -895,7 +1216,7 @@ def restore_recovery_workbook(book_id: str):
     if wb is None:
         raise HTTPException(status_code=404, detail="Recovery workbook not found")
     _workbooks[book_id] = wb
-    return {"workbook_id": book_id, "sheets": wb.sheetnames, "restored": True}
+    return {"workbook_id": book_id, "sheets": _visible_sheetnames(wb), "restored": True}
 
 
 @app.get("/workbooks/{book_id}/dependencies")
@@ -961,7 +1282,6 @@ def calculate_workbook(book_id: str):
 
 @app.get("/workbooks/{book_id}/save")
 def save_workbook(book_id: str):
-    """Export the workbook through a private temporary file and delete it after delivery."""
     wb = _book(book_id)
     try:
         wb.calculation.calcMode = "auto"
@@ -969,37 +1289,10 @@ def save_workbook(book_id: str):
         wb.calculation.forceFullCalc = True
     except Exception:
         pass
-
-    _TEMP_DIR.mkdir(parents=True, exist_ok=True)
-    temp_path: Path | None = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            prefix="niceexcel_export_", suffix=".xlsx", dir=str(_TEMP_DIR), delete=False
-        ) as temp_file:
-            temp_path = Path(temp_file.name)
-        wb.save(temp_path)
-        response_path = str(temp_path)
-        # FileResponse streams the completed file; BackgroundTask removes it after
-        # the response finishes, including when the client disconnects.
-        return FileResponse(
-            response_path,
-            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            filename="NiceExcel.xlsx",
-            background=BackgroundTask(_delete_temp_file, response_path),
-        )
-    except Exception:
-        if temp_path is not None:
-            _delete_temp_file(str(temp_path))
-        raise
-
-
-def _delete_temp_file(path: str) -> None:
-    """Best-effort cleanup for temporary export files."""
-    try:
-        Path(path).unlink(missing_ok=True)
-    except OSError:
-        # Cleanup must not turn a successful workbook save into a failed response.
-        pass
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+    return StreamingResponse(buffer, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": 'attachment; filename="NiceExcel.xlsx"'})
 
 
 @app.post("/workbooks/{book_id}/csv/{sheet_name}")
