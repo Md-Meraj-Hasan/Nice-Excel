@@ -115,31 +115,41 @@
     }
     previous = JSON.parse(JSON.stringify(sheets));
   }
-  function filteredSubtotalFormula(formula, formulaSheet, visibleRowsBySheet) {
+  function filteredSubtotalFormula(formula, formulaSheet, visibleRowsBySheet, formulaItems) {
     if (typeof formula !== 'string') return null;
-    const match = /^=SUBTOTAL\\(\\s*(?:9|109)\\s*,\\s*(?:(?:'([^']+)'|([A-Za-z0-9_ ]+))!)?\\$?([A-Z]+)\\$?(\\d+)\\s*:\\s*\\$?([A-Z]+)\\$?(\\d+)\\s*\\)$/i.exec(formula.trim());
+    const match = /^=SUBTOTAL\(\s*(1[01][0-1]|10[1-9]|[1-9])\s*,\s*(?:(?:'([^']+)'|([A-Za-z0-9_ ]+))!)?\$?([A-Z]+)\$?(\d+)\s*:\s*\$?([A-Z]+)\$?(\d+)\s*\)$/i.exec(formula.trim());
     if (!match) return null;
-    const sourceSheet = (match[1] || match[2] || formulaSheet).trim();
+    const code = Number(match[1]);
+    const sourceSheet = (match[2] || match[3] || formulaSheet).trim();
     const visible = visibleRowsBySheet[sourceSheet];
     const sourceId = engine.getSheetId(sourceSheet);
     if (!Array.isArray(visible) || sourceId === undefined) return null;
     const visibleSet = new Set(visible.map(Number));
-    const first = parseAddress(match[3] + match[4]);
-    const last = parseAddress(match[5] + match[6]);
+    const first = parseAddress(match[4] + match[5]);
+    const last = parseAddress(match[6] + match[7]);
     if (!first || !last) return null;
     const minRow = Math.min(first.row, last.row), maxRow = Math.max(first.row, last.row);
     const minCol = Math.min(first.col, last.col), maxCol = Math.max(first.col, last.col);
     const quoteSheet = sourceSheet === formulaSheet ? '' : "'" + sourceSheet.replace(/'/g, "''") + "'!";
+    const subtotalCells = new Set((formulaItems || [])
+      .filter(item => item.sheet === sourceSheet && /^=SUBTOTAL\s*\(/i.test(String(item.formula || '').trim()))
+      .map(item => item.address.toUpperCase()));
     const refs = [];
     for (let row = minRow; row <= maxRow; row++) {
       if (!visibleSet.has(row + 1)) continue;
       for (let col = minCol; col <= maxCol; col++) {
         let n = col + 1, letters = '';
         while (n > 0) { const rem = (n - 1) % 26; letters = String.fromCharCode(65 + rem) + letters; n = Math.floor((n - 1) / 26); }
-        refs.push(quoteSheet + letters + (row + 1));
+        const address = letters + (row + 1);
+        if (subtotalCells.has(address)) continue;
+        refs.push(quoteSheet + address);
       }
     }
-    return '=SUM(' + (refs.length ? refs.join(',') : '0') + ')';
+    const args = refs.length ? refs.join(',') : '0';
+    const baseCode = code >= 100 ? code - 100 : code;
+    const functions = { 1: 'AVERAGE', 2: 'COUNT', 3: 'COUNTA', 4: 'MAX', 5: 'MIN', 6: 'PRODUCT', 7: 'STDEV.S', 8: 'STDEV.P', 9: 'SUM', 10: 'VAR.S', 11: 'VAR.P' };
+    const fn = functions[baseCode];
+    return fn ? '=' + fn + '(' + args + ')' : null;
   }
   window.NiceExcelHF = {
     ready: true,
@@ -154,7 +164,7 @@
         console.info('HF_SYNCHRONIZE_DONE ms=' + Math.round(performance.now() - syncStarted));
         const results = {};
         const visibleRowsBySheet = payload.visibleRowsBySheet || {};
-        // Temporarily translate only filtered SUBTOTAL(9/109, range) formulas into
+        // Temporarily translate filtered SUBTOTAL(1-11/101-111, range) formulas into
         // SUM over visible cell references inside HyperFormula itself. This keeps
         // dependent formulas correct too; the workbook's original formula text is
         // never changed and is restored in the engine whenever the filter is cleared.
@@ -163,7 +173,7 @@
           const pos = parseAddress(item.address);
           if (sheetId === undefined || !pos || pos.row >= 10000 || pos.col >= 512) continue;
           if (!/^=SUBTOTAL\\s*\\(/i.test(String(item.formula || '').trim())) continue;
-          const filteredFormula = filteredSubtotalFormula(item.formula, item.sheet, visibleRowsBySheet);
+          const filteredFormula = filteredSubtotalFormula(item.formula, item.sheet, visibleRowsBySheet, payload.formulas);
           const engineFormula = filteredFormula || normalizeFormulaBooleans(item.formula);
           engine.setCellContents({ sheet: sheetId, row: pos.row, col: pos.col }, [[engineFormula]]);
         }
