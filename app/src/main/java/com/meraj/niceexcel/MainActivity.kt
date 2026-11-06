@@ -131,6 +131,18 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         return if (blackRatio >= whiteRatio) Color.BLACK else Color.WHITE
     }
 
+    /** Keep requested font colours when readable; otherwise choose a high-contrast label colour. */
+    private fun readableCellTextColor(address: String?, style: CellStyle?): Int {
+        val background = when {
+            style == null -> themedSurface(Color.WHITE)
+            darkMode && style.fillColor == Color.WHITE -> Color.BLACK
+            else -> style.fillColor
+        }
+        val requested = if (style != null) style.textColor
+            else themedCellTextColor(Color.rgb(24, 32, 39))
+        return contrastAwareCellTextColor(requested, background)
+    }
+
     private fun updateSystemBars() {
         // Black Theme must override the selected day-palette accent.
         window.statusBarColor = if (darkMode) Color.BLACK
@@ -1119,7 +1131,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
             // Explicit font colours are user formatting: never auto-replace them
             // with black/white based on fill contrast. Theme colour is only for
             // cells without a saved style.
-            view.setTextColor(if (st != null) st.textColor else themedCellTextColor(Color.rgb(24, 32, 39)))
+            view.setTextColor(readableCellTextColor(address, st))
             view.textSize = st?.fontSize ?: 13f
             view.typeface = Typeface.create(
                 Typeface.DEFAULT,
@@ -1326,7 +1338,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
             view.text = gridDisplay(address)
             val st = sheetStyles[address]
             // Keep a deliberately selected font colour exactly as chosen.
-            view.setTextColor(if (st != null) st.textColor else themedCellTextColor(Color.rgb(24, 32, 39)))
+            view.setTextColor(readableCellTextColor(address, st))
             view.textSize = st?.fontSize ?: 13f
             view.typeface = Typeface.create(
                 Typeface.DEFAULT,
@@ -1408,7 +1420,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
             if (view.text.toString() != text) view.text = text
             val st = sheetStyles[address]
             // Do not let dark-theme conversion override an explicit cell font colour.
-            val textColor = if (st != null) st.textColor else themedCellTextColor(Color.rgb(24, 32, 39))
+            val textColor = readableCellTextColor(address, st)
             if (view.currentTextColor != textColor) view.setTextColor(textColor)
             val textSize = st?.fontSize ?: 13f
             if (view.textSize != textSize) view.textSize = textSize
@@ -1777,9 +1789,9 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                 } else if (st != null) {
                     // A saved cell style contains an explicit user-selected font colour.
                     // Do not run it through theme conversion; that turns dark colours white.
-                    st.textColor
+                    readableCellTextColor(key, st)
                 } else {
-                    themedCellTextColor(Color.rgb(24,32,39))
+                    readableCellTextColor(key, null)
                 }
             )
             textSize = st?.fontSize ?: 13f
