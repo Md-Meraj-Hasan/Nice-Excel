@@ -155,7 +155,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
             0.7152 * channel(Color.green(background)) +
             0.0722 * channel(Color.blue(background))
         val halo = if (luminance < 0.42) Color.WHITE else Color.BLACK
-        view.setShadowLayer(dp(1.25f), 0f, 0f, halo)
+        view.setShadowLayer(dp(1).toFloat(), 0f, 0f, halo)
     }
 
     private fun updateSystemBars() {
