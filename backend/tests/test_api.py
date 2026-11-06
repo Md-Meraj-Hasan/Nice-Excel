@@ -539,3 +539,34 @@ def test_symbol_display_number_formats_preserve_values_and_formula_on_save_reope
     assert ws['B1'].value == 50
     assert ws['B2'].value == '=B1+25'
     assert ws['B1'].number_format == '#,##0.############"%"'
+
+
+def test_shape_objects_create_list_delete_and_recover_from_saved_workbook():
+    book_id = client.post('/workbooks', json={}).get_json()['workbook_id']
+    shape = {'id': 'shape-test-001', 'type': 'rect', 'text': 'Quarterly sales', 'fill': '#4472C4', 'outline': '#1F2937', 'outlineWidth': 2, 'anchor': 'B3'}
+    created = client.post(f'/workbooks/{book_id}/objects', json={'sheet': 'Sheet1', 'object_type': 'shape', 'object': shape})
+    assert created.status_code == 200, created.get_data(as_text=True)
+    assert created.get_json()['autosaved'] is True
+    listed = client.get(f'/workbooks/{book_id}/objects', query_string={'sheet': 'Sheet1'})
+    assert listed.status_code == 200
+    assert listed.get_json()['objects'][0]['object']['text'] == 'Quarterly sales'
+    assert client.get(f'/workbooks/{book_id}').get_json()['sheets'][0]['name'] == 'Sheet1'
+    _workbooks.clear()
+    recovered = client.get(f'/workbooks/{book_id}/objects', query_string={'sheet': 'Sheet1'})
+    assert recovered.status_code == 200
+    assert recovered.get_json()['objects'][0]['id'] == 'shape-test-001'
+    deleted = client.delete(f'/workbooks/{book_id}/objects/shape-test-001')
+    assert deleted.status_code == 200
+    assert deleted.get_json()['deleted'] is True
+    assert client.get(f'/workbooks/{book_id}/objects').get_json()['objects'] == []
+
+def test_shape_object_rejects_invalid_sheet_type_and_anchor():
+    book_id = client.post('/workbooks', json={}).get_json()['workbook_id']
+    body = {'sheet': 'Sheet1', 'object_type': 'shape', 'object': {'id': 'shape-invalid', 'type': 'rect', 'anchor': 'A0'}}
+    assert client.post(f'/workbooks/{book_id}/objects', json=body).status_code == 422
+    body['object']['anchor'] = 'A1'
+    body['object_type'] = 'image'
+    assert client.post(f'/workbooks/{book_id}/objects', json=body).status_code == 422
+    body['object_type'] = 'shape'
+    body['sheet'] = 'MissingSheet'
+    assert client.post(f'/workbooks/{book_id}/objects', json=body).status_code == 404
