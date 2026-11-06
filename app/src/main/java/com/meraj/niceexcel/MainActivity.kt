@@ -4203,7 +4203,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                         }
                         val totalW = widths.sum()
                         val rowH = 22f
-                        val titleH = 0f
+                        val titleH = 22f
                         // Fit-all-columns must use the full printable page width.
                         // Do not cap this scale at 1x: narrower worksheets should expand
                         // to the right edge instead of leaving a large empty strip.
@@ -4232,7 +4232,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                         } else listOf(1..maxCol)
                         // Reserve an extra line for the repeated worksheet heading row.
                         val rowsPerPage = if (fitSinglePage) maxRow
-                            else ((contentH / (rowH * scale)).toInt() - if (options.repeatHeadings) 1 else 0).coerceAtLeast(1)
+                            else (((contentH - titleH) / (rowH * scale)).toInt() - if (options.repeatHeadings) 1 else 0).coerceAtLeast(1)
                         for (cols in colChunks) {
                             var firstRow = 1
                             while (firstRow <= maxRow) {
@@ -4248,7 +4248,8 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                                 paint.textSize = 10f
                                 paint.typeface = android.graphics.Typeface.create("sans-serif", android.graphics.Typeface.BOLD)
                                 val xStart = margin
-                                var y = margin
+                                canvas.drawText(name, margin, margin + 10f, paint)
+                                var y = margin + titleH
                                 // Repeat the actual worksheet heading row (usually row 1)
                                 // on every continuation page, not just the A/B/C column labels.
                                 if (firstRow > 1 && options.repeatHeadings) {
