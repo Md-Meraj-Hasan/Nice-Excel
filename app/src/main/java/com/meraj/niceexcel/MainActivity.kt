@@ -3426,12 +3426,57 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
     }
 
     private fun chooseNumberFormat() {
-        val opts = arrayOf("General", "Number (2 decimals)", "Percentage", "Currency", "Date (text display)", "Time", "Date & Time", "Text", "Scientific", "Custom prefix / suffix…")
+        val opts = arrayOf("General", "Number (2 decimals)", "Percentage", "Currency…", "Date (text display)", "Time", "Date & Time", "Text", "Scientific", "Custom prefix / suffix…")
         AlertDialog.Builder(this).setTitle("Number format").setItems(opts) { _, i ->
-            if (i == opts.lastIndex) customNumberFormatDialog() else {
-                styleFor(selected).numberFormat = opts[i]
-                refreshStyledCells(listOf(selected)); status.text = "Number format set: ${opts[i]}"
+            when (i) {
+                3 -> chooseCurrencyFormat()
+                9 -> customNumberFormatDialog()
+                else -> applyNumberFormatToTargets(opts[i])
             }
+        }.showProfessional()
+    }
+
+    private fun numberFormatTargets(rangeText: String? = null): Pair<String, List<String>>? {
+        val label = rangeText?.trim()?.uppercase(Locale.ROOT)?.takeIf { it.isNotEmpty() }
+            ?: selectedRangeLabel?.takeIf { selectedRangeCells.isNotEmpty() }
+            ?: selected
+        val cells = if (rangeText == null && selectedRangeCells.isNotEmpty()) selectedRangeCells.toList() else parseCellRange(label)
+        if (cells.isEmpty()) { status.text = "Invalid range. Example: A1:C10"; return null }
+        return label to cells
+    }
+
+    private fun applyNumberFormatToTargets(format: String, rangeText: String? = null) {
+        val target = numberFormatTargets(rangeText) ?: return
+        target.second.forEach { styleFor(it).numberFormat = format }
+        refreshStyledCells(target.second)
+        status.text = "Number format applied to ${target.first} · ${target.second.size} cells"
+    }
+
+    private fun chooseCurrencyFormat() {
+        val currencies = arrayOf(
+            "INR · Indian Rupee (₹)" to "\\\"₹\\\"#,##0.00",
+            "USD · US Dollar ($)" to "\\\"$\\\"#,##0.00",
+            "SAR · Saudi Riyal (ر.س)" to "\\\"ر.س \\\"#,##0.00",
+            "AED · UAE Dirham (د.إ)" to "\\\"د.إ \\\"#,##0.00",
+            "EUR · Euro (€)" to "\\\"€\\\"#,##0.00",
+            "GBP · British Pound (£)" to "\\\"£\\\"#,##0.00",
+            "JPY · Japanese Yen (¥)" to "\\\"¥\\\"#,##0",
+            "CNY · Chinese Yuan (¥)" to "\\\"CN¥\\\"#,##0.00",
+            "CAD · Canadian Dollar (C$)" to "\\\"C$\\\"#,##0.00",
+            "AUD · Australian Dollar (A$)" to "\\\"A$\\\"#,##0.00",
+            "CHF · Swiss Franc (CHF)" to "\\\"CHF \\\"#,##0.00",
+            "PKR · Pakistani Rupee (₨)" to "\\\"₨\\\"#,##0.00",
+            "BDT · Bangladeshi Taka (৳)" to "\\\"৳\\\"#,##0.00",
+            "LKR · Sri Lankan Rupee (රු)" to "\\\"රු \\\"#,##0.00",
+            "NPR · Nepalese Rupee (रू)" to "\\\"रू \\\"#,##0.00",
+            "QAR · Qatari Riyal (ر.ق)" to "\\\"ر.ق \\\"#,##0.00",
+            "KWD · Kuwaiti Dinar (د.ك)" to "\\\"د.ك \\\"#,##0.000",
+            "BHD · Bahraini Dinar (د.ب)" to "\\\"د.ب \\\"#,##0.000",
+            "OMR · Omani Rial (ر.ع.)" to "\\\"ر.ع. \\\"#,##0.000",
+            "SGD · Singapore Dollar (S$)" to "\\\"S$\\\"#,##0.00"
+        )
+        AlertDialog.Builder(this).setTitle("Choose currency").setItems(currencies.map { it.first }.toTypedArray()) { _, which ->
+            applyNumberFormatToTargets(currencies[which].second)
         }.showProfessional()
     }
 
@@ -3440,17 +3485,26 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         val panel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(20), dp(8), dp(20), dp(4)) }
         val prefix = EditText(this).apply { hint = "Before number (e.g. ₹)"; setSingleLine(true) }
         val suffix = EditText(this).apply { hint = "After number (e.g. kg or %)"; setSingleLine(true) }
+        val range = EditText(this).apply {
+            hint = "Apply to range (e.g. A1:C10)"; setSingleLine(true)
+            setText(selectedRangeLabel?.takeIf { selectedRangeCells.isNotEmpty() } ?: selected)
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS
+        }
         panel.addView(prefix); panel.addView(suffix)
-        panel.addView(TextView(this).apply { text = "Display only • original value and formula remain unchanged"; textSize = 12f })
+        panel.addView(TextView(this).apply { text = "Apply to range"; textSize = 13f; setPadding(0, dp(10), 0, dp(2)) })
+        panel.addView(range, LinearLayout.LayoutParams(-1, -2))
+        panel.addView(TextView(this).apply { text = "Display only • original value and formula remain unchanged"; textSize = 12f; setPadding(0, dp(8), 0, 0) })
         AlertDialog.Builder(this).setTitle("Custom number display").setView(panel)
             .setNegativeButton("Cancel", null)
             .setPositiveButton("Apply") { _, _ ->
                 val before = prefix.text.toString(); val after = suffix.text.toString()
-                fun quoted(value: String) = "\"" + value.replace("\"", "\"\"") + "\""
-                styleFor(selected).numberFormat = if (before.isEmpty() && after.isEmpty()) "General" else
+                val target = numberFormatTargets(range.text.toString()) ?: return@setPositiveButton
+                fun quoted(value: String) = "\\\"" + value.replace("\\\"", "\\\"\\\"") + "\\\""
+                val format = if (before.isEmpty() && after.isEmpty()) "General" else
                     (if (before.isNotEmpty()) quoted(before) else "") + "#,##0.############" + (if (after.isNotEmpty()) quoted(after) else "")
-                refreshStyledCells(listOf(selected))
-                status.text = "Custom display format applied to $selected; cell value preserved"
+                target.second.forEach { styleFor(it).numberFormat = format }
+                refreshStyledCells(target.second)
+                status.text = "Custom display format applied to ${target.first} · ${target.second.size} cells; values preserved"
             }.showProfessional()
     }
     private fun tableMenu() {
