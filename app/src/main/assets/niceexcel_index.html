@@ -173,7 +173,7 @@
   <label>Orientation<select id="pdfOrientation"><option value="landscape">Landscape</option><option value="portrait">Portrait</option></select></label>
   <label>Content scaling<select id="pdfScale"><option value="fit-width">Fit all columns to page width</option><option value="fit-sheet">Fit sheet on one page</option><option value="actual">Actual size (paginate)</option></select></label>
   <label>Margins<select id="pdfMargins"><option value="normal">Normal</option><option value="narrow">Narrow</option><option value="wide">Wide</option></select></label>
-  <div class="pdf-setup-checks"><label><input id="pdfGridlines" type="checkbox" checked> Show gridlines</label><label><input id="pdfRepeatHeader" type="checkbox" checked> Repeat column headings</label></div>
+  <div class="pdf-setup-checks"><label><input id="pdfGridlines" type="checkbox" checked> Show gridlines</label><label><input id="pdfRepeatHeader" type="checkbox" checked> Repeat worksheet header row</label><label><input id="pdfShowSheetName" type="checkbox" checked> Show worksheet name</label></div>
  </div>
  <div class="pdf-setup-foot"><button type="button" id="pdfSetupCancel">Cancel</button><button type="button" id="pdfExportGo" class="primary">Export PDF</button></div>
 </dialog>
@@ -329,7 +329,7 @@ $('undoBtn').onclick=()=>queueHistoryAction('undo');$('redoBtn').onclick=()=>que
         for(let r=repeat?1:0;r<lastRow;r++)table+=pdfRowHtml(r);
         table+='</tbody></table>';
         const fitZoom=requestedScale==='fit-sheet'?Math.min(1,38/lastRow,12/lastCol):1;
-        sections.push('<section class="sheet-page"><h2>'+esc(name)+'</h2><div class="sheet-content" style="zoom:'+fitZoom+'">'+table+'</div></section>');
+        sections.push('<section class="sheet-page">'+($('pdfShowSheetName').checked?'<h2>'+esc(name)+'</h2>':'')+'<div class="sheet-content" style="zoom:'+fitZoom+'">'+table+'</div></section>');
       }
       const paper=$('pdfPaper').value,orientation=$('pdfOrientation').value,scale=$('pdfScale').value,margins=$('pdfMargins').value;
       const margin=margins==='narrow'?'5mm':margins==='wide'?'20mm':'10mm';
