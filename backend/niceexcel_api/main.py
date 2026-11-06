@@ -11,7 +11,7 @@ from copy import copy
 from typing import Any
 
 from .flask_compat import create_app, File, HTTPException, Query, UploadFile, FileResponse, StreamingResponse, BackgroundTask
-from flask import send_from_directory
+from flask import send_from_directory, request
 from pathlib import Path
 from openpyxl import Workbook, load_workbook
 from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
@@ -68,8 +68,11 @@ def _recovery_path(book_id: str) -> Path:
     return _RECOVERY_DIR / f"{safe_id}.xlsx"
 
 
+_OBJECTS_META_SHEET = "_NiceExcelObjects"
+
+
 def _visible_sheetnames(wb: Workbook) -> list[str]:
-    return _store_visible_sheetnames(wb)
+    return [name for name in _store_visible_sheetnames(wb) if name != _OBJECTS_META_SHEET]
 
 
 def _get_reporting_metadata(wb: Workbook) -> dict[str, Any]:
@@ -248,10 +251,100 @@ def _book(book_id: str) -> Workbook:
 
 
 def _sheet(wb: Workbook, name: str):
-    if name in {_REPORTING_META_SHEET, "_NiceExcelCF", "_NiceExcelDV"} or name not in wb.sheetnames:
+    if name in {_REPORTING_META_SHEET, "_NiceExcelCF", "_NiceExcelDV", _OBJECTS_META_SHEET} or name not in wb.sheetnames:
         raise HTTPException(status_code=404, detail=f"Worksheet not found: {name}")
     return wb[name]
 
+
+def _objects_meta_sheet(wb: Workbook):
+    ws = wb[_OBJECTS_META_SHEET] if _OBJECTS_META_SHEET in wb.sheetnames else wb.create_sheet(_OBJECTS_META_SHEET)
+    ws.sheet_state = "veryHidden"
+    return ws
+
+def _get_workbook_objects(wb: Workbook, sheet_name: str | None = None) -> list[dict[str, Any]]:
+    if _OBJECTS_META_SHEET not in wb.sheetnames:
+        return []
+    result = []
+    for row in wb[_OBJECTS_META_SHEET].iter_rows(min_row=2, values_only=True):
+        values = list(row[:4]) + [None] * 4
+        object_id, target_sheet, object_type, payload = values[:4]
+        if not object_id or not payload or (sheet_name is not None and target_sheet != sheet_name):
+            continue
+        try:
+            obj = json.loads(str(payload))
+        except (ValueError, TypeError):
+            continue
+        if isinstance(obj, dict):
+            result.append({"id": str(object_id), "sheet": str(target_sheet or ""), "object_type": str(object_type or ""), "object": obj})
+    return result
+
+def _write_workbook_objects(wb: Workbook, records: list[dict[str, Any]]) -> None:
+    ws = _objects_meta_sheet(wb)
+    ws.delete_rows(1, ws.max_row)
+    ws.append(["id", "sheet", "object_type", "payload"])
+    for record in records:
+        payload = json.dumps(record["object"], ensure_ascii=False, separators=(",", ":"))
+        ws.append([record["id"], record["sheet"], record["object_type"], payload])
+    ws.sheet_state = "veryHidden"
+
+@app.get("/workbooks/{book_id}/objects")
+def get_workbook_objects(book_id: str, sheet: str | None = Query(default=None)):
+    wb = _book(book_id)
+    if sheet is not None:
+        _sheet(wb, sheet)
+    return {"objects": _get_workbook_objects(wb, sheet)}
+
+@app.post("/workbooks/{book_id}/objects")
+def create_workbook_object(book_id: str):
+    wb = _book(book_id)
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="A JSON object body is required")
+    sheet_name = str(payload.get("sheet", "")).strip()
+    _sheet(wb, sheet_name)
+    object_type = str(payload.get("object_type", "")).strip().lower()
+    obj = payload.get("object")
+    if object_type != "shape" or not isinstance(obj, dict):
+        raise HTTPException(status_code=422, detail="Only shape objects are supported")
+    object_id = str(obj.get("id", "")).strip()
+    if not object_id or len(object_id) > 128:
+        raise HTTPException(status_code=422, detail="Shape object requires a valid id")
+    allowed = {"rect", "roundRect", "ellipse", "diamond", "triangle", "hexagon", "pentagon", "callout", "line", "arrow", "doubleArrow"}
+    if str(obj.get("type", "")) not in allowed:
+        raise HTTPException(status_code=422, detail="Unsupported shape type")
+    anchor = str(obj.get("anchor", "A1")).upper()
+    if not re.fullmatch(r"[A-Z]{1,3}[1-9][0-9]*", anchor):
+        raise HTTPException(status_code=422, detail="Shape anchor must be a valid cell address")
+    clean_obj = dict(obj)
+    clean_obj.update({"id": object_id, "anchor": anchor, "sheet": sheet_name})
+    records = _get_workbook_objects(wb)
+    record = {"id": object_id, "sheet": sheet_name, "object_type": object_type, "object": clean_obj}
+    replaced = False
+    for index, existing in enumerate(records):
+        if existing["id"] == object_id:
+            records[index] = record
+            replaced = True
+            break
+    if not replaced:
+        if len(records) >= 1000:
+            raise HTTPException(status_code=413, detail="Workbook object limit reached (1,000)")
+        records.append(record)
+    _record_history(book_id)
+    _write_workbook_objects(wb, records)
+    _persist_workbook(book_id)
+    return {"object": record, "autosaved": True, "created": not replaced}
+
+@app.delete("/workbooks/{book_id}/objects/{object_id}")
+def delete_workbook_object(book_id: str, object_id: str):
+    wb = _book(book_id)
+    records = _get_workbook_objects(wb)
+    remaining = [record for record in records if record["id"] != object_id]
+    if len(remaining) == len(records):
+        raise HTTPException(status_code=404, detail="Workbook object not found")
+    _record_history(book_id)
+    _write_workbook_objects(wb, remaining)
+    _persist_workbook(book_id)
+    return {"deleted": True, "id": object_id, "autosaved": True}
 
 def _color(value: str | None) -> str | None:
     if value is None:
@@ -357,7 +450,7 @@ def workbook_info(book_id: str):
             {"name": ws.title, "max_row": ws.max_row, "max_column": ws.max_column,
              "freeze_panes": str(ws.freeze_panes) if ws.freeze_panes else None,
              "merged_ranges": [str(r) for r in ws.merged_cells.ranges]}
-            for ws in wb.worksheets if ws.title not in {_REPORTING_META_SHEET, "_NiceExcelCF", "_NiceExcelDV"}
+            for ws in wb.worksheets if ws.title in _visible_sheetnames(wb)
         ],
         "active_sheet": wb.active.title,
         "formula_calculation": "limited_nice_excel_subset_evaluator",
