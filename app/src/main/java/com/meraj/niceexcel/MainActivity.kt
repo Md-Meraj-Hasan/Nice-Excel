@@ -3453,33 +3453,35 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
     }
 
     private fun chooseCurrencyFormat() {
-        val currencies = arrayOf(
-            "INR · Indian Rupee (₹)" to "\\\"₹\\\"#,##0.00",
-            "USD · US Dollar ($)" to "\\\"$\\\"#,##0.00",
-            "SAR · Saudi Riyal (ر.س)" to "\\\"ر.س \\\"#,##0.00",
-            "AED · UAE Dirham (د.إ)" to "\\\"د.إ \\\"#,##0.00",
-            "EUR · Euro (€)" to "\\\"€\\\"#,##0.00",
-            "GBP · British Pound (£)" to "\\\"£\\\"#,##0.00",
-            "JPY · Japanese Yen (¥)" to "\\\"¥\\\"#,##0",
-            "CNY · Chinese Yuan (¥)" to "\\\"CN¥\\\"#,##0.00",
-            "CAD · Canadian Dollar (C$)" to "\\\"C$\\\"#,##0.00",
-            "AUD · Australian Dollar (A$)" to "\\\"A$\\\"#,##0.00",
-            "CHF · Swiss Franc (CHF)" to "\\\"CHF \\\"#,##0.00",
-            "PKR · Pakistani Rupee (₨)" to "\\\"₨\\\"#,##0.00",
-            "BDT · Bangladeshi Taka (৳)" to "\\\"৳\\\"#,##0.00",
-            "LKR · Sri Lankan Rupee (රු)" to "\\\"රු \\\"#,##0.00",
-            "NPR · Nepalese Rupee (रू)" to "\\\"रू \\\"#,##0.00",
-            "QAR · Qatari Riyal (ر.ق)" to "\\\"ر.ق \\\"#,##0.00",
-            "KWD · Kuwaiti Dinar (د.ك)" to "\\\"د.ك \\\"#,##0.000",
-            "BHD · Bahraini Dinar (د.ب)" to "\\\"د.ب \\\"#,##0.000",
-            "OMR · Omani Rial (ر.ع.)" to "\\\"ر.ع. \\\"#,##0.000",
-            "SGD · Singapore Dollar (S$)" to "\\\"S$\\\"#,##0.00"
+        val currencies = listOf(
+            Triple("INR · Indian Rupee (₹)", "₹", 2),
+            Triple("USD · US Dollar ($)", "$", 2),
+            Triple("SAR · Saudi Riyal (ر.س)", "ر.س ", 2),
+            Triple("AED · UAE Dirham (د.إ)", "د.إ ", 2),
+            Triple("EUR · Euro (€)", "€", 2),
+            Triple("GBP · British Pound (£)", "£", 2),
+            Triple("JPY · Japanese Yen (¥)", "¥", 0),
+            Triple("CNY · Chinese Yuan (CN¥)", "CN¥", 2),
+            Triple("CAD · Canadian Dollar (C$)", "C$", 2),
+            Triple("AUD · Australian Dollar (A$)", "A$", 2),
+            Triple("CHF · Swiss Franc (CHF)", "CHF ", 2),
+            Triple("PKR · Pakistani Rupee (₨)", "₨", 2),
+            Triple("BDT · Bangladeshi Taka (৳)", "৳", 2),
+            Triple("LKR · Sri Lankan Rupee (රු)", "රු ", 2),
+            Triple("NPR · Nepalese Rupee (रू)", "रू ", 2),
+            Triple("QAR · Qatari Riyal (ر.ق)", "ر.ق ", 2),
+            Triple("KWD · Kuwaiti Dinar (د.ك)", "د.ك ", 3),
+            Triple("BHD · Bahraini Dinar (د.ب)", "د.ب ", 3),
+            Triple("OMR · Omani Rial (ر.ع.)", "ر.ع. ", 3),
+            Triple("SGD · Singapore Dollar (S$)", "S$", 2)
         )
         AlertDialog.Builder(this).setTitle("Choose currency").setItems(currencies.map { it.first }.toTypedArray()) { _, which ->
-            applyNumberFormatToTargets(currencies[which].second)
+            val currency = currencies[which]
+            val quote = 34.toChar().toString()
+            val format = quote + currency.second + quote + "#,##0" + if (currency.third > 0) "." + "0".repeat(currency.third) else ""
+            applyNumberFormatToTargets(format)
         }.showProfessional()
     }
-
     /** Display-only literals: never modify the underlying numeric value or formula. */
     private fun customNumberFormatDialog() {
         val panel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(20), dp(8), dp(20), dp(4)) }
@@ -3499,7 +3501,8 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
             .setPositiveButton("Apply") { _, _ ->
                 val before = prefix.text.toString(); val after = suffix.text.toString()
                 val target = numberFormatTargets(range.text.toString()) ?: return@setPositiveButton
-                fun quoted(value: String) = "\\\"" + value.replace("\\\"", "\\\"\\\"") + "\\\""
+                val quote = 34.toChar().toString()
+                fun quoted(value: String) = quote + value.replace(quote, quote + quote) + quote
                 val format = if (before.isEmpty() && after.isEmpty()) "General" else
                     (if (before.isNotEmpty()) quoted(before) else "") + "#,##0.############" + (if (after.isNotEmpty()) quoted(after) else "")
                 target.second.forEach { styleFor(it).numberFormat = format }
