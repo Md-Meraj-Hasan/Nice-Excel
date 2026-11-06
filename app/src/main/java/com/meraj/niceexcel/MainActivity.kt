@@ -123,10 +123,11 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
             0.0722 * channel(Color.blue(color))
         val fg = luminance(foreground)
         val bg = luminance(background)
-        val ratio = (a: Double, b: Double) -> (maxOf(a, b) + 0.05) / (minOf(a, b) + 0.05)
-        if (ratio(fg, bg) >= 4.5) return foreground
-        val blackRatio = ratio(0.0, bg)
-        val whiteRatio = ratio(1.0, bg)
+        fun contrastRatio(a: Double, b: Double): Double =
+            (maxOf(a, b) + 0.05) / (minOf(a, b) + 0.05)
+        if (contrastRatio(fg, bg) >= 4.5) return foreground
+        val blackRatio = contrastRatio(0.0, bg)
+        val whiteRatio = contrastRatio(1.0, bg)
         return if (blackRatio >= whiteRatio) Color.BLACK else Color.WHITE
     }
 
