@@ -1116,10 +1116,10 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                 darkMode && st.fillColor == Color.WHITE -> Color.BLACK
                 else -> st.fillColor
             }
-            view.setTextColor(contrastAwareCellTextColor(
-                themedCellTextColor(st?.textColor ?: Color.rgb(24, 32, 39)),
-                cellBackground
-            ))
+            // Explicit font colours are user formatting: never auto-replace them
+            // with black/white based on fill contrast. Theme colour is only for
+            // cells without a saved style.
+            view.setTextColor(if (st != null) st.textColor else themedCellTextColor(Color.rgb(24, 32, 39)))
             view.textSize = st?.fontSize ?: 13f
             view.typeface = Typeface.create(
                 Typeface.DEFAULT,
@@ -1325,7 +1325,8 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         cellViews.forEach { (address, view) ->
             view.text = gridDisplay(address)
             val st = sheetStyles[address]
-            view.setTextColor(themedCellTextColor(st?.textColor ?: Color.rgb(24, 32, 39)))
+            // Keep a deliberately selected font colour exactly as chosen.
+            view.setTextColor(if (st != null) st.textColor else themedCellTextColor(Color.rgb(24, 32, 39)))
             view.textSize = st?.fontSize ?: 13f
             view.typeface = Typeface.create(
                 Typeface.DEFAULT,
@@ -1406,7 +1407,8 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
             val text = gridDisplay(address)
             if (view.text.toString() != text) view.text = text
             val st = sheetStyles[address]
-            val textColor = themedCellTextColor(st?.textColor ?: Color.rgb(24, 32, 39))
+            // Do not let dark-theme conversion override an explicit cell font colour.
+            val textColor = if (st != null) st.textColor else themedCellTextColor(Color.rgb(24, 32, 39))
             if (view.currentTextColor != textColor) view.setTextColor(textColor)
             val textSize = st?.fontSize ?: 13f
             if (view.textSize != textSize) view.textSize = textSize
