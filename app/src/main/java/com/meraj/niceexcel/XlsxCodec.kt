@@ -165,11 +165,11 @@ internal object XlsxCodec {
         }
         val fmtId = numFormats.withIndex().associate { it.value to (164 + it.index) }
         val fmtXml = numFormats.map { fmt ->
-            val code = when (fmt) { "Currency" -> "\\$#,##0.00"; else -> fmt }
-            "<numFmt numFmtId=\\"${fmtId[fmt]}\\" formatCode=\\"${esc(code)}\\"/>"
+            val code = when (fmt) { "Currency" -> "\$#,##0.00"; else -> fmt }
+            "<numFmt numFmtId=\"${fmtId[fmt]}\" formatCode=\"${esc(code)}\"/>"
         }.joinToString("")
         val xfs = buildList {
-            add("<xf numFmtId=\\"0\\" fontId=\\"0\\" fillId=\\"0\\" borderId=\\"0\\" xfId=\\"0\\"/>")
+            add("<xf numFmtId=\"0\" fontId=\"0\" fillId=\"0\" borderId=\"0\" xfId=\"0\"/>")
             styles.forEachIndexed { i, st ->
                 val fmt = when(st.numberFormat) {
                     "Number (2 decimals)" -> 2; "Percentage" -> 10; "Date (text display)", "Date" -> 14
