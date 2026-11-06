@@ -131,16 +131,31 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         return if (blackRatio >= whiteRatio) Color.BLACK else Color.WHITE
     }
 
-    /** Keep requested font colours when readable; otherwise choose a high-contrast label colour. */
-    private fun readableCellTextColor(address: String?, style: CellStyle?): Int {
+    /** Preserve the exact user-selected font colour. */
+    private fun readableCellTextColor(address: String?, style: CellStyle?): Int =
+        if (style != null) style.textColor else themedCellTextColor(Color.rgb(24, 32, 39))
+
+    /** A subtle opposite-tone halo separates the chosen font colour from any cell fill. */
+    private fun applyTextLabelHalo(view: TextView, address: String?, header: Boolean = false) {
+        if (header) {
+            view.setShadowLayer(0f, 0f, 0f, Color.TRANSPARENT)
+            return
+        }
+        val style = address?.let { sheetStyles[it] }
         val background = when {
             style == null -> themedSurface(Color.WHITE)
             darkMode && style.fillColor == Color.WHITE -> Color.BLACK
             else -> style.fillColor
         }
-        val requested = if (style != null) style.textColor
-            else themedCellTextColor(Color.rgb(24, 32, 39))
-        return contrastAwareCellTextColor(requested, background)
+        fun channel(value: Int): Double {
+            val c = value / 255.0
+            return if (c <= 0.04045) c / 12.92 else Math.pow((c + 0.055) / 1.055, 2.4)
+        }
+        val luminance = 0.2126 * channel(Color.red(background)) +
+            0.7152 * channel(Color.green(background)) +
+            0.0722 * channel(Color.blue(background))
+        val halo = if (luminance < 0.42) Color.WHITE else Color.BLACK
+        view.setShadowLayer(dp(1.25f), 0f, 0f, halo)
     }
 
     private fun updateSystemBars() {
@@ -1141,6 +1156,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
             view.paint.isUnderlineText = st?.underline == true
             view.gravity = st?.alignment ?: (Gravity.CENTER_VERTICAL or Gravity.START)
             applyCellBackground(view, address, false)
+            applyTextLabelHalo(view, address, false)
         }
         selectedCellView = cellViews[selected]
         if (needsFullLayout) render()
@@ -1800,6 +1816,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
             gravity = st?.alignment ?: if(header||key==null) Gravity.CENTER else Gravity.CENTER_VERTICAL or Gravity.START
             tag = key
             applyCellBackground(this, key, header)
+            applyTextLabelHalo(this, key, header)
             if (key != null) cellViews[key] = this
             if (key == selected && key != null) selectedCellView = this
             setOnClickListener {
