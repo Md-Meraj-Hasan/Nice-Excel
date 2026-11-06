@@ -3426,13 +3426,33 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
     }
 
     private fun chooseNumberFormat() {
-        val opts = arrayOf("General", "Number (2 decimals)", "Percentage", "Currency", "Date (text display)", "Time", "Date & Time", "Text", "Scientific")
+        val opts = arrayOf("General", "Number (2 decimals)", "Percentage", "Currency", "Date (text display)", "Time", "Date & Time", "Text", "Scientific", "Custom prefix / suffix…")
         AlertDialog.Builder(this).setTitle("Number format").setItems(opts) { _, i ->
-            styleFor(selected).numberFormat = opts[i]
-            refreshStyledCells(listOf(selected)); status.text = "Number format set: ${opts[i]}"
+            if (i == opts.lastIndex) customNumberFormatDialog() else {
+                styleFor(selected).numberFormat = opts[i]
+                refreshStyledCells(listOf(selected)); status.text = "Number format set: ${opts[i]}"
+            }
         }.showProfessional()
     }
 
+    /** Display-only literals: never modify the underlying numeric value or formula. */
+    private fun customNumberFormatDialog() {
+        val panel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(20), dp(8), dp(20), dp(4)) }
+        val prefix = EditText(this).apply { hint = "Before number (e.g. ₹)"; setSingleLine(true) }
+        val suffix = EditText(this).apply { hint = "After number (e.g. kg or %)"; setSingleLine(true) }
+        panel.addView(prefix); panel.addView(suffix)
+        panel.addView(TextView(this).apply { text = "Display only • original value and formula remain unchanged"; textSize = 12f })
+        AlertDialog.Builder(this).setTitle("Custom number display").setView(panel)
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Apply") { _, _ ->
+                val before = prefix.text.toString(); val after = suffix.text.toString()
+                fun quoted(value: String) = "\"" + value.replace("\"", "\"\"") + "\""
+                styleFor(selected).numberFormat = if (before.isEmpty() && after.isEmpty()) "General" else
+                    (if (before.isNotEmpty()) quoted(before) else "") + "#,##0.############" + (if (after.isNotEmpty()) quoted(after) else "")
+                refreshStyledCells(listOf(selected))
+                status.text = "Custom display format applied to $selected; cell value preserved"
+            }.showProfessional()
+    }
     private fun tableMenu() {
         val rangeInput = EditText(this).apply {
             hint = "Enter range, e.g. A1:D20"
