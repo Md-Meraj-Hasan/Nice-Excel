@@ -49,8 +49,8 @@ internal object HyperFormulaServiceClient {
             sheetsJson.put(sheetName, cellsJson)
         }
         val formulasJson = JSONArray()
-        formulas.forEach { (sheet, address, _) ->
-            formulasJson.put(JSONObject().put("sheet", sheet).put("address", address))
+        formulas.forEach { (sheet, address, formula) ->
+            formulasJson.put(JSONObject().put("sheet", sheet).put("address", address).put("formula", formula))
         }
         payload.put("sheets", sheetsJson)
         payload.put("formulas", formulasJson)
