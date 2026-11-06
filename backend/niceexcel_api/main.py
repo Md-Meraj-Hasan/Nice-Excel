@@ -309,7 +309,7 @@ def create_workbook_object(book_id: str):
     object_id = str(obj.get("id", "")).strip()
     if not object_id or len(object_id) > 128:
         raise HTTPException(status_code=422, detail="Shape object requires a valid id")
-    allowed = {"rectangle", "roundRect", "ellipse", "diamond", "triangle", "hexagon", "pentagon", "callout", "line", "arrow", "doubleArrow", "textBox"}
+    allowed = {"rect", "rectangle", "roundRect", "ellipse", "diamond", "triangle", "hexagon", "pentagon", "callout", "line", "arrow", "doubleArrow", "textBox"}
     if str(obj.get("type", "")) not in allowed:
         raise HTTPException(status_code=422, detail="Unsupported shape type")
     anchor = str(obj.get("anchor", "A1")).upper()
