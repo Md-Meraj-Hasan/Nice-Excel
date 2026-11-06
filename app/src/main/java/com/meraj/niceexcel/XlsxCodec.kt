@@ -160,13 +160,22 @@ internal object XlsxCodec {
                 "<border><left style=\"$weight\"><color rgb=\"FF465058\"/></left><right style=\"$weight\"><color rgb=\"FF465058\"/></right><top style=\"$weight\"><color rgb=\"FF465058\"/></top><bottom style=\"$weight\"><color rgb=\"FF465058\"/></bottom><diagonal/></border>"
             } else "<border><left/><right/><top/><bottom/><diagonal/></border>"
         }
-        val numFormats = styles.map { it.numberFormat }.distinct().filter { it !in listOf("General", "Number (2 decimals)", "Percentage", "Date (text display)") }
+        val numFormats = styles.map { it.numberFormat }.distinct().filter {
+            it !in listOf("General", "Number (2 decimals)", "Percentage", "Date (text display)", "Time", "Date & Time", "Text", "Scientific", "Date")
+        }
         val fmtId = numFormats.withIndex().associate { it.value to (164 + it.index) }
-        val fmtXml = numFormats.map { fmt -> "<numFmt numFmtId=\"${fmtId[fmt]}\" formatCode=\"${esc(when(fmt){"Currency" -> "\$#,##0.00"; else -> "General"})}\"/>" }.joinToString("")
+        val fmtXml = numFormats.map { fmt ->
+            val code = when (fmt) { "Currency" -> "$#,##0.00"; else -> fmt }
+            "<numFmt numFmtId=\\"${fmtId[fmt]}\\" formatCode=\\"${esc(code)}\\"/>"
+        }.joinToString("")
         val xfs = buildList {
-            add("<xf numFmtId=\"0\" fontId=\"0\" fillId=\"0\" borderId=\"0\" xfId=\"0\"/>")
+            add("<xf numFmtId=\\"0\\" fontId=\\"0\\" fillId=\\"0\\" borderId=\\"0\\" xfId=\\"0\\"/>")
             styles.forEachIndexed { i, st ->
-                val fmt = when(st.numberFormat) { "Number (2 decimals)" -> 2; "Percentage" -> 10; "Date (text display)" -> 14; "Currency" -> fmtId[st.numberFormat] ?: 164; else -> 0 }
+                val fmt = when(st.numberFormat) {
+                    "Number (2 decimals)" -> 2; "Percentage" -> 10; "Date (text display)", "Date" -> 14
+                    "Time" -> 21; "Date & Time" -> 22; "Currency" -> fmtId[st.numberFormat] ?: 164
+                    "Scientific" -> 11; "Text" -> 49; else -> fmtId[st.numberFormat] ?: 0
+                }
                 val align = if (st.alignment == Gravity.CENTER) "center" else if (st.alignment == (Gravity.CENTER_VERTICAL or Gravity.END)) "right" else "left"
                 add("<xf numFmtId=\"$fmt\" fontId=\"${i+1}\" fillId=\"${i+2}\" borderId=\"${i+1}\" xfId=\"0\" applyFont=\"1\" applyFill=\"1\" applyBorder=\"1\" applyAlignment=\"1\"><alignment horizontal=\"$align\" vertical=\"center\"/></xf>")
             }
@@ -264,7 +273,11 @@ internal object XlsxCodec {
         return null
     }
     private fun argb(c:Int)="FF"+String.format("%06X", c and 0xFFFFFF)
-    private fun decodeFmt(s:String)=when { s.contains('%')->"Percentage"; s.contains("yy",true)||s.contains("dd",true)->"Date (text display)"; s.contains("$",true)||s.contains("€")||s.contains("£")->"Currency"; s.contains("0.00")->"Number (2 decimals)"; else->"General" }
+    private fun decodeFmt(s:String)=when (s) {
+        "0.00" -> "Number (2 decimals)"; "0.00%" , "0%" -> "Percentage"; "$#,##0.00" -> "Currency"
+        "yyyy-mm-dd" -> "Date (text display)"; "hh:mm:ss" -> "Time"; "yyyy-mm-dd hh:mm" -> "Date & Time"
+        "0.00E+00" -> "Scientific"; else -> s
+    }
     private fun readText(p:XmlPullParser)=try{p.nextText()}catch(_:Exception){""}
     private fun parser(bytes:ByteArray)=Xml.newPullParser().apply{setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES,false);setInput(bytes.inputStream(),"UTF-8")}
     private fun entry(zip:ZipOutputStream,name:String,text:String){zip.putNextEntry(ZipEntry(name));zip.write(text.toByteArray(Charsets.UTF_8));zip.closeEntry()}
