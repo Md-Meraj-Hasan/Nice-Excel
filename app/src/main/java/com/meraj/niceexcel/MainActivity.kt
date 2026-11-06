@@ -1186,6 +1186,9 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                             val label = when (parts.firstOrNull()) { "equal" -> "equals"; "starts-with" -> "starts with"; "not-equal" -> "not equal"; "blank" -> "is blank"; else -> "contains" }
                             "$column $label '${parts.getOrElse(1) { "" }}'"
                         }
+                        // SUBTOTAL must be recalculated against the rows that remain visible
+                        // after this filter operation; ordinary SUM remains unaffected.
+                        scheduleFormulaRecalculation()
                     }
                 } catch (error: Exception) {
                     mainHandler.post {
@@ -2541,6 +2544,11 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         val activeSheet = sheetName
         val allSheetsSnapshot = sheets.mapValues { (_, cells) -> cells.toMap() }
         val stylesSnapshot = styles.mapValues { (_, map) -> map.toMap() }
+        val filterActiveForCalculation = filterCriteria.isNotEmpty() || (filterColumn != null && filterText != null)
+        val visibleRowsForCalculation = if (filterActiveForCalculation) {
+            (1..rowCount).filter { rowPassesFilter(it) }.toSet()
+        } else emptySet()
+        val visibleRowsBySheet = if (filterActiveForCalculation) mapOf(activeSheet to visibleRowsForCalculation) else emptyMap()
         val allFormulas = allSheetsSnapshot.flatMap { (name, cells) ->
             cells.filterValues { it.trimStart().startsWith("=") }.map { (address, raw) -> Triple(name, address, raw) }
         }
@@ -2563,7 +2571,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                 val results = linkedMapOf<String, Pair<String, String>>()
                 val hyperFormulaCalculation = runCatching {
                     HyperFormulaServiceClient.recalculateSnapshot(
-                        this@MainActivity, allSheetsSnapshot, formulas
+                        this@MainActivity, allSheetsSnapshot, formulas, visibleRowsBySheet
                     )
                 }.onFailure { failure ->
                     Log.e("NiceExcel-Formula", "HYPERFORMULA_RUNTIME_FAILURE: no alternate formula engine will be used", failure)
