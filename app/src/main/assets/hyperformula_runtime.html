@@ -117,7 +117,7 @@
   }
   function filteredSubtotalFormula(formula, formulaSheet, visibleRowsBySheet, formulaItems) {
     if (typeof formula !== 'string') return null;
-    const match = /^=SUBTOTAL\(\s*(1[01][0-1]|10[1-9]|[1-9])\s*,\s*(?:(?:'([^']+)'|([A-Za-z0-9_ ]+))!)?\$?([A-Z]+)\$?(\d+)\s*:\s*\$?([A-Z]+)\$?(\d+)\s*\)$/i.exec(formula.trim());
+    const match = /^=SUBTOTAL\(\s*(10[1-9]|11[01]|1[01]|[1-9])\s*,\s*(?:(?:'([^']+)'|([A-Za-z0-9_ ]+))!)?\$?([A-Z]+)\$?(\d+)\s*:\s*\$?([A-Z]+)\$?(\d+)\s*\)$/i.exec(formula.trim());
     if (!match) return null;
     const code = Number(match[1]);
     const sourceSheet = (match[2] || match[3] || formulaSheet).trim();
