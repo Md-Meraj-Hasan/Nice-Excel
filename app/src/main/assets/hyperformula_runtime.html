@@ -172,7 +172,7 @@
           const sheetId = engine.getSheetId(item.sheet);
           const pos = parseAddress(item.address);
           if (sheetId === undefined || !pos || pos.row >= 10000 || pos.col >= 512) continue;
-          if (!/^=SUBTOTAL\\s*\\(/i.test(String(item.formula || '').trim())) continue;
+          if (!/^=SUBTOTAL\s*\(/i.test(String(item.formula || '').trim())) continue;
           const filteredFormula = filteredSubtotalFormula(item.formula, item.sheet, visibleRowsBySheet, payload.formulas);
           const engineFormula = filteredFormula || normalizeFormulaBooleans(item.formula);
           engine.setCellContents({ sheet: sheetId, row: pos.row, col: pos.col }, [[engineFormula]]);
