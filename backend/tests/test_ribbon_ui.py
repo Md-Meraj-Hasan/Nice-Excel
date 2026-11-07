@@ -268,3 +268,23 @@ def test_advanced_web_page_offers_in_app_and_same_device_browser_options():
     assert 'private val localUrl = "http://127.0.0.1:8765/"' in flask
     assert 'Intent(Intent.ACTION_VIEW, Uri.parse(localUrl))' in flask
     assert 'waitForHealth(25000)' in flask
+
+
+def test_web_page_uses_shared_offline_hyperformula_runtime_for_calculation_and_preview():
+    web = (ROOT / "backend" / "niceexcel_api" / "static" / "index.html").read_text(encoding="utf-8")
+    native_asset = (ROOT / "app" / "src" / "main" / "assets" / "niceexcel_index.html").read_text(encoding="utf-8")
+    runtime_html = (ROOT / "app" / "src" / "main" / "assets" / "hyperformula_runtime.html").read_text(encoding="utf-8")
+    runtime_js = (ROOT / "scripts" / "hyperformula-runtime.js").read_text(encoding="utf-8")
+    build_script = (ROOT / "scripts" / "build-hyperformula.mjs").read_text(encoding="utf-8")
+    assert web == native_asset
+    assert '<script src="/hyperformula.bundle.js"></script>' in web
+    assert '<script src="/hyperformula_runtime.js"></script>' in web
+    assert "async function calculateWebFormulas(" in web
+    assert "'/workbooks/'+bookId+'/formula-snapshot'" in web
+    assert "window.NiceExcelHF.calculate(JSON.stringify(source))" in web
+    assert "window.NiceExcelHF.calculate(JSON.stringify(snapshot))" in web
+    assert "formula-preview" not in web
+    assert "hyperformula_runtime.js" in runtime_html
+    assert "window.NiceExcelHF = {" in runtime_js
+    assert "backend/niceexcel_api/static/hyperformula.bundle.js" in build_script
+    assert "backend/niceexcel_api/static/hyperformula_runtime.js" in build_script
