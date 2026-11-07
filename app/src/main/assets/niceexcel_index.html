@@ -265,8 +265,8 @@
     if(!nearBottom&&!nearRight)return;
     gridExpansionBusy=true;
     const oldRows=ROWS,oldCols=COLS,oldTop=gridwrap.scrollTop,oldLeft=gridwrap.scrollLeft;
-    if(nearBottom)ROWS=Math.min(100000,ROWS+40);
-    if(nearRight)COLS=Math.min(16384,COLS+26);
+    if(nearBottom)ROWS=Math.min(500,ROWS+40);
+    if(nearRight)COLS=Math.min(52,COLS+26);
     if(ROWS===oldRows&&COLS===oldCols){gridExpansionBusy=false;return;}
     try{await refresh();gridwrap.scrollTop=oldTop;gridwrap.scrollLeft=oldLeft;}
     catch(e){ROWS=oldRows;COLS=oldCols;setStatus('Unable to extend worksheet grid: '+e.message);await refresh();}
