@@ -640,3 +640,45 @@ def test_open_xlsx_edit_save_and_reopen_roundtrip():
     saved_bytes = client.get(f"/workbooks/{new_id}/save").data
     disk_copy = load_workbook(BytesIO(saved_bytes), data_only=False)
     assert disk_copy["Imported"]["B1"].value == "=1+2"
+
+
+def test_hyperformula_snapshot_returns_sparse_raw_values_and_formulas_for_visible_sheets():
+    from io import BytesIO
+    from datetime import datetime
+    from openpyxl import Workbook
+
+    source = Workbook()
+    ws = source.active
+    ws.title = "Formula Tests"
+    ws["A1"] = 10
+    ws["A2"] = 20
+    ws["B1"] = "=SUM(A1:A2)"
+    lookup = source.create_sheet("Lookup")
+    lookup["A1"] = 105
+    lookup["B1"] = "Notebook"
+    ws["C1"] = '=VLOOKUP(105,Lookup!A1:B1,2,FALSE())'
+    ws["D1"] = datetime(2026, 1, 1)
+    hidden = source.create_sheet("Hidden")
+    hidden.sheet_state = "hidden"
+    hidden["A1"] = "not included"
+    stream = BytesIO()
+    source.save(stream)
+    stream.seek(0)
+
+    opened = client.post("/workbooks/open", data={
+        "file": (stream, "hyperformula-snapshot.xlsx")
+    }, content_type="multipart/form-data")
+    assert opened.status_code == 200, opened.get_data(as_text=True)
+    book_id = opened.get_json()["workbook_id"]
+
+    response = client.get(f"/workbooks/{book_id}/formula-snapshot")
+    assert response.status_code == 200, response.get_data(as_text=True)
+    snapshot = response.get_json()
+    assert set(snapshot["sheets"]) == {"Formula Tests", "Lookup"}
+    assert snapshot["sheets"]["Formula Tests"]["A1"] == 10
+    assert snapshot["sheets"]["Formula Tests"]["B1"] == "=SUM(A1:A2)"
+    assert isinstance(snapshot["sheets"]["Formula Tests"]["D1"], (int, float))
+    assert {item["sheet"] + "!" + item["address"] for item in snapshot["formulas"]} == {
+        "Formula Tests!B1", "Formula Tests!C1"
+    }
+    assert snapshot["visibleRowsBySheet"] == {}
