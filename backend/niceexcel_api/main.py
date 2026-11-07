@@ -164,6 +164,7 @@ class RetrieveDataRequest(BaseModel):
 class RowInsertRequest(BaseModel):
     sheet: str = "Sheet1"
     row: int = Field(ge=1, le=100000)
+    count: int = Field(default=1, ge=1, le=1000)
 
 
 class SheetRequest(BaseModel):
@@ -674,11 +675,11 @@ def retrieve_data(book_id: str, request: RetrieveDataRequest):
 
 @app.post("/workbooks/{book_id}/rows")
 def insert_row(book_id: str, request: RowInsertRequest):
-    """Insert one worksheet row at the requested 1-based row index."""
+    """Insert one or more worksheet rows at the requested 1-based row index."""
     wb = _book(book_id)
     ws = _sheet(wb, request.sheet)
     _record_history(book_id)
-    ws.insert_rows(request.row, 1)
+    ws.insert_rows(request.row, request.count)
     # Keep reporting table ranges aligned with inserted worksheet rows. A row
     # inserted inside a table, or immediately before its first data row/after
     # its last row, becomes part of that table. Rows inserted above a table
@@ -694,10 +695,10 @@ def insert_row(book_id: str, request: RowInsertRequest):
             continue
         old_ref = definition["source_range"]
         if request.row <= min_row:
-            min_row += 1
-            max_row += 1
+            min_row += request.count
+            max_row += request.count
         elif min_row <= request.row <= max_row + 1:
-            max_row += 1
+            max_row += request.count
         else:
             continue
         definition["source_range"] = f"{get_column_letter(min_col)}{min_row}:{get_column_letter(max_col)}{max_row}"
@@ -705,10 +706,10 @@ def insert_row(book_id: str, request: RowInsertRequest):
             try:
                 dmin_col, dmin_row, dmax_col, dmax_row = range_boundaries(definition["data_range"])
                 if request.row <= dmin_row:
-                    dmin_row += 1
-                    dmax_row += 1
+                    dmin_row += request.count
+                    dmax_row += request.count
                 elif dmin_row <= request.row <= dmax_row + 1:
-                    dmax_row += 1
+                    dmax_row += request.count
                 definition["data_range"] = f"{get_column_letter(dmin_col)}{dmin_row}:{get_column_letter(dmax_col)}{dmax_row}"
             except Exception:
                 pass
@@ -720,7 +721,7 @@ def insert_row(book_id: str, request: RowInsertRequest):
     if changed:
         _set_reporting_metadata(wb, metadata)
     _persist_workbook(book_id)
-    return {"inserted_row": request.row, "sheet": request.sheet, "tables_updated": changed, "autosaved": True}
+    return {"inserted_row": request.row, "inserted_rows": request.count, "sheet": request.sheet, "tables_updated": changed, "autosaved": True}
 
 
 @app.post("/workbooks/{book_id}/sheets")
