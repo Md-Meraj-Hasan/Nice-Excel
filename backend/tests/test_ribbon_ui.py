@@ -323,15 +323,45 @@ def test_native_sort_is_view_only_and_pdf_uses_sorted_row_projection():
 
 
 
-def test_web_pdf_export_uses_same_page_print_frame_for_android_webview():
+def test_web_pdf_export_uses_offline_pdf_engine_and_downloads_a_real_blob():
+    root = Path(__file__).resolve().parents[2]
+    web = (root / "backend/niceexcel_api/static/index.html").read_text()
+    native_asset = (root / "app/src/main/assets/niceexcel_index.html").read_text()
+    package = json.loads((root / "package.json").read_text())
+    build_script = (root / "scripts/build-hyperformula.mjs").read_text()
+    pdf_entry = (root / "scripts/niceexcel-pdf-entry.js").read_text()
+    for source in (web, native_asset):
+        assert '<script src="/niceexcel_pdf.bundle.js"></script>' in source
+        assert "window.NiceExcelPDF.createPdf" in source
+        assert "blob.size===0" in source
+        assert "link.download='NiceExcel.pdf'" in source
+        assert "PDF export failed: '+e.message" in source
+        assert "document.createElement('iframe')" not in source
+        assert "window.print()" not in source
+    assert package["dependencies"]["jspdf"] == "2.5.2"
+    assert package["dependencies"]["jspdf-autotable"] == "3.8.4"
+    assert "scripts/niceexcel-pdf-entry.js" in build_script
+    assert "app/src/main/assets/niceexcel_pdf.bundle.js" in build_script
+    assert "backend/niceexcel_api/static/niceexcel_pdf.bundle.js" in build_script
+    assert "doc.output('blob')" in pdf_entry
+    assert "style.fill_color" in pdf_entry and "style.font_color" in pdf_entry
+    assert web == native_asset
+
+
+def test_web_editor_exits_edit_mode_after_keyboard_hide_and_preserves_cell_colors():
     root = Path(__file__).resolve().parents[2]
     web = (root / "backend/niceexcel_api/static/index.html").read_text()
     native_asset = (root / "app/src/main/assets/niceexcel_index.html").read_text()
     for source in (web, native_asset):
-        assert "document.createElement('iframe')" in source
-        assert "window.open('','_blank')" not in source
-        assert "printWin.addEventListener('afterprint'" in source
-        assert "setTimeout(()=>window.print(),250)" in source
+        assert "editorViewportBaseline=0, editorKeyboardSeen=false" in source
+        assert "function editorKeyboardOpen()" in source
+        assert "function finishEditAfterKeyboardHide()" in source
+        assert "window.visualViewport?.addEventListener('resize',finishEditAfterKeyboardHide)" in source
+        assert "if(editorKeyboardOpen())" in source
+        assert "Promise.resolve(finish(true)).then(saved=>{if(saved!==false)select(target.dataset.addr,true);})" in source
+        assert "background:transparent!important" in source
+        assert "color:inherit!important" in source
+        assert "caret-color:currentColor" in source
     assert web == native_asset
 
 def test_web_pdf_export_chunks_ranges_below_api_limit_and_hides_legacy_status_lines():
