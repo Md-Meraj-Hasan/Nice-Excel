@@ -563,5 +563,24 @@ $('clearFormatBtn').onclick=async()=>{
     setStatus('Cleared formatting for '+selected);
   }catch(e){alert(e.message);}
 };
+  async function initializeWorkbook(){
+    let savedBookId=null;
+    try{savedBookId=localStorage.getItem('niceexcel.lastWorkbookId');}catch(_){savedBookId=null;}
+    if(savedBookId){
+      bookId=savedBookId;
+      try{
+        await info();
+        activeSheet=sheets[0]||'Sheet1';
+        selected='A1';
+        await refresh();
+        setStatus('Restored last workbook');
+        return;
+      }catch(_){bookId=null;forgetBook();}
+    }
+    try{await create();}
+    catch(e){bookId=null;setStatus('Workbook startup failed: '+e.message);}
+  }
+  initializeWorkbook();
+
 })();
 </script></body></html>
