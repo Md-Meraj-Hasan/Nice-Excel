@@ -276,7 +276,8 @@
      const match=value.match(/^(\\d{4})-(\\d{2})-(\\d{2})(?:T.*)?$/);
      if(match)return match[3]+'-'+match[2]+'-'+match[1];
    }
-   return formatSymbolDisplay(value,numberFormat);
+   const shownValue=value;
+   return formatSymbolDisplay(shownValue,numberFormat);
  }
  function formatSymbolDisplay(value,format){if(value==null||value===''||typeof value==='boolean'||String(value).startsWith('='))return value??'';const n=Number(value);if(!Number.isFinite(n)||!format)return String(value);const m=String(format).match(/^\"((?:[^\"]|\"\")*)\"(.*)$/);const a=String(format).match(/^(.*?)\"((?:[^\"]|\"\")*)\"$/);if(!m&&!a)return String(value);const prefix=m?m[1].replace(/\"\"/g,'\"'):'',suffix=a?a[2].replace(/\"\"/g,'\"'):'';const pattern=m?m[2]:a[1];const decimalPart=(pattern.split('.')[1]||'');const decimals=decimalPart.includes('#')?12:(decimalPart.match(/0+/)||[''])[0].length;let rendered;if(pattern.includes(','))rendered=Math.abs(n).toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:Math.min(decimals,12)});else rendered=Math.abs(n).toFixed(Math.min(decimals,12));return (n<0?'-':'')+prefix+rendered+suffix;}
  // Match Native Excel while the IME is visible. Once the keyboard has been dismissed,
