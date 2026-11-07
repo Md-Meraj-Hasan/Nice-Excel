@@ -244,3 +244,15 @@ def test_web_grid_cell_click_focuses_cell_and_keyboard_events_do_not_reenter_edi
     assert "e.stopPropagation();done(false)" in web
     assert "e.key==='Tab'&&!editing" in web
     assert "select(addr(c,r),true)" in web
+
+
+def test_web_workbook_startup_has_exactly_one_initializer():
+    web = (ROOT / "backend" / "niceexcel_api" / "static" / "index.html").read_text(encoding="utf-8")
+    native_asset = (ROOT / "app" / "src" / "main" / "assets" / "niceexcel_index.html").read_text(encoding="utf-8")
+    assert web == native_asset
+    assert "async function initializeWorkbook()" in web
+    assert web.count("initializeWorkbook();") == 1
+    assert "async function startSession()" not in web
+    assert "startSession().catch(" not in web
+    assert "await info();" in web
+    assert "await create();" in web
