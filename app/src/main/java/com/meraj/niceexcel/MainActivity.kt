@@ -3974,7 +3974,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
 
     private fun applyViewSortOrderToGrid() {
         if (!::grid.isInitialized || grid.childCount <= 1) return
-        val config = viewSortConfigs[sheetName] ?: return
+        val config = viewSortConfigs[sheetName]
         val currentRows = (0 until grid.childCount).mapNotNull { index ->
             val view = grid.getChildAt(index)
             (view.tag as? Int)?.let { it to view }
@@ -4303,7 +4303,6 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                     val contentH = pageH - margin * 2f
                     var pageNumber = 0
                     cellSnapshot.forEach { (name, cells) ->
-                        val pdfRowOrder = viewSortOrder(name, 1, cells, pdfSortSnapshot[name])
                         val stMap = styleSnapshot[name].orEmpty()
                         fun colNumber(label: String): Int {
                             var n = 0
