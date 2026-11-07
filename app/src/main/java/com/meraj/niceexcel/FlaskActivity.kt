@@ -223,7 +223,8 @@ class FlaskActivity : Activity() {
         val bundledAssets = listOf(
             "niceexcel_index.html" to "niceexcel_asset_index.html",
             "hyperformula.bundle.js" to "niceexcel_hyperformula.bundle.js",
-            "hyperformula_runtime.js" to "niceexcel_hyperformula_runtime.js"
+            "hyperformula_runtime.js" to "niceexcel_hyperformula_runtime.js",
+            "niceexcel_pdf.bundle.js" to "niceexcel_pdf.bundle.js"
         )
         bundledAssets.forEach { (assetName, targetName) ->
             val target = File(filesDir, targetName)
