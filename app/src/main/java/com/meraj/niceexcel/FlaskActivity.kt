@@ -220,9 +220,16 @@ class FlaskActivity : Activity() {
     }
 
     private fun copyUiAsset() {
-        val target = File(filesDir, "niceexcel_asset_index.html")
-        assets.open("niceexcel_index.html").use { input ->
-            FileOutputStream(target).use { output -> input.copyTo(output) }
+        val bundledAssets = listOf(
+            "niceexcel_index.html" to "niceexcel_asset_index.html",
+            "hyperformula.bundle.js" to "niceexcel_hyperformula.bundle.js",
+            "hyperformula_runtime.js" to "niceexcel_hyperformula_runtime.js"
+        )
+        bundledAssets.forEach { (assetName, targetName) ->
+            val target = File(filesDir, targetName)
+            assets.open(assetName).use { input ->
+                FileOutputStream(target).use { output -> input.copyTo(output) }
+            }
         }
     }
 
