@@ -358,7 +358,7 @@ def test_web_editor_exits_edit_mode_after_keyboard_hide_and_preserves_cell_color
         assert "function editorKeyboardOpen()" in source
         assert "function finishEditAfterKeyboardHide()" in source
         assert "window.visualViewport?.addEventListener('resize',finishEditAfterKeyboardHide)" in source
-        assert "if(editorKeyboardOpen())" in source
+        assert "if(keyboardOpen){" in source
         assert "Promise.resolve(finish(true)).then(saved=>{if(saved!==false)select(target.dataset.addr,true);})" in source
         assert "background:transparent!important" in source
         assert "color:inherit!important" in source
@@ -391,7 +391,7 @@ def test_web_cell_edit_hands_off_to_next_tapped_cell_without_keyboard_dismissal(
         assert "editingAddress=null, activeEditorDone=null, pendingEditAddress=null" in source
         assert "addEventListener('pointerdown'" in source
         assert "pendingEditAddress=target.dataset.addr" in source
-        assert "activeEditorDone(true,target.dataset.addr)" in source
+        assert "if(finish)finish(true,target.dataset.addr)" in source
         assert "pendingEditAddress||nextAddress" in source
         assert "td.classList.remove('editing')" in source
         assert "await refresh();saveFailed=true" in source
