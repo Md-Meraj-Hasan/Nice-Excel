@@ -459,13 +459,25 @@ $('undoBtn').onclick=()=>queueHistoryAction('undo');$('redoBtn').onclick=()=>que
         sheets:outputSheets
       });
       if(!(blob instanceof Blob)||blob.size===0)throw new Error('The PDF engine returned an empty file.');
-      const url=URL.createObjectURL(blob);
-      const link=document.createElement('a');
-      link.href=url;link.download='NiceExcel.pdf';link.style.display='none';
-      document.body.appendChild(link);link.click();link.remove();
-      setTimeout(()=>URL.revokeObjectURL(url),10000);
-      $('pdfExportDialog').close();
-      setStatus('PDF created and download requested · '+Math.round(blob.size/1024)+' KB');
+      if(window.NiceExcelNative&&typeof window.NiceExcelNative.savePdf==='function'){
+        const base64=await new Promise((resolve,reject)=>{
+          const reader=new FileReader();
+          reader.onload=()=>{const value=String(reader.result||'').split(',')[1]||'';value?resolve(value):reject(new Error('Unable to read generated PDF data'));};
+          reader.onerror=()=>reject(new Error('Unable to prepare PDF for Android storage'));
+          reader.readAsDataURL(blob);
+        });
+        window.NiceExcelNative.savePdf(base64,'NiceExcel.pdf');
+        $('pdfExportDialog').close();
+        setStatus('PDF ready · choose a folder and filename in the Android save dialog');
+      }else{
+        const url=URL.createObjectURL(blob);
+        const link=document.createElement('a');
+        link.href=url;link.download='NiceExcel.pdf';link.style.display='none';
+        document.body.appendChild(link);link.click();link.remove();
+        setTimeout(()=>URL.revokeObjectURL(url),10000);
+        $('pdfExportDialog').close();
+        setStatus('PDF created and browser download requested · '+Math.round(blob.size/1024)+' KB');
+      }
     }catch(e){
       setStatus('PDF export failed: '+e.message);
       alert('PDF export failed: '+e.message);
@@ -473,6 +485,11 @@ $('undoBtn').onclick=()=>queueHistoryAction('undo');$('redoBtn').onclick=()=>que
       go.disabled=false;go.textContent='Export PDF';
     }
   };
+  window.addEventListener('niceexcel-pdf-saved',event=>{
+    if(event.detail?.success)setStatus('PDF saved successfully');
+    else if(event.detail?.cancelled)setStatus('PDF save cancelled');
+    else setStatus('PDF save failed'+(event.detail?.message?': '+event.detail.message:''));
+  });
 
   $('saveBtn').onclick=()=>download('/workbooks/'+bookId+'/save','NiceExcel.xlsx').then(()=>setStatus('Workbook downloaded')).catch(e=>alert(e.message));$('csvBtn').onclick=()=>download('/workbooks/'+bookId+'/csv/'+encodeURIComponent(activeSheet),'NiceExcel-'+activeSheet+'.csv','POST').catch(e=>alert(e.message));$('applyCell').onclick=applyCell;$('formula').addEventListener('input',scheduleFormulaPreview);$('formula').addEventListener('keydown',e=>{if(e.key==='Enter')applyCell()});$('address').addEventListener('keydown',e=>{if(e.key==='Enter')select($('address').value.trim().toUpperCase())});
  $('insertRowBtn').onclick=async()=>{if(!bookId)return;const p=cellAt(selected);const row=p?p.r:1;try{await api('/workbooks/'+bookId+'/rows',json('POST',{sheet:activeSheet,row}));await refresh();select(addr(1,row));setStatus('Inserted row '+row)}catch(e){alert(e.message)}};
