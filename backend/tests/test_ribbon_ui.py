@@ -147,7 +147,7 @@ def test_web_filter_can_explicitly_choose_columns_through_z():
         ROOT / "app" / "src" / "main" / "assets" / "niceexcel_index.html",
     ]:
         html = path.read_text(encoding="utf-8")
-        assert "let COLS=26, ROWS=40, gridExpansionBusy=false;" in html
+        assert "let COLS=26, ROWS=40, gridExpansionBusy=false, viewSorts={};" in html
         assert "&range=A1:'+colName(COLS)+ROWS" in html
         assert "Choose the worksheet column to filter" in html
         assert "columnNumber(column)>COLS" in html
@@ -217,7 +217,7 @@ def test_web_grid_expands_rows_and_columns_on_scroll():
     web = (ROOT / "backend" / "niceexcel_api" / "static" / "index.html").read_text(encoding="utf-8")
     native_asset = (ROOT / "app" / "src" / "main" / "assets" / "niceexcel_index.html").read_text(encoding="utf-8")
     assert web == native_asset
-    assert "let COLS=26, ROWS=40, gridExpansionBusy=false;" in web
+    assert "let COLS=26, ROWS=40, gridExpansionBusy=false, viewSorts={};" in web
     assert "&range=A1:'+colName(COLS)+ROWS" in web
     assert "gridwrap.addEventListener('scroll',async()=>{" in web
     assert "ROWS=Math.min(500,ROWS+40)" in web
@@ -288,3 +288,22 @@ def test_web_page_uses_shared_offline_hyperformula_runtime_for_calculation_and_p
     assert "window.NiceExcelHF = {" in runtime_js
     assert "backend/niceexcel_api/static/hyperformula.bundle.js" in build_script
     assert "backend/niceexcel_api/static/hyperformula_runtime.js" in build_script
+
+
+def test_web_view_sort_is_non_destructive_and_exports_sorted_projection_to_pdf():
+    web = (ROOT / "backend" / "niceexcel_api" / "static" / "index.html").read_text(encoding="utf-8")
+    native_asset = (ROOT / "app" / "src" / "main" / "assets" / "niceexcel_index.html").read_text(encoding="utf-8")
+    assert web == native_asset
+    for element_id in ["viewSortDialog", "viewSortType", "viewSortColumn", "viewSortDirection", "viewSortApply", "clearSortViewBtn"]:
+        assert f'id="{element_id}"' in web
+    assert '<option value="number">Number</option>' in web
+    assert '<option value="letter">Letter</option>' in web
+    assert "function getViewRowOrder(visibleRows" in web
+    assert "compareViewSortRows(a,b,config)" in web
+    assert "viewSorts[activeSheet]=" in web
+    assert "delete viewSorts[activeSheet]" in web
+    assert "const viewRowOrder=getViewRowOrder(visibleRows)" in web
+    assert "const pdfOrder=pdfSort?getViewRowOrder(lastRow,name)" in web
+    assert "await api('/workbooks/'+bookId+'/sort'" not in web
+    assert "original cell positions, formulas and workbook data remain unchanged" in web
+
