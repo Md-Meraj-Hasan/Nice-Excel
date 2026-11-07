@@ -851,6 +851,23 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         }
     }
 
+    private fun showWebPageOptions() {
+        AlertDialog.Builder(this)
+            .setTitle("Open NiceExcel Web Page")
+            .setItems(arrayOf("Open inside APK", "Open in Browser (localhost)")) { dialog, which ->
+                when (which) {
+                    0 -> startActivity(Intent(this, FlaskActivity::class.java))
+                    1 -> startActivity(
+                        Intent(this, FlaskActivity::class.java)
+                            .putExtra(FlaskActivity.EXTRA_OPEN_EXTERNAL_BROWSER, true)
+                    )
+                }
+                dialog.dismiss()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
     private fun showTopMenu(section: String) {
         val items: List<Pair<String, () -> Unit>> = when (section) {
             "File" -> listOf(
@@ -893,7 +910,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                 "Clear formatting" to { clearFormattingSelection() }
             )
             "Advanced" -> listOf(
-                "Open Full Advanced Tools (Web)" to { startActivity(Intent(this, FlaskActivity::class.java)) },
+                "Web Page" to { showWebPageOptions() },
                 "Conditional Formatting…" to { conditionalFormattingMenu() },
                 "Data Validation…" to { dataValidationMenu() },
                 "Data Cleaning…" to { dataCleaningMenu() },
