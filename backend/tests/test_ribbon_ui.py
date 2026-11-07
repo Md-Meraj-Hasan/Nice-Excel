@@ -346,6 +346,7 @@ def test_web_pdf_export_uses_offline_pdf_engine_and_downloads_a_real_blob():
     assert "backend/niceexcel_api/static/niceexcel_pdf.bundle.js" in build_script
     assert "doc.output('blob')" in pdf_entry
     assert "style.fill_color" in pdf_entry and "style.font_color" in pdf_entry
+    assert "hex.slice(0, 2).toLowerCase() === '00'" in pdf_entry
     assert web == native_asset
 
 
