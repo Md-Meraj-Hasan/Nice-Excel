@@ -593,3 +593,50 @@ def test_shape_object_rejects_invalid_sheet_type_and_anchor():
     body['object_type'] = 'shape'
     body['sheet'] = 'MissingSheet'
     assert client.post(f'/workbooks/{book_id}/objects', json=body).status_code == 404
+
+
+def test_open_xlsx_edit_save_and_reopen_roundtrip():
+    from io import BytesIO
+    from openpyxl import Workbook, load_workbook
+
+    source = Workbook()
+    ws = source.active
+    ws.title = "Imported"
+    ws["A1"] = "Original"
+    ws["B1"] = "=1+2"
+    source_bytes = BytesIO()
+    source.save(source_bytes)
+    source_bytes.seek(0)
+
+    opened = client.post("/workbooks/open", data={
+        "file": (source_bytes, "source.xlsx")
+    }, content_type="multipart/form-data")
+    assert opened.status_code == 200, opened.get_data(as_text=True)
+    book_id = opened.get_json()["workbook_id"]
+    assert "Imported" in opened.get_json()["sheets"]
+
+    changed = client.patch(f"/workbooks/{book_id}/cells", json={
+        "sheet": "Imported", "cells": [
+            {"cell": "A1", "value": "Edited in NiceExcel"},
+            {"cell": "C1", "value": "Saved"},
+        ]
+    })
+    assert changed.status_code == 200
+    exported = client.get(f"/workbooks/{book_id}/save")
+    assert exported.status_code == 200 and exported.data[:2] == b"PK"
+
+    reopened = client.post("/workbooks/open", data={
+        "file": (BytesIO(exported.data), "roundtrip.xlsx")
+    }, content_type="multipart/form-data")
+    assert reopened.status_code == 200, reopened.get_data(as_text=True)
+    new_id = reopened.get_json()["workbook_id"]
+    values = client.get(f"/workbooks/{new_id}/range", query_string={
+        "sheet": "Imported", "range": "A1:C1"
+    }).get_json()["rows"][0]
+    assert values[0]["value"] == "Edited in NiceExcel"
+    assert values[1]["value"] == "=1+2"
+    assert values[2]["value"] == "Saved"
+
+    saved_bytes = client.get(f"/workbooks/{new_id}/save").data
+    disk_copy = load_workbook(BytesIO(saved_bytes), data_only=False)
+    assert disk_copy["Imported"]["B1"].value == "=1+2"
