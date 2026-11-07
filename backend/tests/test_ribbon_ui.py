@@ -147,8 +147,8 @@ def test_web_filter_can_explicitly_choose_columns_through_z():
         ROOT / "app" / "src" / "main" / "assets" / "niceexcel_index.html",
     ]:
         html = path.read_text(encoding="utf-8")
-        assert "const COLS=26, ROWS=40;" in html
-        assert "range=A1:Z40" in html
+        assert "let COLS=26, ROWS=40, gridExpansionBusy=false;" in html
+        assert "&range=A1:'+colName(COLS)+ROWS" in html
         assert "Choose the worksheet column to filter" in html
         assert "columnNumber(column)>COLS" in html
         assert ".grid td.table-cell{border-right:1px solid var(--accent);border-bottom:1px solid var(--accent)}" in html
