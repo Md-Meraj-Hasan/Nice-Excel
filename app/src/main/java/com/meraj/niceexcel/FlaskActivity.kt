@@ -125,6 +125,7 @@ class FlaskActivity : Activity() {
                             addCategory(Intent.CATEGORY_OPENABLE)
                             type = "application/pdf"
                             putExtra(Intent.EXTRA_TITLE, pendingPdfName)
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
                         }
                         try {
                             startActivityForResult(intent, pdfSaveRequestCode)
