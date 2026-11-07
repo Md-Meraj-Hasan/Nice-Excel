@@ -208,3 +208,7 @@ def test_web_html_has_no_missing_dom_bindings_and_android_asset_matches():
     assert not missing, f"JavaScript references missing DOM elements: {missing}"
     assert "$('findBtnData').onclick=async()=>{" in web
     assert "Find text or value in this worksheet" in web
+    assert "async function initializeWorkbook(){" in web
+    assert "savedBookId=localStorage.getItem('niceexcel.lastWorkbookId')" in web
+    assert "try{await create();}" in web
+    assert web.count("initializeWorkbook();") == 1
