@@ -276,11 +276,13 @@
  window.visualViewport?.addEventListener('resize',finishEditAfterKeyboardHide);
  $('grid').addEventListener('pointerdown',event=>{
    const target=event.target.closest('td[data-addr]');
-   if(!target||!editing||target.dataset.addr===editingAddress)return;
+   if(!target||!editing)return;
+   const keyboardOpen=editorKeyboardOpen();
+   if(keyboardOpen&&target.dataset.addr===editingAddress)return;
    event.preventDefault();
    event.stopPropagation();
    const finish=activeEditorDone;
-   if(editorKeyboardOpen()){
+   if(keyboardOpen){
      pendingEditAddress=target.dataset.addr;
      if(finish)finish(true,target.dataset.addr);
    }else{
