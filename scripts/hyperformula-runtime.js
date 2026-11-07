@@ -20,6 +20,9 @@
         const upper = token.toUpperCase();
         // Normalize Excel CONCAT alias only when it is a function call.
         if (upper === 'CONCAT' && nextChar === '(') output += 'CONCATENATE';
+        // Excel INT rounds negative fractions down; map to FLOOR.MATH,
+        // which preserves Excel semantics instead of truncating toward zero.
+        else if (upper === 'INT' && nextChar === '(') output += 'FLOOR.MATH';
         else output += upper === 'TRUE' && nextChar !== '(' ? 'TRUE()' : upper === 'FALSE' && nextChar !== '(' ? 'FALSE()' : token;
         token = '';
       }
