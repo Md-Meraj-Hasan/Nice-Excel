@@ -3941,15 +3941,25 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         sheet: String,
         totalRows: Int,
         cells: Map<String, String>,
-        config: ViewSortConfig? = viewSortConfigs[sheet]
+        config: ViewSortConfig? = viewSortConfigs[sheet],
+        styleMap: Map<String, CellStyle> = styles[sheet].orEmpty(),
+        formulaCache: Map<String, String> = formulaDisplayCache
     ): List<Int> {
         val order = (1..totalRows.coerceAtLeast(1)).toMutableList()
         if (config == null) return order
         val first = (config.headerRow + 1).coerceAtLeast(2)
         if (first > totalRows) return order
+        fun sortValue(row: Int): String {
+            val address = "${colName(config.column)}$row"
+            val raw = cells[address].orEmpty()
+            if (!raw.trimStart().startsWith("=")) return raw
+            val style = styleMap[address]
+            val key = "$sheet|$address|$raw|${style?.numberFormat ?: "General"}"
+            return formulaCache[key] ?: raw
+        }
         val sorted = order.subList(first - 1, totalRows).sortedWith { rowA, rowB ->
-            val a = cells["${colName(config.column)}$rowA"].orEmpty()
-            val b = cells["${colName(config.column)}$rowB"].orEmpty()
+            val a = sortValue(rowA)
+            val b = sortValue(rowB)
             val aBlank = a.isBlank()
             val bBlank = b.isBlank()
             if (aBlank || bBlank) {
@@ -4337,7 +4347,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                         // prevents empty trailing tabs from adding pages after the real data.
                         if (!hasPrintableContent) return@forEach
                         maxRow = maxRow.coerceAtMost(10000)
-                        val orderedRows = viewSortOrder(name, maxRow, cells, pdfSortSnapshot[name])
+                        val orderedRows = viewSortOrder(name, maxRow, cells, pdfSortSnapshot[name], stMap, formulaSnapshot)
                         maxCol = maxCol.coerceIn(1, colLimit)
                         val widths = (1..maxCol).map { c ->
                             (widthSnapshot[name]?.getOrNull(c - 1)?.toFloat() ?: 82f).coerceIn(42f, 180f)
