@@ -231,3 +231,16 @@ def test_web_add_rows_uses_single_bulk_api_request():
     assert web == native_asset
     assert "json('POST',{sheet:activeSheet,row:p?.r||1,count})" in web
     assert "for(let n=0;n<count;n++)await api('/workbooks/'+bookId+'/rows'" not in web
+
+
+def test_web_grid_cell_click_focuses_cell_and_keyboard_events_do_not_reenter_editor():
+    web = (ROOT / "backend" / "niceexcel_api" / "static" / "index.html").read_text(encoding="utf-8")
+    native_asset = (ROOT / "app" / "src" / "main" / "assets" / "niceexcel_index.html").read_text(encoding="utf-8")
+    assert web == native_asset
+    assert "function select(a,focus=false)" in web
+    assert "td.addEventListener('click',()=>select(a,true))" in web
+    assert "if(e.target!==td)return" in web
+    assert "e.stopPropagation();done(true)" in web
+    assert "e.stopPropagation();done(false)" in web
+    assert "e.key==='Tab'&&!editing" in web
+    assert "select(addr(c,r),true)" in web
