@@ -683,3 +683,23 @@ def test_hyperformula_snapshot_returns_sparse_raw_values_and_formulas_for_visibl
         "Formula Tests!B1", "Formula Tests!C1"
     }
     assert snapshot["visibleRowsBySheet"] == {}
+
+
+def test_transparent_default_excel_fill_is_not_serialized_as_black():
+    from openpyxl import Workbook
+    from openpyxl.styles import PatternFill
+    from niceexcel_api.main import _cell_json
+
+    wb = Workbook()
+    ws = wb.active
+    ws["A1"] = "Visible text"
+    # openpyxl's default ARGB fill is 00000000 (fully transparent black).
+    assert _cell_json(ws["A1"])["style"]["fill_color"] is None
+
+    ws["A2"] = "Intentional fill"
+    ws["A2"].fill = PatternFill(fill_type="solid", fgColor="FF1F4E78")
+    assert _cell_json(ws["A2"])["style"]["fill_color"] == "1F4E78"
+
+    ws["A3"] = "Transparent explicit fill"
+    ws["A3"].fill = PatternFill(fill_type="solid", fgColor="001F4E78")
+    assert _cell_json(ws["A3"])["style"]["fill_color"] is None
