@@ -259,7 +259,7 @@ def test_web_workbook_startup_has_exactly_one_initializer():
 
 
 def test_advanced_web_page_offers_in_app_and_same_device_browser_options():
-    native = (ROOT / "app" / " " / "src").as_posix() if False else (ROOT / "app" / "src" / "main" / "java" / "com" / "meraj" / "niceexcel" / "MainActivity.kt").read_text(encoding="utf-8")
+    native = (ROOT / "app" / "src" / "main" / "java" / "com" / "meraj" / "niceexcel" / "MainActivity.kt").read_text(encoding="utf-8")
     flask = (ROOT / "app" / "src" / "main" / "java" / "com" / "meraj" / "niceexcel" / "FlaskActivity.kt").read_text(encoding="utf-8")
     assert '"Web Page" to { showWebPageOptions() }' in native
     assert 'arrayOf("Open inside APK", "Open in Browser (localhost)")' in native
