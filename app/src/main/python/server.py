@@ -54,6 +54,7 @@ def start_server(app_data_dir: str) -> None:
         for source_name, target_name in (
             ("niceexcel_hyperformula.bundle.js", "hyperformula.bundle.js"),
             ("niceexcel_hyperformula_runtime.js", "hyperformula_runtime.js"),
+            ("niceexcel_pdf.bundle.js", "niceexcel_pdf.bundle.js"),
         ):
             source_asset = app_dir / source_name
             if not source_asset.is_file():
