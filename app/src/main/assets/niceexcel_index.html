@@ -142,7 +142,9 @@
 .pdf-setup-checks label{display:flex;align-items:center;gap:6px;color:var(--text)}
 .pdf-setup-foot{display:flex;justify-content:flex-end;gap:8px;padding:12px 15px;border-top:1px solid var(--line)}
 @media(max-width:420px){.pdf-setup-grid{grid-template-columns:1fr}}
-.native-color-inputs input{position:fixed;left:-10000px;top:0;width:1px;height:1px;opacity:0;pointer-events:none}.file-picker-input{position:fixed!important;left:-10000px!important;top:0!important;width:1px!important;height:1px!important;opacity:0!important;pointer-events:none!important}\n</style></head>
+.native-color-inputs input{position:fixed;left:-10000px;top:0;width:1px;height:1px;opacity:0;pointer-events:none}.file-picker-input{position:fixed!important;left:-10000px!important;top:0!important;width:1px!important;height:1px!important;opacity:0!important;pointer-events:none!important}\n/* Keep the worksheet workspace clean: preview and legacy footer are not part of the grid UI. */
+#formulaPreview,.foot{display:none!important}
+</style></head>
 <body>
 <header class="top web-native-toolbar" aria-label="Nice Excel main menu">
 <details class="toolgroup"><summary>File</summary><div class="toolmenu"><button class="primary" id="newBtn">New workbook</button><button id="recoverBtn">Recover</button><button id="openBtn">Open workbook…</button><button id="saveBtn">Save XLSX</button><button id="csvBtn">Export CSV…</button><button id="exportPdfBtn">Export PDF…</button></div></details>
@@ -354,8 +356,20 @@ $('undoBtn').onclick=()=>queueHistoryAction('undo');$('redoBtn').onclick=()=>que
       const color=v=>/^#?[0-9a-f]{6}$/i.test(String(v||''))?'#'+String(v).replace('#',''):'';
       const pdfColName=c=>{let n=c+1,out='';while(n){const r=(n-1)%26;out=String.fromCharCode(65+r)+out;n=Math.floor((n-1)/26);}return out;};
       for(const name of targets){
-        const response=await api('/workbooks/'+bookId+'/range?sheet='+encodeURIComponent(name)+'&range=A1:Z1000');
-        const rows=response.rows||[];
+        const sheetInfo=(infoResult.sheets||[]).find(item=>(typeof item==='string'?item:item.name)===name)||{};
+        const maxPdfRow=Math.max(1,Number(sheetInfo.max_row)||1);
+        const maxPdfCol=Math.max(1,Math.min(26,Number(sheetInfo.max_column)||26));
+        const rows=[];
+        // The range API intentionally caps each request at 10,000 cells.
+        // Fetch the used worksheet in safe row chunks instead of requesting
+        // A1:Z1000 (26,000 cells), which made PDF export fail on Android.
+        const rowsPerRequest=Math.max(1,Math.floor(10000/maxPdfCol));
+        for(let startRow=1;startRow<=maxPdfRow;startRow+=rowsPerRequest){
+          const endRow=Math.min(maxPdfRow,startRow+rowsPerRequest-1);
+          const range='A'+startRow+':'+colName(maxPdfCol)+endRow;
+          const response=await api('/workbooks/'+bookId+'/range?sheet='+encodeURIComponent(name)+'&range='+range);
+          rows.push(...(response.rows||[]));
+        }
         let lastRow=0,lastCol=0;
         rows.forEach((row,ri)=>row.forEach((cell,ci)=>{
           const value=cell?.value??cell?.raw_value??'';
