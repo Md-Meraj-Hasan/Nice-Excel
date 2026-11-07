@@ -73,6 +73,29 @@ def test_insert_row_shifts_existing_cells_and_autosaves():
     assert rows[2][0]["value"] == "Keep me"
 
 
+def test_insert_multiple_rows_in_one_request():
+    book_id = client.post("/workbooks", json={}).get_json()["workbook_id"]
+    client.patch(f"/workbooks/{book_id}/cells", json={
+        "sheet": "Sheet1", "cells": [
+            {"cell": "A1", "value": "Header"},
+            {"cell": "A2", "value": "Keep me"},
+        ]
+    })
+    response = client.post(f"/workbooks/{book_id}/rows", json={
+        "sheet": "Sheet1", "row": 2, "count": 10
+    })
+    assert response.status_code == 200, response.get_data(as_text=True)
+    result = response.get_json()
+    assert result["inserted_row"] == 2
+    assert result["inserted_rows"] == 10
+    rows = client.get(f"/workbooks/{book_id}/range", query_string={
+        "sheet": "Sheet1", "range": "A1:A12"
+    }).get_json()["rows"]
+    assert rows[0][0]["value"] == "Header"
+    assert all(rows[i][0]["value"] is None for i in range(1, 11))
+    assert rows[11][0]["value"] == "Keep me"
+
+
 def test_last_sheet_cannot_be_deleted_and_bad_range_rejected():
     book_id = client.post('/workbooks', json={}).get_json()['workbook_id']
     response = client.delete(f'/workbooks/{book_id}/sheets/Sheet1')
