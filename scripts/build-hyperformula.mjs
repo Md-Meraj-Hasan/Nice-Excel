@@ -27,4 +27,22 @@ for (const target of runtimeTargets) {
   await mkdir(target.slice(0, target.lastIndexOf('/')), { recursive: true });
   await copyFile('scripts/hyperformula-runtime.js', target);
 }
-console.log('Bundled offline HyperFormula runtime for Native APK and Web Page.');
+const pdfTargets = [
+  'app/src/main/assets/niceexcel_pdf.bundle.js',
+  'backend/niceexcel_api/static/niceexcel_pdf.bundle.js',
+];
+for (const outfile of pdfTargets) {
+  await mkdir(outfile.slice(0, outfile.lastIndexOf('/')), { recursive: true });
+  await build({
+    entryPoints: ['scripts/niceexcel-pdf-entry.js'],
+    outfile,
+    bundle: true,
+    minify: true,
+    platform: 'browser',
+    format: 'iife',
+    target: ['es2020'],
+    legalComments: 'none',
+    sourcemap: false,
+  });
+}
+console.log('Bundled offline HyperFormula and PDF runtimes for Web Page and Android WebView.');
