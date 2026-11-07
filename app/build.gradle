@@ -52,10 +52,16 @@ tasks.register("verifyHyperFormulaBundle") {
     description = "Verify the locally bundled HyperFormula GPLv3 runtime is present."
     doLast {
         def bundle = file("${projectDir}/src/main/assets/hyperformula.bundle.js")
+        def runtime = file("${projectDir}/src/main/assets/hyperformula_runtime.js")
+        def runtimePage = file("${projectDir}/src/main/assets/hyperformula_runtime.html")
         if (!bundle.isFile() || bundle.length() < 100_000L) {
             throw new GradleException("Missing HyperFormula bundle: ${bundle}. Run 'npm install' and 'npm run build:hyperformula' before building the APK.")
         }
-        logger.lifecycle("Offline HyperFormula bundle verified (${bundle.length()} bytes).")
+        if (!runtime.isFile() || runtime.length() < 1000L || !runtimePage.isFile() ||
+                !runtimePage.text.contains("hyperformula_runtime.js")) {
+            throw new GradleException("Missing shared HyperFormula runtime script or runtime HTML: ${runtime}. Run 'npm run build:hyperformula' before building the APK.")
+        }
+        logger.lifecycle("Offline HyperFormula bundle and shared runtime verified (${bundle.length()} bytes, ${runtime.length()} runtime bytes).")
     }
 }
 
