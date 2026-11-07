@@ -1227,6 +1227,40 @@ def workbook_dependencies(book_id: str):
     return {"workbook_id": book_id, **build_dependency_graph(wb)}
 
 
+@app.get("/workbooks/{book_id}/formula-snapshot")
+def workbook_formula_snapshot(book_id: str):
+    """Return sparse raw workbook contents for the shared offline HyperFormula runtime."""
+    from datetime import date, datetime, time, timedelta
+    from openpyxl.utils.datetime import to_excel
+
+    wb = _book(book_id)
+    sheets: dict[str, dict[str, Any]] = {}
+    formulas: list[dict[str, str]] = []
+    cell_count = 0
+    for sheet_name in _visible_sheetnames(wb):
+        ws = wb[sheet_name]
+        values: dict[str, Any] = {}
+        # Sparse cell iteration avoids scanning the full rectangular worksheet area.
+        for cell in ws._cells.values():
+            if cell.value is None or cell.row > 10000 or cell.column > 512:
+                continue
+            raw = cell.value
+            if isinstance(raw, (datetime, date, time)):
+                raw = to_excel(raw, wb.epoch)
+            elif isinstance(raw, timedelta):
+                raw = raw.total_seconds() / 86400.0
+            elif not isinstance(raw, (str, int, float, bool)):
+                raw = str(raw)
+            values[cell.coordinate] = raw
+            if cell.data_type == "f" or (isinstance(raw, str) and raw.startswith("=")):
+                formulas.append({"sheet": sheet_name, "address": cell.coordinate, "formula": str(raw)})
+            cell_count += 1
+            if cell_count > 100000:
+                raise HTTPException(status_code=413, detail="HyperFormula snapshot is limited to 100,000 populated cells")
+        sheets[sheet_name] = values
+    return {"workbook_id": book_id, "sheets": sheets, "formulas": formulas, "visibleRowsBySheet": {}}
+
+
 @app.post("/workbooks/{book_id}/calculate")
 def calculate_workbook(book_id: str):
     """Evaluate supported formulas across the workbook without replacing formula cells."""
