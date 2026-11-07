@@ -318,6 +318,6 @@ def test_native_sort_is_view_only_and_pdf_uses_sorted_row_projection():
     assert "viewSortConfigs[sheetName] = ViewSortConfig(column, type, descending, headerRow)" in native
     assert "data.remove(address)" not in native[native.index("private fun sortColumn() {"):native.index("override fun onDestroy()", native.index("private fun sortColumn() {"))]
     assert "val pdfSortSnapshot = viewSortConfigs.toMap()" in native
-    assert "val orderedRows = viewSortOrder(name, maxRow, cells, pdfSortSnapshot[name])" in native
+    assert "val orderedRows = viewSortOrder(name, maxRow, cells, pdfSortSnapshot[name], stMap, formulaSnapshot)" in native
     assert "val sourceRow = orderedRows.getOrNull(r - 1) ?: r" in native
 
