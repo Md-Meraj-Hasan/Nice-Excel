@@ -15,6 +15,14 @@ def test_native_and_web_html_have_compact_ribbon_and_preserve_tools():
         for element_id in required_ids:
             assert f'id="{element_id}"' in html, f"missing existing tool {element_id} in {path}"
 
+
+def test_compact_ribbon_restores_section_tools_after_close_and_switch():
+    html = (ROOT / "backend" / "niceexcel_api" / "static" / "index.html").read_text(encoding="utf-8")
+    assert "const menus=new Map(groups.map(group=>[group,group.querySelector('.toolmenu')]))" in html
+    assert "if(menu)group.appendChild(menu)" in html
+    assert "if(previousMenu)active.appendChild(previousMenu)" in html
+    assert "if(menu)strip.appendChild(menu)" in html
+
 def test_web_ribbon_keeps_native_switch_handler():
     html = (ROOT / "backend" / "niceexcel_api" / "static" / "index.html").read_text(encoding="utf-8")
     assert "NiceExcelNative.goNative" in html
