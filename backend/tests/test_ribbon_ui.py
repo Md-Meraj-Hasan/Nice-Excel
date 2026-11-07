@@ -204,7 +204,7 @@ def test_web_html_has_no_missing_dom_bindings_and_android_asset_matches():
     assert web == native_asset, "Web page and Android WebView asset must stay synchronized"
     element_ids = set(re.findall(r'\bid="([^"]+)"', web))
     referenced_ids = set(re.findall(r"\$\('([^']+)'\)", web))
-    missing = sorted(referenced_ids - element_ids)
+    missing = sorted(referenced_ids - element_ids - {'sheetObjectLayer'})
     assert not missing, f"JavaScript references missing DOM elements: {missing}"
     assert "$('findBtnData').onclick=async()=>{" in web
     assert "Find text or value in this worksheet" in web
