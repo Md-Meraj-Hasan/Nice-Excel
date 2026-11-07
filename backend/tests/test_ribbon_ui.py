@@ -195,3 +195,16 @@ def test_native_table_style_controls_live_in_insert_not_format():
     format_menu = native[format_start:format_end]
     assert '"Table styles…" to { tableMenu() }' in insert_menu
     assert '"Table styles…" to { tableMenu() }' not in format_menu
+
+def test_web_html_has_no_missing_dom_bindings_and_android_asset_matches():
+    web = (ROOT / "backend" / "niceexcel_api" / "static" / "index.html").read_text(encoding="utf-8")
+    native_asset = (ROOT / "app" / "src" / "main" / "assets" / "niceexcel_index.html").read_text(encoding="utf-8")
+    import re
+
+    assert web == native_asset, "Web page and Android WebView asset must stay synchronized"
+    element_ids = set(re.findall(r'\\bid=["\\']([^"\\']+)["\\']', web))
+    referenced_ids = set(re.findall(r"\\$\\(['\\"]([^'\\"]+)['\\"]\\)", web))
+    missing = sorted(referenced_ids - element_ids)
+    assert not missing, f"JavaScript references missing DOM elements: {missing}"
+    assert "$('findBtnData').onclick=async()=>{" in web
+    assert "Find text or value in this worksheet" in web
