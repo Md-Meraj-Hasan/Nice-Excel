@@ -405,10 +405,30 @@ $('clearFormatBtn').onclick=async()=>{try{await api('/workbooks/'+bookId+'/style
  
  
 
- // Menu aliases keep the native-style sections while reusing the existing feature handlers.
- $('homeFormatBtn').onclick=()=>{ $('boldBtn').dataset.on=$('boldBtn').dataset.on||'0'; $('applyStyle').click(); };
- $('findBtnData').onclick=()=> $('findBtn').click();
- $('dependenciesBtnFormula').onclick=()=> $('dependenciesBtn').click();
+ // Legacy homeFormatBtn/findBtn controls were removed from the current Web ribbon.
+  $('findBtnData').onclick=async()=>{
+    if(!bookId)return;
+    const query=prompt('Find text or value in this worksheet');
+    if(query===null||query==='')return;
+    const needle=query.toLocaleLowerCase();
+    let match=null;
+    for(let r=0;r<(data||[]).length&&!match;r++){
+      for(let c=0;c<(data[r]||[]).length;c++){
+        const cell=data[r][c]||{};
+        const value=cell.value??cell.calculated_value??'';
+        if(String(value).toLocaleLowerCase().includes(needle)){match=addr(c+1,r+1);break;}
+      }
+    }
+    if(!match){alert('No match found for: '+query);return;}
+    select(match);
+    const replacement=prompt('Found '+activeSheet+'!'+match+'. Enter a replacement value, or Cancel to only find.',String(cellData(match)?.value??''));
+    if(replacement===null)return;
+    try{
+      await api('/workbooks/'+bookId+'/cells',json('PATCH',{sheet:activeSheet,cells:[{cell:match,value:replacement===''?null:replacement}]}));
+      await refresh();select(match);setStatus('Replaced value in '+activeSheet+'!'+match);
+    }catch(e){alert('Replace failed: '+e.message);}
+  };
+  $('dependenciesBtnFormula').onclick=()=> $('dependenciesBtn').click();
  $('formulaHelpBtn').onclick=()=>alert('Enter formulas in the formula bar, for example =SUM(A1:A5), =AVERAGE(A1:A5), =COUNT(A1:A5), or =IF(A1>5,"Yes","No"). Supported functions depend on the offline formula engine.');
  $('workbookInfoBtn').onclick=()=>setStatus('Workbook: '+(bookId||'not ready')+' · Sheet: '+activeSheet+' · '+sheets.length+' sheet(s)');
  // Each section toggles its own inline tools: first tap shows, second tap hides.
