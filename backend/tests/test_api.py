@@ -337,8 +337,9 @@ def test_formula_preview_reports_errors_and_ui_is_wired():
     assert response.status_code == 200
     assert response.get_json()['formula_error'] == '#DIV/0!' 
     html = client.get('/').get_data(as_text=True)
-    assert 'formula-preview' in html
+    assert 'formula-snapshot' in html
     assert 'scheduleFormulaPreview' in html
+    assert 'window.NiceExcelHF.calculate(JSON.stringify(snapshot))' in html
 
 
 def test_dependency_graph_reports_cross_sheet_links_and_dependents():
@@ -674,7 +675,7 @@ def test_hyperformula_snapshot_returns_sparse_raw_values_and_formulas_for_visibl
     response = client.get(f"/workbooks/{book_id}/formula-snapshot")
     assert response.status_code == 200, response.get_data(as_text=True)
     snapshot = response.get_json()
-    assert set(snapshot["sheets"]) == {"Formula Tests", "Lookup"}
+    assert set(snapshot["sheets"]) == {"Formula Tests", "Lookup", "Hidden"}
     assert snapshot["sheets"]["Formula Tests"]["A1"] == 10
     assert snapshot["sheets"]["Formula Tests"]["B1"] == "=SUM(A1:A2)"
     assert isinstance(snapshot["sheets"]["Formula Tests"]["D1"], (int, float))
