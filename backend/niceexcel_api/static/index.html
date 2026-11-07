@@ -318,7 +318,7 @@
      let saveFailed=false;
      if(save){
        const validationMessage=validationError(a,val);
-       if(validationMessage){alert(validationMessage);saveFailed=true;}
+       if(validationMessage){alert(validationMessage);await refresh();saveFailed=true;}
        else{
          try{
            await api('/workbooks/'+bookId+'/cells',json('PATCH',{sheet:activeSheet,cells:[{cell:a,value:val===''?null:val}]}));
@@ -329,6 +329,7 @@
          }catch(e){alert(e.message);await refresh();saveFailed=true;}
        }
      }else updateOneCellFromData(a);
+     td.classList.remove('editing');
      const targetAddress=saveFailed?null:(pendingEditAddress||nextAddress);
      pendingEditAddress=null;
      editing=false;editingAddress=null;activeEditorDone=null;
