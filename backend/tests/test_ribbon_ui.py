@@ -307,3 +307,17 @@ def test_web_view_sort_is_non_destructive_and_exports_sorted_projection_to_pdf()
     assert "await api('/workbooks/'+bookId+'/sort'" not in web
     assert "original cell positions, formulas and workbook data remain unchanged" in web
 
+
+def test_native_sort_is_view_only_and_pdf_uses_sorted_row_projection():
+    native = (ROOT / "app" / "src" / "main" / "java" / "com" / "meraj" / "niceexcel" / "MainActivity.kt").read_text(encoding="utf-8")
+    assert '"Sort View…" to { sortColumn() }' in native
+    assert '"Clear Sort View" to { clearSortView() }' in native
+    assert "private data class ViewSortConfig" in native
+    assert "private fun viewSortOrder(" in native
+    assert "private fun applyViewSortOrderToGrid()" in native
+    assert "viewSortConfigs[sheetName] = ViewSortConfig(column, type, descending, headerRow)" in native
+    assert "data.remove(address)" not in native[native.index("private fun sortColumn() {"):native.index("override fun onDestroy()", native.index("private fun sortColumn() {"))]
+    assert "val pdfSortSnapshot = viewSortConfigs.toMap()" in native
+    assert "val orderedRows = viewSortOrder(name, maxRow, cells, pdfSortSnapshot[name])" in native
+    assert "val sourceRow = orderedRows.getOrNull(r - 1) ?: r" in native
+
