@@ -350,3 +350,18 @@ def test_web_pdf_export_chunks_ranges_below_api_limit_and_hides_legacy_status_li
         assert "const pdfOrder=pdfSort?getViewRowOrder(lastRow,name)" in html
     assert files[0].read_text(encoding="utf-8") == files[1].read_text(encoding="utf-8")
 
+
+
+def test_web_cell_edit_hands_off_to_next_tapped_cell_without_keyboard_dismissal():
+    root = Path(__file__).resolve().parents[2]
+    web = (root / "backend/niceexcel_api/static/index.html").read_text(encoding="utf-8")
+    webview_page = (root / "app/src/main/assets/niceexcel_index.html").read_text(encoding="utf-8")
+    for source in (web, webview_page):
+        assert "editingAddress=null, activeEditorDone=null, pendingEditAddress=null" in source
+        assert "addEventListener('pointerdown'" in source
+        assert "pendingEditAddress=target.dataset.addr" in source
+        assert "activeEditorDone(true,target.dataset.addr)" in source
+        assert "pendingEditAddress||nextAddress" in source
+        assert "if(nextTd)editCell(nextTd)" in source
+        assert "inp.addEventListener('blur',()=>done(true))" in source
+    assert web == webview_page
