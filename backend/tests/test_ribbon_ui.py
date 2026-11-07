@@ -321,3 +321,15 @@ def test_native_sort_is_view_only_and_pdf_uses_sorted_row_projection():
     assert "val orderedRows = viewSortOrder(name, maxRow, cells, pdfSortSnapshot[name], stMap, formulaSnapshot)" in native
     assert "val sourceRow = orderedRows.getOrNull(r - 1) ?: r" in native
 
+
+
+def test_web_pdf_export_uses_same_page_print_frame_for_android_webview():
+    root = Path(__file__).resolve().parents[2]
+    web = (root / "backend/niceexcel_api/static/index.html").read_text()
+    native_asset = (root / "app/src/main/assets/niceexcel_index.html").read_text()
+    for source in (web, native_asset):
+        assert "document.createElement('iframe')" in source
+        assert "window.open('','_blank')" not in source
+        assert "printWin.addEventListener('afterprint'" in source
+        assert "setTimeout(()=>window.print(),250)" in source
+    assert web == native_asset
