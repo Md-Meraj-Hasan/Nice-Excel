@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,interactive-widget=resizes-content">
 <title>Nice Excel · Offline Spreadsheet</title>
 <style>
 :root{color-scheme:dark;--bg:#0b1020;--panel:#121a2b;--panel2:#182338;--line:#46566f;--text:#edf3ff;--muted:#a7b6ce;--accent:#7aa7ff;--green:#41c7a0;--cell:#000000;--head:#22334d;--select:#7aa7ff}
@@ -144,6 +144,13 @@
 @media(max-width:420px){.pdf-setup-grid{grid-template-columns:1fr}}
 .native-color-inputs input{position:fixed;left:-10000px;top:0;width:1px;height:1px;opacity:0;pointer-events:none}.file-picker-input{position:fixed!important;left:-10000px!important;top:0!important;width:1px!important;height:1px!important;opacity:0!important;pointer-events:none!important}\n/* Keep the worksheet workspace clean: preview and legacy footer are not part of the grid UI. */
 #formulaPreview,.foot{display:none!important}
+
+/* Native-like edit mode: keep the worksheet cell and row at their normal grid size. */
+.grid tbody tr{height:30px!important;}
+.grid tbody tr td{height:30px!important;}
+.grid td.editing{height:30px!important;min-height:30px!important;max-height:30px!important;padding:0!important;overflow:hidden!important;}
+.grid td.editing input,.grid td input{display:block;box-sizing:border-box;-webkit-appearance:none;appearance:none;width:100%!important;height:30px!important;min-height:0!important;max-height:30px!important;margin:0!important;padding:2px 5px!important;line-height:16px!important;font-size:clamp(11px,1em,16px)!important;white-space:pre!important;overflow:hidden!important;border-radius:0!important;}
+@media(max-width:650px){.grid tbody tr,.grid tbody tr td,.grid td.editing{height:30px!important;min-height:30px!important;max-height:30px!important;}.grid td.editing input,.grid td input{height:30px!important;min-height:0!important;max-height:30px!important;font-size:12px!important;line-height:16px!important;padding:2px 5px!important;}}
 </style></head>
 <body>
 <header class="top web-native-toolbar" aria-label="Nice Excel main menu">
