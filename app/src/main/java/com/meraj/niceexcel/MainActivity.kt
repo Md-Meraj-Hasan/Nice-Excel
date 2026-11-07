@@ -46,6 +46,8 @@ class MainActivity : Activity() {
     private val filterCriteria = linkedMapOf<String, String>()
     private var filterAllColumns = false
     private var tableHeaderRow: Int? = null
+    private data class ViewSortConfig(val column: Int, val type: String, val descending: Boolean, val headerRow: Int)
+    private val viewSortConfigs = linkedMapOf<String, ViewSortConfig>()
     private var sheetName = "Sheet1"
     private var selected = "A1"
     private var activeTopSection = "Home"
@@ -903,6 +905,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
             )
             "Data" -> listOf(
                 "Sort column A → Z" to { sortColumn() },
+                "Clear Sort View" to { clearSortView() },
                 "Filter column…" to { filterMenu() },
                 "Clear filter" to { filterColumn = null; filterText = null; filterCriteria.clear(); filterAllColumns = false; refreshFilterVisibility() },
                 "Find / Replace…" to { findReplaceMenu() },
@@ -1509,6 +1512,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
             grid.childCount == (rowCount - 1).coerceAtLeast(0)
         if (canReuseGrid) {
             refreshVisibleCells()
+            applyViewSortOrderToGrid()
             renderTabs()
             scheduleFormulaRecalculationIfNeeded()
             Log.d("NiceExcelPerf", "render sheet=$sheetName mode=reuse ms=${SystemClock.elapsedRealtime() - perfStarted}")
@@ -1589,6 +1593,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         }
 
         // Finalize merged-cell overlays and formula work only after all row views exist.
+        applyViewSortOrderToGrid()
         applyMergedCellPresentation()
         selectedCellView = cellViews[selected]
         scheduleFormulaRecalculationIfNeeded()
@@ -3932,102 +3937,111 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
             }.setNegativeButton("Cancel", null).showProfessional()
     }
 
-    private fun sortColumn() {
-        val col = selected.takeWhile { it.isLetter() }
-        val sortColumnIndex = columnIndex(col)
-        val headerRow = tableHeaderRow ?: 1
-        val jobId = sortJobId.incrementAndGet()
-        // A sort changes row-to-value mapping; any in-flight filter snapshot must be discarded.
-        filterJobId.incrementAndGet()
-        val capturedSheet = sheetName
-        val capturedRowCount = rowCount
-        val capturedRevision = workbookRevision.get()
-        // Snapshot values and styles together on main. A row containing only formatting
-        // is still a real row for sort/cleanup purposes and must not leave stale styles behind.
-        val allRowsSnapshot = (headerRow + 1..capturedRowCount).map { row ->
-            row to (0 until colLimit).map { c -> data["${colName(c)}$row"].orEmpty() }
-        }
-        val styleSnapshot = allRowsSnapshot.associate { (oldRow, _) ->
-            oldRow to (0 until colLimit).mapNotNull { c ->
-                sheetStyles["${colName(c)}$oldRow"]?.let { c to it.copy() }
-            }.toMap()
-        }
-        val rowSnapshot = allRowsSnapshot.filter { (row, values) ->
-            values.any { it.isNotEmpty() } || styleSnapshot[row].orEmpty().isNotEmpty()
-        }
-        status.text = "Sorting rows in background…"
-        try {
-            backgroundExecutor.execute {
-                try {
-                    val sorted = rowSnapshot.sortedWith(
-                        compareBy<Pair<Int, List<String>>> { it.second.all { value -> value.isEmpty() } }
-                            .thenBy {
-                                val value = it.second.getOrNull(sortColumnIndex).orEmpty()
-                                value.toDoubleOrNull()?.let { number -> String.format(Locale.US, "%030.8f", number) }
-                                    ?: value.lowercase(Locale.US)
-                            }
-                    )
-                    mainHandler.post {
-                        if (isFinishing || isDestroyed || jobId != sortJobId.get() ||
-                            sheetName != capturedSheet || rowCount != capturedRowCount ||
-                            workbookRevision.get() != capturedRevision ||
-                            (tableHeaderRow ?: 1) != headerRow) {
-                            if (!isFinishing && !isDestroyed && jobId == sortJobId.get() && sheetName == capturedSheet) {
-                                status.text = "Sort cancelled: workbook changed. Please retry."
-                            }
-                            return@post
-                        }
-
-                        // Optimistic concurrency check: if any source row changed while sorting,
-                        // discard the result instead of overwriting newer edits/styles.
-                        val valuesStillMatch = allRowsSnapshot.all { (row, values) ->
-                            values.indices.all { c -> data["${colName(c)}$row"].orEmpty() == values[c] }
-                        }
-                        val stylesStillMatch = styleSnapshot.all { (row, snapshot) ->
-                            (0 until colLimit).all { c -> sheetStyles["${colName(c)}$row"] == snapshot[c] }
-                        }
-                        if (!valuesStillMatch || !stylesStillMatch) {
-                            status.text = "Sort cancelled: cells changed during sorting. Please retry."
-                            return@post
-                        }
-
-                        // Sorting changes row-to-value mapping. Invalidate filter jobs that may
-                        // have started while this sort was being calculated, before committing.
-                        filterJobId.incrementAndGet()
-                        // Commit as one main-thread operation only after every stale-result guard passes.
-                        // Clear the entire sortable region, not just non-empty rows. This
-                        // removes stale formatting from blank rows and prevents ghost styles.
-                        for (oldRow in (headerRow + 1)..capturedRowCount) {
-                            for (c in 0 until colLimit) {
-                                val address = "${colName(c)}$oldRow"
-                                data.remove(address)
-                                sheetStyles.remove(address)
-                            }
-                        }
-                        sorted.forEachIndexed { index, pair ->
-                            val newRow = headerRow + 1 + index
-                            pair.second.forEachIndexed { c, value ->
-                                if (value.isNotEmpty()) data["${colName(c)}$newRow"] = value
-                            }
-                            styleSnapshot[pair.first].orEmpty().forEach { (c, style) ->
-                                sheetStyles["${colName(c)}$newRow"] = style.copy()
-                            }
-                        }
-                        formulaDisplayCache.clear()
-                        render()
-                        status.text = "Sorted complete rows by $col; related row data kept together"
+    private fun viewSortOrder(
+        sheet: String,
+        totalRows: Int,
+        cells: Map<String, String>,
+        config: ViewSortConfig? = viewSortConfigs[sheet]
+    ): List<Int> {
+        val order = (1..totalRows.coerceAtLeast(1)).toMutableList()
+        if (config == null) return order
+        val first = (config.headerRow + 1).coerceAtLeast(2)
+        if (first > totalRows) return order
+        val sorted = order.subList(first - 1, totalRows).sortedWith { rowA, rowB ->
+            val a = cells["${colName(config.column)}$rowA"].orEmpty()
+            val b = cells["${colName(config.column)}$rowB"].orEmpty()
+            val aBlank = a.isBlank()
+            val bBlank = b.isBlank()
+            if (aBlank || bBlank) {
+                when { aBlank && bBlank -> rowA.compareTo(rowB); aBlank -> 1; else -> -1 }
+            } else {
+                val compared = if (config.type == "number") {
+                    val na = a.replace(",", "").toDoubleOrNull()
+                    val nb = b.replace(",", "").toDoubleOrNull()
+                    when {
+                        na != null && nb != null -> na.compareTo(nb)
+                        na != null -> -1
+                        nb != null -> 1
+                        else -> a.lowercase(Locale.ROOT).compareTo(b.lowercase(Locale.ROOT))
                     }
-                } catch (error: Exception) {
-                    mainHandler.post {
-                        if (!isFinishing && !isDestroyed && jobId == sortJobId.get() && sheetName == capturedSheet) {
-                            status.text = "Sort failed safely: ${error.message ?: "please retry"}"
-                        }
-                    }
-                }
+                } else a.lowercase(Locale.ROOT).compareTo(b.lowercase(Locale.ROOT))
+                if (config.descending) -compared else compared
             }
-        } catch (_: RejectedExecutionException) {
-            if (!isFinishing && !isDestroyed) status.text = "Sort cancelled; please retry"
         }
+        for (index in sorted.indices) order[first - 1 + index] = sorted[index]
+        return order
+    }
+
+    private fun applyViewSortOrderToGrid() {
+        if (!::grid.isInitialized || grid.childCount <= 1) return
+        val config = viewSortConfigs[sheetName] ?: return
+        val currentRows = (0 until grid.childCount).mapNotNull { index ->
+            val view = grid.getChildAt(index)
+            (view.tag as? Int)?.let { it to view }
+        }.toMap()
+        val desiredRows = viewSortOrder(sheetName, rowCount, data, config).drop(1)
+        if (desiredRows.size != currentRows.size || desiredRows.any { it !in currentRows }) return
+        grid.removeAllViews()
+        desiredRows.forEach { row -> currentRows[row]?.let { grid.addView(it) } }
+    }
+
+    private fun clearSortView() {
+        if (viewSortConfigs.remove(sheetName) == null) {
+            status.text = "No active view sort"
+            return
+        }
+        render()
+        status.text = "View sort cleared • original workbook order restored"
+    }
+
+    private fun sortColumn() {
+        val headerRow = tableHeaderRow ?: 1
+        val columnOptions = (0 until colLimit).map { colName(it) }.toTypedArray()
+        val columnSpinner = Spinner(this).apply {
+            adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, columnOptions)
+            setSelection(columnIndex(selected.takeWhile { it.isLetter() }).coerceIn(0, colLimit - 1))
+        }
+        val typeSpinner = Spinner(this).apply {
+            adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, arrayOf("Letter", "Number"))
+        }
+        val directionSpinner = Spinner(this).apply {
+            adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, arrayOf("Ascending", "Descending"))
+        }
+        val panel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(8), dp(20), dp(4))
+            addView(TextView(this@MainActivity).apply { text = "Choose column"; setPadding(0, dp(5), 0, dp(4)) })
+            addView(columnSpinner)
+            addView(TextView(this@MainActivity).apply { text = "Order by"; setPadding(0, dp(12), 0, dp(4)) })
+            addView(typeSpinner)
+            addView(TextView(this@MainActivity).apply { text = "Direction"; setPadding(0, dp(12), 0, dp(4)) })
+            addView(directionSpinner)
+            addView(TextView(this@MainActivity).apply {
+                text = "View only: original cells, formulas and saved workbook data will not be changed. PDF export uses this sorted view."
+                textSize = 12f
+                setTextColor(if (darkMode) Color.LTGRAY else Color.DKGRAY)
+                setPadding(0, dp(12), 0, dp(4))
+            })
+        }
+        val existing = viewSortConfigs[sheetName]
+        if (existing != null) {
+            columnSpinner.setSelection(existing.column.coerceIn(0, colLimit - 1))
+            typeSpinner.setSelection(if (existing.type == "number") 1 else 0)
+            directionSpinner.setSelection(if (existing.descending) 1 else 0)
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Sort View")
+            .setView(panel)
+            .setPositiveButton("Apply") { _, _ ->
+                val column = columnSpinner.selectedItemPosition.coerceIn(0, colLimit - 1)
+                val type = if (typeSpinner.selectedItemPosition == 1) "number" else "letter"
+                val descending = directionSpinner.selectedItemPosition == 1
+                viewSortConfigs[sheetName] = ViewSortConfig(column, type, descending, headerRow)
+                render()
+                status.text = "View sorted by ${colName(column)} • ${type.replaceFirstChar { it.uppercase() }} • ${if (descending) "Descending" else "Ascending"} • source data unchanged"
+            }
+            .setNegativeButton("Cancel", null)
+            .showProfessional()
     }
 
     override fun onDestroy() {
@@ -4269,6 +4283,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         val styleSnapshot = if (options.allSheets) styles.mapValues { (_, map) -> map.mapValues { it.value.copy() } }
             else linkedMapOf(sheetName to (styles[sheetName]?.mapValues { it.value.copy() } ?: emptyMap()))
         val formulaSnapshot = formulaDisplayCache.toMap()
+        val pdfSortSnapshot = viewSortConfigs.toMap()
         val widthSnapshot = columnWidthsBySheet.mapValues { it.value.toList() }
         try {
             backgroundExecutor.execute {
@@ -4288,6 +4303,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                     val contentH = pageH - margin * 2f
                     var pageNumber = 0
                     cellSnapshot.forEach { (name, cells) ->
+                        val pdfRowOrder = viewSortOrder(name, 1, cells, pdfSortSnapshot[name])
                         val stMap = styleSnapshot[name].orEmpty()
                         fun colNumber(label: String): Int {
                             var n = 0
@@ -4322,6 +4338,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                         // prevents empty trailing tabs from adding pages after the real data.
                         if (!hasPrintableContent) return@forEach
                         maxRow = maxRow.coerceAtMost(10000)
+                        val orderedRows = viewSortOrder(name, maxRow, cells, pdfSortSnapshot[name])
                         maxCol = maxCol.coerceIn(1, colLimit)
                         val widths = (1..maxCol).map { c ->
                             (widthSnapshot[name]?.getOrNull(c - 1)?.toFloat() ?: 82f).coerceIn(42f, 180f)
@@ -4380,7 +4397,8 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                                 if (firstRow > 1 && options.repeatHeadings) {
                                     var hx = xStart
                                     cols.forEach { c ->
-                                        val address = colName(c - 1) + 1
+                                        val headingRow = pdfSortSnapshot[name]?.headerRow ?: 1
+                                        val address = colName(c - 1) + headingRow
                                         val raw = cells[address].orEmpty()
                                         val style = stMap[address]
                                         val key = name + "|" + address + "|" + raw + "|" + (style?.numberFormat ?: "General")
@@ -4414,7 +4432,8 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                                 for (r in firstRow..lastRow) {
                                     var x = xStart
                                     cols.forEach { c ->
-                                        val address = colName(c - 1) + r
+                                        val sourceRow = orderedRows.getOrNull(r - 1) ?: r
+                                        val address = colName(c - 1) + sourceRow
                                         val raw = cells[address].orEmpty()
                                         val style = stMap[address]
                                         val formulaKey = "$name|$address|$raw|${style?.numberFormat ?: "General"}"
