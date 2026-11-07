@@ -362,6 +362,8 @@ def test_web_cell_edit_hands_off_to_next_tapped_cell_without_keyboard_dismissal(
         assert "pendingEditAddress=target.dataset.addr" in source
         assert "activeEditorDone(true,target.dataset.addr)" in source
         assert "pendingEditAddress||nextAddress" in source
+        assert "td.classList.remove('editing')" in source
+        assert "await refresh();saveFailed=true" in source
         assert "if(nextTd)editCell(nextTd)" in source
         assert "inp.addEventListener('blur',()=>done(true))" in source
     assert web == webview_page
