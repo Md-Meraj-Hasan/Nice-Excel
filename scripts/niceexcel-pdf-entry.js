@@ -4,7 +4,7 @@ import autoTable from 'jspdf-autotable';
 (() => {
   const rgb = (value, fallback) => {
     let hex = String(value || '').trim().replace(/^#/, '');
-    if (hex.length === 8) hex = hex.slice(-6);
+    if (hex.length === 8) { if (hex.slice(0, 2).toLowerCase() === '00') return null; hex = hex.slice(-6); }
     if (hex.length === 3) hex = hex.split('').map(ch => ch + ch).join('');
     if (!/^[0-9a-f]{6}$/i.test(hex)) return fallback;
     return [0, 2, 4].map(index => parseInt(hex.slice(index, index + 2), 16));
@@ -16,8 +16,8 @@ import autoTable from 'jspdf-autotable';
   };
   const styleCell = (target, cell) => {
     const style = cell?.style || {};
-    if (style.fill_color || style.fillColor) target.cell.styles.fillColor = rgb(style.fill_color || style.fillColor, [255, 255, 255]);
-    if (style.font_color || style.text_color || style.fontColor) target.cell.styles.textColor = rgb(style.font_color || style.text_color || style.fontColor, [20, 25, 35]);
+    if (style.fill_color || style.fillColor) { const fill = rgb(style.fill_color || style.fillColor, null); if (fill) target.cell.styles.fillColor = fill; }
+    if (style.font_color || style.text_color || style.fontColor) { const text = rgb(style.font_color || style.text_color || style.fontColor, [20, 25, 35]); if (text) target.cell.styles.textColor = text; }
     if (style.bold && style.italic) target.cell.styles.fontStyle = 'bolditalic';
     else if (style.bold) target.cell.styles.fontStyle = 'bold';
     else if (style.italic) target.cell.styles.fontStyle = 'italic';
