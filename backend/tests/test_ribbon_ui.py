@@ -349,6 +349,17 @@ def test_web_pdf_export_uses_offline_pdf_engine_and_downloads_a_real_blob():
     assert web == native_asset
 
 
+def test_android_web_page_copies_and_serves_offline_pdf_bundle():
+    root = Path(__file__).resolve().parents[2]
+    activity = (root / "app/src/main/java/com/meraj/niceexcel/FlaskActivity.kt").read_text()
+    server = (root / "app/src/main/python/server.py").read_text()
+    build_script = (root / "scripts/build-hyperformula.mjs").read_text()
+    assert '"niceexcel_pdf.bundle.js" to "niceexcel_pdf.bundle.js"' in activity
+    assert '("niceexcel_pdf.bundle.js", "niceexcel_pdf.bundle.js")' in server
+    assert "app/src/main/assets/niceexcel_pdf.bundle.js" in build_script
+    assert "backend/niceexcel_api/static/niceexcel_pdf.bundle.js" in build_script
+
+
 def test_web_editor_exits_edit_mode_after_keyboard_hide_and_preserves_cell_colors():
     root = Path(__file__).resolve().parents[2]
     web = (root / "backend/niceexcel_api/static/index.html").read_text()
