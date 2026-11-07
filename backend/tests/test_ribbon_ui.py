@@ -238,7 +238,7 @@ def test_web_grid_cell_click_focuses_cell_and_keyboard_events_do_not_reenter_edi
     native_asset = (ROOT / "app" / "src" / "main" / "assets" / "niceexcel_index.html").read_text(encoding="utf-8")
     assert web == native_asset
     assert "function select(a,focus=false)" in web
-    assert "td.addEventListener('click',()=>select(a,true))" in web
+    assert "td.addEventListener('click',()=>{if(!editing)select(a,true)})" in web
     assert "if(e.target!==td)return" in web
     assert "e.stopPropagation();done(true)" in web
     assert "e.stopPropagation();done(false)" in web
