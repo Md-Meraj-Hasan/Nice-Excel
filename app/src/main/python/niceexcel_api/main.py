@@ -368,7 +368,24 @@ def _new_session(wb: Workbook) -> dict[str, Any]:
     return {"workbook_id": book_id, "sheets": _visible_sheetnames(wb)}
 
 
+def _visible_rgb(color) -> str | None:
+    """Return a six-digit visible RGB value, ignoring transparent/default Excel colors."""
+    if color is None or getattr(color, "type", None) != "rgb":
+        return None
+    raw = str(getattr(color, "rgb", "") or "").strip().lstrip("#")
+    if len(raw) == 8:
+        # Excel stores ARGB. Alpha 00 means fully transparent, not black.
+        if raw[:2].upper() == "00":
+            return None
+        raw = raw[-6:]
+    if len(raw) != 6 or any(ch not in "0123456789abcdefABCDEF" for ch in raw):
+        return None
+    return raw.upper()
+
+
 def _cell_json(cell) -> dict[str, Any]:
+    font_rgb = _visible_rgb(cell.font.color)
+    fill_rgb = _visible_rgb(cell.fill.fgColor) if cell.fill.fill_type == "solid" else None
     return {
         "cell": cell.coordinate,
         "value": cell.value,
@@ -380,8 +397,8 @@ def _cell_json(cell) -> dict[str, Any]:
             "underline": bool(cell.font.underline),
             "font_name": cell.font.name,
             "font_size": cell.font.sz,
-            "font_color": cell.font.color.rgb if cell.font.color and cell.font.color.type == "rgb" else None,
-            "fill_color": cell.fill.fgColor.rgb if cell.fill.fgColor.type == "rgb" else None,
+            "font_color": font_rgb,
+            "fill_color": fill_rgb,
             "horizontal": cell.alignment.horizontal,
             "number_format": cell.number_format,
         },
@@ -1224,6 +1241,40 @@ def workbook_dependencies(book_id: str):
     """Return formula dependencies, reverse dependents, and detected formula cycles."""
     wb = _book(book_id)
     return {"workbook_id": book_id, **build_dependency_graph(wb)}
+
+
+@app.get("/workbooks/{book_id}/formula-snapshot")
+def workbook_formula_snapshot(book_id: str):
+    """Return sparse raw workbook contents for the shared offline HyperFormula runtime."""
+    from datetime import date, datetime, time, timedelta
+    from openpyxl.utils.datetime import to_excel
+
+    wb = _book(book_id)
+    sheets: dict[str, dict[str, Any]] = {}
+    formulas: list[dict[str, str]] = []
+    cell_count = 0
+    for sheet_name in _visible_sheetnames(wb):
+        ws = wb[sheet_name]
+        values: dict[str, Any] = {}
+        # Sparse cell iteration avoids scanning the full rectangular worksheet area.
+        for cell in ws._cells.values():
+            if cell.value is None or cell.row > 10000 or cell.column > 512:
+                continue
+            raw = cell.value
+            if isinstance(raw, (datetime, date, time)):
+                raw = to_excel(raw, wb.epoch)
+            elif isinstance(raw, timedelta):
+                raw = raw.total_seconds() / 86400.0
+            elif not isinstance(raw, (str, int, float, bool)):
+                raw = str(raw)
+            values[cell.coordinate] = raw
+            if cell.data_type == "f" or (isinstance(raw, str) and raw.startswith("=")):
+                formulas.append({"sheet": sheet_name, "address": cell.coordinate, "formula": str(raw)})
+            cell_count += 1
+            if cell_count > 100000:
+                raise HTTPException(status_code=413, detail="HyperFormula snapshot is limited to 100,000 populated cells")
+        sheets[sheet_name] = values
+    return {"workbook_id": book_id, "sheets": sheets, "formulas": formulas, "visibleRowsBySheet": {}}
 
 
 @app.post("/workbooks/{book_id}/calculate")

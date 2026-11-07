@@ -73,6 +73,29 @@ def test_insert_row_shifts_existing_cells_and_autosaves():
     assert rows[2][0]["value"] == "Keep me"
 
 
+def test_insert_multiple_rows_in_one_request():
+    book_id = client.post("/workbooks", json={}).get_json()["workbook_id"]
+    client.patch(f"/workbooks/{book_id}/cells", json={
+        "sheet": "Sheet1", "cells": [
+            {"cell": "A1", "value": "Header"},
+            {"cell": "A2", "value": "Keep me"},
+        ]
+    })
+    response = client.post(f"/workbooks/{book_id}/rows", json={
+        "sheet": "Sheet1", "row": 2, "count": 10
+    })
+    assert response.status_code == 200, response.get_data(as_text=True)
+    result = response.get_json()
+    assert result["inserted_row"] == 2
+    assert result["inserted_rows"] == 10
+    rows = client.get(f"/workbooks/{book_id}/range", query_string={
+        "sheet": "Sheet1", "range": "A1:A12"
+    }).get_json()["rows"]
+    assert rows[0][0]["value"] == "Header"
+    assert all(rows[i][0]["value"] is None for i in range(1, 11))
+    assert rows[11][0]["value"] == "Keep me"
+
+
 def test_last_sheet_cannot_be_deleted_and_bad_range_rejected():
     book_id = client.post('/workbooks', json={}).get_json()['workbook_id']
     response = client.delete(f'/workbooks/{book_id}/sheets/Sheet1')
@@ -314,8 +337,9 @@ def test_formula_preview_reports_errors_and_ui_is_wired():
     assert response.status_code == 200
     assert response.get_json()['formula_error'] == '#DIV/0!' 
     html = client.get('/').get_data(as_text=True)
-    assert 'formula-preview' in html
+    assert 'formula-snapshot' in html
     assert 'scheduleFormulaPreview' in html
+    assert 'window.NiceExcelHF.calculate(JSON.stringify(snapshot))' in html
 
 
 def test_dependency_graph_reports_cross_sheet_links_and_dependents():
@@ -570,3 +594,112 @@ def test_shape_object_rejects_invalid_sheet_type_and_anchor():
     body['object_type'] = 'shape'
     body['sheet'] = 'MissingSheet'
     assert client.post(f'/workbooks/{book_id}/objects', json=body).status_code == 404
+
+
+def test_open_xlsx_edit_save_and_reopen_roundtrip():
+    from io import BytesIO
+    from openpyxl import Workbook, load_workbook
+
+    source = Workbook()
+    ws = source.active
+    ws.title = "Imported"
+    ws["A1"] = "Original"
+    ws["B1"] = "=1+2"
+    source_bytes = BytesIO()
+    source.save(source_bytes)
+    source_bytes.seek(0)
+
+    opened = client.post("/workbooks/open", data={
+        "file": (source_bytes, "source.xlsx")
+    }, content_type="multipart/form-data")
+    assert opened.status_code == 200, opened.get_data(as_text=True)
+    book_id = opened.get_json()["workbook_id"]
+    assert "Imported" in opened.get_json()["sheets"]
+
+    changed = client.patch(f"/workbooks/{book_id}/cells", json={
+        "sheet": "Imported", "cells": [
+            {"cell": "A1", "value": "Edited in NiceExcel"},
+            {"cell": "C1", "value": "Saved"},
+        ]
+    })
+    assert changed.status_code == 200
+    exported = client.get(f"/workbooks/{book_id}/save")
+    assert exported.status_code == 200 and exported.data[:2] == b"PK"
+
+    reopened = client.post("/workbooks/open", data={
+        "file": (BytesIO(exported.data), "roundtrip.xlsx")
+    }, content_type="multipart/form-data")
+    assert reopened.status_code == 200, reopened.get_data(as_text=True)
+    new_id = reopened.get_json()["workbook_id"]
+    values = client.get(f"/workbooks/{new_id}/range", query_string={
+        "sheet": "Imported", "range": "A1:C1"
+    }).get_json()["rows"][0]
+    assert values[0]["value"] == "Edited in NiceExcel"
+    assert values[1]["value"] == "=1+2"
+    assert values[2]["value"] == "Saved"
+
+    saved_bytes = client.get(f"/workbooks/{new_id}/save").data
+    disk_copy = load_workbook(BytesIO(saved_bytes), data_only=False)
+    assert disk_copy["Imported"]["B1"].value == "=1+2"
+
+
+def test_hyperformula_snapshot_returns_sparse_raw_values_and_formulas_for_visible_sheets():
+    from io import BytesIO
+    from datetime import datetime
+    from openpyxl import Workbook
+
+    source = Workbook()
+    ws = source.active
+    ws.title = "Formula Tests"
+    ws["A1"] = 10
+    ws["A2"] = 20
+    ws["B1"] = "=SUM(A1:A2)"
+    lookup = source.create_sheet("Lookup")
+    lookup["A1"] = 105
+    lookup["B1"] = "Notebook"
+    ws["C1"] = '=VLOOKUP(105,Lookup!A1:B1,2,FALSE())'
+    ws["D1"] = datetime(2026, 1, 1)
+    hidden = source.create_sheet("Hidden")
+    hidden.sheet_state = "hidden"
+    hidden["A1"] = "not included"
+    stream = BytesIO()
+    source.save(stream)
+    stream.seek(0)
+
+    opened = client.post("/workbooks/open", data={
+        "file": (stream, "hyperformula-snapshot.xlsx")
+    }, content_type="multipart/form-data")
+    assert opened.status_code == 200, opened.get_data(as_text=True)
+    book_id = opened.get_json()["workbook_id"]
+
+    response = client.get(f"/workbooks/{book_id}/formula-snapshot")
+    assert response.status_code == 200, response.get_data(as_text=True)
+    snapshot = response.get_json()
+    assert set(snapshot["sheets"]) == {"Formula Tests", "Lookup", "Hidden"}
+    assert snapshot["sheets"]["Formula Tests"]["A1"] == 10
+    assert snapshot["sheets"]["Formula Tests"]["B1"] == "=SUM(A1:A2)"
+    assert isinstance(snapshot["sheets"]["Formula Tests"]["D1"], (int, float))
+    assert {item["sheet"] + "!" + item["address"] for item in snapshot["formulas"]} == {
+        "Formula Tests!B1", "Formula Tests!C1"
+    }
+    assert snapshot["visibleRowsBySheet"] == {}
+
+
+def test_transparent_default_excel_fill_is_not_serialized_as_black():
+    from openpyxl import Workbook
+    from openpyxl.styles import PatternFill
+    from niceexcel_api.main import _cell_json
+
+    wb = Workbook()
+    ws = wb.active
+    ws["A1"] = "Visible text"
+    # openpyxl's default ARGB fill is 00000000 (fully transparent black).
+    assert _cell_json(ws["A1"])["style"]["fill_color"] is None
+
+    ws["A2"] = "Intentional fill"
+    ws["A2"].fill = PatternFill(fill_type="solid", fgColor="FF1F4E78")
+    assert _cell_json(ws["A2"])["style"]["fill_color"] == "1F4E78"
+
+    ws["A3"] = "Transparent explicit fill"
+    ws["A3"].fill = PatternFill(fill_type="solid", fgColor="001F4E78")
+    assert _cell_json(ws["A3"])["style"]["fill_color"] is None

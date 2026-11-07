@@ -9,7 +9,10 @@ function normalizeFormulaBooleans(value) {
       const upper = token.toUpperCase();
       // Normalize Excel CONCAT alias only when it is a function call.
       if (upper === 'CONCAT' && nextChar === '(') output += 'CONCATENATE';
-      else output += upper === 'TRUE' && nextChar !== '(' ? 'TRUE()' : upper === 'FALSE' && nextChar !== '(' ? 'FALSE()' : token;
+        // Excel INT rounds negative fractions down; map to FLOOR.MATH,
+        // which preserves Excel semantics instead of truncating toward zero.
+        else if (upper === 'INT' && nextChar === '(') output += 'FLOOR.MATH';
+        else output += upper === 'TRUE' && nextChar !== '(' ? 'TRUE()' : upper === 'FALSE' && nextChar !== '(' ? 'FALSE()' : token;
       token = '';
     }
   };
@@ -30,6 +33,16 @@ function normalizeFormulaBooleans(value) {
   flush('');
   return output;
 }
+
+const intRegression = HyperFormula.buildFromArray([
+  [normalizeFormulaBooleans('=INT(-4.2)'), normalizeFormulaBooleans('=INT(4.2)'), normalizeFormulaBooleans('=INT(-4.8)'), normalizeFormulaBooleans('=INT(4.8)')],
+  [normalizeFormulaBooleans('=TRUNC(-4.2)'), normalizeFormulaBooleans('=TRUNC(4.2)'), normalizeFormulaBooleans('=ROUND(-4.2,0)'), normalizeFormulaBooleans('=ROUND(4.2,0)')],
+], { licenseKey: 'gpl-v3' });
+const intValue = (row, col) => intRegression.getCellValue({ sheet: 0, row, col });
+assert.deepEqual([intValue(0,0), intValue(0,1), intValue(0,2), intValue(0,3)], [-5, 4, -5, 4], 'INT rounds toward negative infinity');
+assert.deepEqual([intValue(1,0), intValue(1,1)], [-4, 4], 'TRUNC remains distinct from INT');
+assert.deepEqual([intValue(1,2), intValue(1,3)], [-4, 4], 'ROUND behaviour is unchanged');
+intRegression.destroy();
 
 const hf = HyperFormula.buildFromSheets({
   Sheet1: [

@@ -51,6 +51,15 @@ def start_server(app_data_dir: str) -> None:
         if not asset_index.is_file():
             raise FileNotFoundError(f"Web UI asset was not copied to app-private storage: {asset_index}")
         shutil.copyfile(asset_index, static_dir / "index.html")
+        for source_name, target_name in (
+            ("niceexcel_hyperformula.bundle.js", "hyperformula.bundle.js"),
+            ("niceexcel_hyperformula_runtime.js", "hyperformula_runtime.js"),
+            ("niceexcel_pdf.bundle.js", "niceexcel_pdf.bundle.js"),
+        ):
+            source_asset = app_dir / source_name
+            if not source_asset.is_file():
+                raise FileNotFoundError(f"Bundled HyperFormula Web runtime asset is missing: {source_asset}")
+            shutil.copyfile(source_asset, static_dir / target_name)
 
         os.environ["NICEEXCEL_DATA_DIR"] = str(data_dir)
         os.environ["NICEEXCEL_RECOVERY_DIR"] = str(recovery_dir)

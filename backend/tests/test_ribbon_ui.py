@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 
 ROOT = Path(__file__).resolve().parents[1].parent
 
@@ -14,6 +15,14 @@ def test_native_and_web_html_have_compact_ribbon_and_preserve_tools():
         assert "toolgroup[open] .toolmenu{display:flex}" in html
         for element_id in required_ids:
             assert f'id="{element_id}"' in html, f"missing existing tool {element_id} in {path}"
+
+
+def test_compact_ribbon_restores_section_tools_after_close_and_switch():
+    html = (ROOT / "backend" / "niceexcel_api" / "static" / "index.html").read_text(encoding="utf-8")
+    assert "const menus=new Map(groups.map(group=>[group,group.querySelector('.toolmenu')]))" in html
+    assert "if(menu)group.appendChild(menu)" in html
+    assert "if(previousMenu)active.appendChild(previousMenu)" in html
+    assert "if(menu)strip.appendChild(menu)" in html
 
 def test_web_ribbon_keeps_native_switch_handler():
     html = (ROOT / "backend" / "niceexcel_api" / "static" / "index.html").read_text(encoding="utf-8")
@@ -139,8 +148,8 @@ def test_web_filter_can_explicitly_choose_columns_through_z():
         ROOT / "app" / "src" / "main" / "assets" / "niceexcel_index.html",
     ]:
         html = path.read_text(encoding="utf-8")
-        assert "const COLS=26, ROWS=40;" in html
-        assert "range=A1:Z40" in html
+        assert "let COLS=26, ROWS=40, gridExpansionBusy=false, viewSorts={};" in html
+        assert "&range=A1:'+colName(COLS)+ROWS" in html
         assert "Choose the worksheet column to filter" in html
         assert "columnNumber(column)>COLS" in html
         assert ".grid td.table-cell{border-right:1px solid var(--accent);border-bottom:1px solid var(--accent)}" in html
@@ -187,3 +196,222 @@ def test_native_table_style_controls_live_in_insert_not_format():
     format_menu = native[format_start:format_end]
     assert '"Table styles…" to { tableMenu() }' in insert_menu
     assert '"Table styles…" to { tableMenu() }' not in format_menu
+
+def test_web_html_has_no_missing_dom_bindings_and_android_asset_matches():
+    web = (ROOT / "backend" / "niceexcel_api" / "static" / "index.html").read_text(encoding="utf-8")
+    native_asset = (ROOT / "app" / "src" / "main" / "assets" / "niceexcel_index.html").read_text(encoding="utf-8")
+    import re
+
+    assert web == native_asset, "Web page and Android WebView asset must stay synchronized"
+    element_ids = set(re.findall(r'\bid="([^"]+)"', web))
+    referenced_ids = set(re.findall(r"\$\('([^']+)'\)", web))
+    missing = sorted(referenced_ids - element_ids - {'sheetObjectLayer'})
+    assert not missing, f"JavaScript references missing DOM elements: {missing}"
+    assert "$('findBtnData').onclick=async()=>{" in web
+    assert "Find text or value in this worksheet" in web
+    assert "async function initializeWorkbook(){" in web
+    assert "savedBookId=localStorage.getItem('niceexcel.lastWorkbookId')" in web
+    assert "try{await create();}" in web
+    assert web.count("initializeWorkbook();") == 1
+
+def test_web_grid_expands_rows_and_columns_on_scroll():
+    web = (ROOT / "backend" / "niceexcel_api" / "static" / "index.html").read_text(encoding="utf-8")
+    native_asset = (ROOT / "app" / "src" / "main" / "assets" / "niceexcel_index.html").read_text(encoding="utf-8")
+    assert web == native_asset
+    assert "let COLS=26, ROWS=40, gridExpansionBusy=false, viewSorts={};" in web
+    assert "&range=A1:'+colName(COLS)+ROWS" in web
+    assert "gridwrap.addEventListener('scroll',async()=>{" in web
+    assert "ROWS=Math.min(500,ROWS+40)" in web
+    assert "COLS=Math.min(52,COLS+26)" in web
+    assert "Unable to extend worksheet grid:" in web
+    assert "&range=A1:Z40" not in web
+
+def test_web_add_rows_uses_single_bulk_api_request():
+    web = (ROOT / "backend" / "niceexcel_api" / "static" / "index.html").read_text(encoding="utf-8")
+    native_asset = (ROOT / "app" / "src" / "main" / "assets" / "niceexcel_index.html").read_text(encoding="utf-8")
+    assert web == native_asset
+    assert "json('POST',{sheet:activeSheet,row:p?.r||1,count})" in web
+    assert "for(let n=0;n<count;n++)await api('/workbooks/'+bookId+'/rows'" not in web
+
+
+def test_web_grid_cell_click_focuses_cell_and_keyboard_events_do_not_reenter_editor():
+    web = (ROOT / "backend" / "niceexcel_api" / "static" / "index.html").read_text(encoding="utf-8")
+    native_asset = (ROOT / "app" / "src" / "main" / "assets" / "niceexcel_index.html").read_text(encoding="utf-8")
+    assert web == native_asset
+    assert "function select(a,focus=false)" in web
+    assert "td.addEventListener('click',()=>{if(!editing)select(a,true)})" in web
+    assert "if(e.target!==td)return" in web
+    assert "e.stopPropagation();done(true)" in web
+    assert "e.stopPropagation();done(false)" in web
+    assert "e.key==='Tab'&&!editing" in web
+    assert "select(addr(c,r),true)" in web
+
+
+def test_web_workbook_startup_has_exactly_one_initializer():
+    web = (ROOT / "backend" / "niceexcel_api" / "static" / "index.html").read_text(encoding="utf-8")
+    native_asset = (ROOT / "app" / "src" / "main" / "assets" / "niceexcel_index.html").read_text(encoding="utf-8")
+    assert web == native_asset
+    assert "async function initializeWorkbook()" in web
+    assert web.count("initializeWorkbook();") == 1
+    assert "async function startSession()" not in web
+    assert "startSession().catch(" not in web
+    assert "await info();" in web
+    assert "await create();" in web
+
+
+def test_advanced_web_page_offers_in_app_and_same_device_browser_options():
+    native = (ROOT / "app" / "src" / "main" / "java" / "com" / "meraj" / "niceexcel" / "MainActivity.kt").read_text(encoding="utf-8")
+    flask = (ROOT / "app" / "src" / "main" / "java" / "com" / "meraj" / "niceexcel" / "FlaskActivity.kt").read_text(encoding="utf-8")
+    assert '"Web Page" to { showWebPageOptions() }' in native
+    assert 'arrayOf("Open inside APK", "Open in Browser (localhost)")' in native
+    assert 'FlaskActivity.EXTRA_OPEN_EXTERNAL_BROWSER, true' in native
+    assert 'const val EXTRA_OPEN_EXTERNAL_BROWSER' in flask
+    assert 'private val localUrl = "http://127.0.0.1:8765/"' in flask
+    assert 'Intent(Intent.ACTION_VIEW, Uri.parse(localUrl))' in flask
+    assert 'waitForHealth(25000)' in flask
+
+
+def test_web_page_uses_shared_offline_hyperformula_runtime_for_calculation_and_preview():
+    web = (ROOT / "backend" / "niceexcel_api" / "static" / "index.html").read_text(encoding="utf-8")
+    native_asset = (ROOT / "app" / "src" / "main" / "assets" / "niceexcel_index.html").read_text(encoding="utf-8")
+    runtime_html = (ROOT / "app" / "src" / "main" / "assets" / "hyperformula_runtime.html").read_text(encoding="utf-8")
+    runtime_js = (ROOT / "scripts" / "hyperformula-runtime.js").read_text(encoding="utf-8")
+    build_script = (ROOT / "scripts" / "build-hyperformula.mjs").read_text(encoding="utf-8")
+    assert web == native_asset
+    assert '<script src="/hyperformula.bundle.js"></script>' in web
+    assert '<script src="/hyperformula_runtime.js"></script>' in web
+    assert "async function calculateWebFormulas(" in web
+    assert "'/workbooks/'+bookId+'/formula-snapshot'" in web
+    assert "window.NiceExcelHF.calculate(JSON.stringify(source))" in web
+    assert "window.NiceExcelHF.calculate(JSON.stringify(snapshot))" in web
+    assert "formula-preview" not in web
+    assert "hyperformula_runtime.js" in runtime_html
+    assert "window.NiceExcelHF = {" in runtime_js
+    assert "backend/niceexcel_api/static/hyperformula.bundle.js" in build_script
+    assert "backend/niceexcel_api/static/hyperformula_runtime.js" in build_script
+
+
+def test_web_view_sort_is_non_destructive_and_exports_sorted_projection_to_pdf():
+    web = (ROOT / "backend" / "niceexcel_api" / "static" / "index.html").read_text(encoding="utf-8")
+    native_asset = (ROOT / "app" / "src" / "main" / "assets" / "niceexcel_index.html").read_text(encoding="utf-8")
+    assert web == native_asset
+    for element_id in ["viewSortDialog", "viewSortType", "viewSortColumn", "viewSortDirection", "viewSortApply", "clearSortViewBtn"]:
+        assert f'id="{element_id}"' in web
+    assert '<option value="number">Number</option>' in web
+    assert '<option value="letter">Letter</option>' in web
+    assert "function getViewRowOrder(visibleRows" in web
+    assert "compareViewSortRows(a,b,config)" in web
+    assert "viewSorts[activeSheet]=" in web
+    assert "delete viewSorts[activeSheet]" in web
+    assert "const viewRowOrder=getViewRowOrder(visibleRows)" in web
+    assert "const pdfOrder=pdfSort?getViewRowOrder(lastRow,name)" in web
+    assert "await api('/workbooks/'+bookId+'/sort'" not in web
+    assert "original cell positions, formulas and workbook data remain unchanged" in web
+
+
+def test_native_sort_is_view_only_and_pdf_uses_sorted_row_projection():
+    native = (ROOT / "app" / "src" / "main" / "java" / "com" / "meraj" / "niceexcel" / "MainActivity.kt").read_text(encoding="utf-8")
+    assert '"Sort View…" to { sortColumn() }' in native
+    assert '"Clear Sort View" to { clearSortView() }' in native
+    assert "private data class ViewSortConfig" in native
+    assert "private fun viewSortOrder(" in native
+    assert "private fun applyViewSortOrderToGrid()" in native
+    assert "viewSortConfigs[sheetName] = ViewSortConfig(column, type, descending, headerRow)" in native
+    assert "data.remove(address)" not in native[native.index("private fun sortColumn() {"):native.index("override fun onDestroy()", native.index("private fun sortColumn() {"))]
+    assert "val pdfSortSnapshot = viewSortConfigs.toMap()" in native
+    assert "val orderedRows = viewSortOrder(name, maxRow, cells, pdfSortSnapshot[name], stMap, formulaSnapshot)" in native
+    assert "val sourceRow = orderedRows.getOrNull(r - 1) ?: r" in native
+
+
+
+def test_web_pdf_export_uses_offline_pdf_engine_and_downloads_a_real_blob():
+    root = Path(__file__).resolve().parents[2]
+    web = (root / "backend/niceexcel_api/static/index.html").read_text()
+    native_asset = (root / "app/src/main/assets/niceexcel_index.html").read_text()
+    package = json.loads((root / "package.json").read_text())
+    build_script = (root / "scripts/build-hyperformula.mjs").read_text()
+    pdf_entry = (root / "scripts/niceexcel-pdf-entry.js").read_text()
+    for source in (web, native_asset):
+        assert '<script src="/niceexcel_pdf.bundle.js"></script>' in source
+        assert "window.NiceExcelPDF.createPdf" in source
+        assert "blob.size===0" in source
+        assert "link.download='NiceExcel.pdf'" in source
+        assert "PDF export failed: '+e.message" in source
+        assert "document.createElement('iframe')" not in source
+        assert "window.print()" not in source
+    assert package["dependencies"]["jspdf"] == "2.5.2"
+    assert package["dependencies"]["jspdf-autotable"] == "3.8.4"
+    assert "scripts/niceexcel-pdf-entry.js" in build_script
+    assert "app/src/main/assets/niceexcel_pdf.bundle.js" in build_script
+    assert "backend/niceexcel_api/static/niceexcel_pdf.bundle.js" in build_script
+    assert "doc.output('blob')" in pdf_entry
+    assert "style.fill_color" in pdf_entry and "style.font_color" in pdf_entry
+    assert "hex.slice(0, 2).toLowerCase() === '00'" in pdf_entry
+    assert web == native_asset
+
+
+def test_android_web_page_copies_and_serves_offline_pdf_bundle():
+    root = Path(__file__).resolve().parents[2]
+    activity = (root / "app/src/main/java/com/meraj/niceexcel/FlaskActivity.kt").read_text()
+    server = (root / "app/src/main/python/server.py").read_text()
+    build_script = (root / "scripts/build-hyperformula.mjs").read_text()
+    assert '"niceexcel_pdf.bundle.js" to "niceexcel_pdf.bundle.js"' in activity
+    assert '("niceexcel_pdf.bundle.js", "niceexcel_pdf.bundle.js")' in server
+    assert "@JavascriptInterface\n            fun savePdf(base64Data: String, fileName: String)" in activity
+    assert "Intent.ACTION_CREATE_DOCUMENT" in activity
+    assert "contentResolver.openOutputStream(uri)" in activity
+    assert "pdfSaveRequestCode" in activity
+    assert "window.NiceExcelNative.savePdf(base64,'NiceExcel.pdf')" in (root / "backend/niceexcel_api/static/index.html").read_text()
+    assert "app/src/main/assets/niceexcel_pdf.bundle.js" in build_script
+    assert "backend/niceexcel_api/static/niceexcel_pdf.bundle.js" in build_script
+
+
+def test_web_editor_exits_edit_mode_after_keyboard_hide_and_preserves_cell_colors():
+    root = Path(__file__).resolve().parents[2]
+    web = (root / "backend/niceexcel_api/static/index.html").read_text()
+    native_asset = (root / "app/src/main/assets/niceexcel_index.html").read_text()
+    for source in (web, native_asset):
+        assert "editorViewportBaseline=0, editorKeyboardSeen=false" in source
+        assert "function editorKeyboardOpen()" in source
+        assert "function finishEditAfterKeyboardHide()" in source
+        assert "window.visualViewport?.addEventListener('resize',finishEditAfterKeyboardHide)" in source
+        assert "if(keyboardOpen){" in source
+        assert "Promise.resolve(finish(true)).then(saved=>{if(saved!==false)select(target.dataset.addr,true);})" in source
+        assert "background:transparent!important" in source
+        assert "color:inherit!important" in source
+        assert "caret-color:currentColor" in source
+    assert web == native_asset
+
+def test_web_pdf_export_chunks_ranges_below_api_limit_and_hides_legacy_status_lines():
+    files = [
+        ROOT / "backend" / "niceexcel_api" / "static" / "index.html",
+        ROOT / "app" / "src" / "main" / "assets" / "niceexcel_index.html",
+    ]
+    for path in files:
+        html = path.read_text(encoding="utf-8")
+        assert "const maxPdfRow=Math.max(1,Number(sheetInfo.max_row)||1)" in html
+        assert "const maxPdfCol=Math.max(1,Math.min(26,Number(sheetInfo.max_column)||26))" in html
+        assert "const rowsPerRequest=Math.max(1,Math.floor(10000/maxPdfCol))" in html
+        assert "rows.push(...(response.rows||[]))" in html
+        assert "&range=A1:Z1000" not in html
+        assert "#formulaPreview,.foot{display:none!important}" in html
+        assert "const pdfOrder=pdfSort?getViewRowOrder(lastRow,name)" in html
+    assert files[0].read_text(encoding="utf-8") == files[1].read_text(encoding="utf-8")
+
+
+
+def test_web_cell_edit_hands_off_to_next_tapped_cell_without_keyboard_dismissal():
+    root = Path(__file__).resolve().parents[2]
+    web = (root / "backend/niceexcel_api/static/index.html").read_text(encoding="utf-8")
+    webview_page = (root / "app/src/main/assets/niceexcel_index.html").read_text(encoding="utf-8")
+    for source in (web, webview_page):
+        assert "editingAddress=null, activeEditorDone=null, pendingEditAddress=null" in source
+        assert "addEventListener('pointerdown'" in source
+        assert "pendingEditAddress=target.dataset.addr" in source
+        assert "if(finish)finish(true,target.dataset.addr)" in source
+        assert "pendingEditAddress||nextAddress" in source
+        assert "td.classList.remove('editing')" in source
+        assert "await refresh();saveFailed=true" in source
+        assert "if(nextTd)editCell(nextTd)" in source
+        assert "inp.addEventListener('blur',()=>done(true))" in source
+    assert web == webview_page
