@@ -132,7 +132,7 @@
 .pdf-setup-checks label{display:flex;align-items:center;gap:6px;color:var(--text)}
 .pdf-setup-foot{display:flex;justify-content:flex-end;gap:8px;padding:12px 15px;border-top:1px solid var(--line)}
 @media(max-width:420px){.pdf-setup-grid{grid-template-columns:1fr}}
-.file-picker-input{position:fixed!important;left:-10000px!important;top:0!important;width:1px!important;height:1px!important;opacity:0!important;pointer-events:none!important}\n</style></head>
+.native-color-inputs input{position:fixed;left:-10000px;top:0;width:1px;height:1px;opacity:0;pointer-events:none}.file-picker-input{position:fixed!important;left:-10000px!important;top:0!important;width:1px!important;height:1px!important;opacity:0!important;pointer-events:none!important}\n</style></head>
 <body>
 <header class="top web-native-toolbar" aria-label="Nice Excel main menu">
 <details class="toolgroup"><summary>File</summary><div class="toolmenu"><button class="primary" id="newBtn">New workbook</button><button id="recoverBtn">Recover</button><button id="openBtn">Open workbook…</button><button id="saveBtn">Save XLSX</button><button id="csvBtn">Export CSV…</button><button id="exportPdfBtn">Export PDF…</button></div></details>
@@ -149,6 +149,7 @@
   <div class="theme-palette-title">Matching light colors</div><div class="theme-palette-grid" id="lightThemeColors"></div>
   <div class="theme-palette-help">Choose a shade, then tap Apply format.</div>
 </div>
+<div class="native-color-inputs" aria-hidden="true"><input id="fontColor" type="color" value="#000000" tabindex="-1" aria-label="Choose font color"><input id="fillColor" type="color" value="#ffffff" tabindex="-1" aria-label="Choose cell fill"></div>
 <div id="ribbonCompatibilityTools" hidden aria-hidden="true">
  <button id="insertRowBtn" type="button"></button><button id="mergeBtn" type="button"></button><button id="chartBtn" type="button"></button><button id="fontSizeBtn" type="button"></button>
  <select id="align" aria-label="Legacy alignment"><option value="general">General</option></select>
