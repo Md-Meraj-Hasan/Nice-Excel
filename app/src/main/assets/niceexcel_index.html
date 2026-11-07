@@ -417,49 +417,60 @@ $('clearFormatBtn').onclick=async()=>{try{await api('/workbooks/'+bookId+'/style
  // Each section toggles its own inline tools: first tap shows, second tap hides.
  (function setupCompactRibbon(){
    const header=document.querySelector('.web-native-toolbar');
+   if(!header)return;
    const groups=[...header.querySelectorAll('details.toolgroup')];
+   const menus=new Map(groups.map(group=>[group,group.querySelector('.toolmenu')]));
    const strip=document.createElement('div');
    strip.id='inlineTools'; strip.className='inline-tools'; strip.setAttribute('aria-label','Selected section tools');
    header.insertAdjacentElement('afterend',strip);
    let active=null;
    const shortLabels={copyCellBtn:'Copy',pasteCellBtn:'Paste',clearCellBtn:'Clear',clearFormatBtn:'Clear format',sortAscBtn:'Sort A→Z',sortDescBtn:'Sort Z→A',filterColumnBtn:'Filter',clearFilterBtn:'Clear filter',formulaPickerRibbonBtn:'ƒx Insert',newBtn:'＋ New',recoverBtn:'↻ Recover',openBtn:'Open XLSX',saveBtn:'Save XLSX',csvBtn:'Export CSV',undoBtn:'↶ Undo',redoBtn:'↷ Redo',insertRowsMenuBtn:'＋ 10+ Rows',insertShapeBtn:'Shapes',insertSymbolBtn:'Symbols',aiFillBtn:'AI-Fill',fontColorCellBtn:'Font',fillColorCellBtn:'Fill',smartTableBtn:'Smart Table',boldBtn:'B',italicBtn:'I',findBtnData:'Find',retrieveDataBtn:'Retrieve',freezeBtn:'Freeze',dependenciesBtn:'Links',calculateBtn:'ƒx Calc',dependenciesBtnFormula:'Links',formulaHelpBtn:'Help',nativeExcelBtn:'Native Excel',workbookInfoBtn:'Info'};
    groups.forEach(group=>{
-     const summary=group.querySelector('summary'), menu=group.querySelector('.toolmenu');
+     const summary=group.querySelector('summary');
+     const menu=menus.get(group);
      summary.setAttribute('role','button'); summary.setAttribute('aria-label',summary.textContent.trim()+' tools');
      group.removeAttribute('open');
-     group.querySelectorAll('.toolmenu button[id]').forEach(btn=>{const label=btn.textContent.trim();btn.title=label;btn.setAttribute('aria-label',label);if(shortLabels[btn.id])btn.textContent=shortLabels[btn.id];});
-     group.querySelectorAll('.toolmenu select').forEach(el=>{el.style.maxWidth='118px';});
+     if(menu)menu.querySelectorAll('button[id]').forEach(btn=>{const label=btn.textContent.trim();btn.title=label;btn.setAttribute('aria-label',label);if(shortLabels[btn.id])btn.textContent=shortLabels[btn.id];});
+     if(menu)menu.querySelectorAll('select').forEach(el=>{el.style.maxWidth='118px';});
      summary.addEventListener('click',event=>{
        event.preventDefault();
-       if(active===group){strip.classList.remove('visible');strip.replaceChildren();group.classList.remove('active');active=null;return;}
+       if(active===group){
+         if(menu)group.appendChild(menu);
+         strip.classList.remove('visible');strip.replaceChildren();
+         group.classList.remove('active');active=null;
+         return;
+       }
+       // Restore the previous section's menu before moving the next one.
+       if(active){
+         const previousMenu=menus.get(active);
+         if(previousMenu)active.appendChild(previousMenu);
+         active.classList.remove('active');
+       }
        groups.forEach(g=>g.classList.toggle('active',g===group));
-       strip.replaceChildren(); if(menu)strip.appendChild(menu);
-       strip.classList.add('visible'); active=group;
+       strip.replaceChildren();
+       if(menu)strip.appendChild(menu);
+       strip.classList.add('visible');active=group;
      });
    });
-   // Cell selection does not close this strip; only tapping the same section hides it.
-
    // Keep a visible indicator on the most recently selected option inside a section.
    // Delegation survives moving each section's tool menu into the inline strip.
-   // Capture selection before other toolbar handlers can stop bubbling.
-    // Re-apply after the control's own click handler in case it updates its DOM/state.
-    const markOptionIndicator=(event)=>{
-      const option=event.target.closest('.inline-tools .toolmenu button, .inline-tools .toolmenu select');
-      if(!option || !strip.contains(option)) return;
-      const mark=()=>{
-        if(!strip.contains(option)) return;
-        strip.querySelectorAll('.toolmenu .option-indicator-active').forEach(el=>{
-          if(el!==option) el.classList.remove('option-indicator-active');
-        });
-        option.classList.add('option-indicator-active');
-        option.setAttribute('data-option-indicator','active');
-      };
-      mark();
-      if(event.type==='click') window.setTimeout(mark,0);
-    };
-    strip.addEventListener('pointerdown',markOptionIndicator,true);
-    strip.addEventListener('click',markOptionIndicator,true);
-    strip.addEventListener('change',markOptionIndicator,true);
+   const markOptionIndicator=(event)=>{
+     const option=event.target.closest('.inline-tools .toolmenu button, .inline-tools .toolmenu select');
+     if(!option || !strip.contains(option)) return;
+     const mark=()=>{
+       if(!strip.contains(option)) return;
+       strip.querySelectorAll('.toolmenu .option-indicator-active').forEach(el=>{
+         if(el!==option)el.classList.remove('option-indicator-active');
+       });
+       option.classList.add('option-indicator-active');
+       option.setAttribute('data-option-indicator','active');
+     };
+     mark();
+     if(event.type==='click')window.setTimeout(mark,0);
+   };
+   strip.addEventListener('pointerdown',markOptionIndicator,true);
+   strip.addEventListener('click',markOptionIndicator,true);
+   strip.addEventListener('change',markOptionIndicator,true);
  })();
 
 
