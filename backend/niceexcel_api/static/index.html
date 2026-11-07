@@ -363,7 +363,7 @@ $('undoBtn').onclick=()=>queueHistoryAction('undo');$('redoBtn').onclick=()=>que
    const open=(button,inputId)=>{if(activeTrigger===button&&!panel.hidden){close();return;}target=inputId;activeTrigger=button;document.querySelectorAll('.theme-palette-trigger').forEach(x=>x.setAttribute('aria-expanded','false'));button.setAttribute('aria-expanded','true');const r=button.getBoundingClientRect();panel.hidden=false;const width=Math.min(316,window.innerWidth-16);panel.style.left=Math.max(8,Math.min(r.left,window.innerWidth-width-8))+'px';let top=r.bottom+6;if(top+235>window.innerHeight)top=Math.max(8,r.top-241);panel.style.top=top+'px';};
    $('fontThemeBtn').addEventListener('click',()=>open($('fontThemeBtn'),'fontColor'));
    $('fillThemeBtn').addEventListener('click',()=>open($('fillThemeBtn'),'fillColor'));
-   panel.addEventListener('click',async event=>{const swatch=event.target.closest('.theme-swatch');if(!swatch)return;const color=swatch.dataset.color;$(target).value=color;close();await applyCellStyle(target==='fontColor'?{font_color:color}:{fill_color:color});setStatus((target==='fontColor'?'Font color':'Cell fill')+' applied: '+color);});
+   panel.addEventListener('click',async event=>{const swatch=event.target.closest('.theme-swatch');if(!swatch)return;const color=swatch.dataset.color;close();await applyCellStyle(target==='fontColor'?{font_color:color}:{fill_color:color});setStatus((target==='fontColor'?'Font color':'Cell fill')+' applied: '+color);});
    document.addEventListener('pointerdown',event=>{if(!panel.hidden&&!panel.contains(event.target)&&!event.target.closest('.theme-palette-trigger'))close();});
    document.addEventListener('keydown',event=>{if(event.key==='Escape'&&!panel.hidden)close();});
  })();
