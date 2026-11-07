@@ -162,3 +162,28 @@ def test_native_black_theme_formula_bar_and_grid_headers_use_high_contrast_text(
     assert "setTextColor(if (darkMode) Color.WHITE else themedColor(Color.rgb(17,94,57)))" in native
     assert 'text="ƒx ▾"; textSize=12f; setTextColor(if (darkMode) Color.WHITE' in native
     assert "if (darkMode) Color.WHITE else dayPalettes" in native
+
+
+def test_insert_object_dialogs_are_unique_and_symbol_format_controls_are_present():
+    for path in [
+        ROOT / "backend" / "niceexcel_api" / "static" / "index.html",
+        ROOT / "app" / "src" / "main" / "assets" / "niceexcel_index.html",
+    ]:
+        html = path.read_text(encoding="utf-8")
+        for element_id in ["shapeInsertDialog", "symbolInsertDialog"]:
+            assert html.count(f'id="{element_id}"') == 1, f"duplicate dialog id {element_id} in {path}"
+        for element_id in ["symbolCategory", "symbolSearch", "symbolGrid", "symbolPosition", "symbolTargetRange", "symbolFormatApply", "symbolInsertApply"]:
+            assert html.count(f'id="{element_id}"') == 1, f"missing or duplicate symbol control {element_id} in {path}"
+        assert "$('insertSymbolBtn').onclick" in html
+        assert "formatSymbolDisplay(shownValue,numberFormat)" in html
+
+
+def test_native_table_style_controls_live_in_insert_not_format():
+    native = (ROOT / "app" / "src" / "main" / "java" / "com" / "meraj" / "niceexcel" / "MainActivity.kt").read_text(encoding="utf-8")
+    insert_start = native.index('"Insert" -> listOf(')
+    format_start = native.index('"Format" -> listOf(', insert_start)
+    insert_menu = native[insert_start:format_start]
+    format_end = native.index('"Data" -> listOf(', format_start)
+    format_menu = native[format_start:format_end]
+    assert '"Table styles…" to { tableMenu() }' in insert_menu
+    assert '"Table styles…" to { tableMenu() }' not in format_menu

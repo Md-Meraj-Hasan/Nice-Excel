@@ -5,6 +5,8 @@ import android.app.AlertDialog
 import android.content.Context
 import android.content.Intent
 import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.pdf.PdfDocument
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.ColorDrawable
@@ -109,6 +111,29 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         val luminance = (Color.red(color) * 299 + Color.green(color) * 587 + Color.blue(color) * 114) / 1000
         return if (luminance < 145) Color.rgb(235,241,250) else color
     }
+
+    private fun contrastAwareCellTextColor(foreground: Int, background: Int): Int {
+        fun channel(value: Int): Double {
+            val c = value / 255.0
+            return if (c <= 0.04045) c / 12.92 else Math.pow((c + 0.055) / 1.055, 2.4)
+        }
+        fun luminance(color: Int): Double =
+            0.2126 * channel(Color.red(color)) +
+            0.7152 * channel(Color.green(color)) +
+            0.0722 * channel(Color.blue(color))
+        val fg = luminance(foreground)
+        val bg = luminance(background)
+        fun contrastRatio(a: Double, b: Double): Double =
+            (maxOf(a, b) + 0.05) / (minOf(a, b) + 0.05)
+        if (contrastRatio(fg, bg) >= 4.5) return foreground
+        val blackRatio = contrastRatio(0.0, bg)
+        val whiteRatio = contrastRatio(1.0, bg)
+        return if (blackRatio >= whiteRatio) Color.BLACK else Color.WHITE
+    }
+
+    /** Preserve the exact user-selected font colour. */
+    private fun readableCellTextColor(address: String?, style: CellStyle?): Int =
+        if (style != null) style.textColor else themedCellTextColor(Color.rgb(24, 32, 39))
 
     private fun updateSystemBars() {
         // Black Theme must override the selected day-palette accent.
@@ -314,35 +339,72 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         }
     }
 
-    /** Atomic internal autosave; this is independent of the user's original file. */
+    // Recovery autosaves use a dedicated single-worker queue so XLSX compression and
+    // fsync never block Android's UI/lifecycle thread. A one-item queue keeps only the
+    // newest pending snapshot if edits trigger autosaves faster than storage can write.
+    private val autosaveExecutor = ThreadPoolExecutor(
+        1, 1,
+        30L, TimeUnit.SECONDS,
+        ArrayBlockingQueue<Runnable>(1),
+        { runnable -> Thread(runnable, "NiceExcel-Autosave").apply { isDaemon = true } },
+        ThreadPoolExecutor.AbortPolicy()
+    ).apply { allowCoreThreadTimeOut(true) }
+
+    /** Capture workbook state on the UI thread, then serialize and sync it in the background. */
     private fun persistLastWorkbook() {
         if (sheets.isEmpty()) return
         try {
+            // Commit an active editor before taking the immutable workbook snapshot.
             activeInlineCommit?.invoke()
             val snapshotSheets = sheets.mapValues { it.value.toMap() }
             val snapshotStyles = styles.mapValues { (_, values) -> values.mapValues { it.value.copy() } }
             val snapshotMerges = mergedRangesBySheet.mapValues { it.value.toList() }
-            val temp = java.io.File(filesDir, "niceexcel_last_session.tmp")
-            java.io.FileOutputStream(temp).use { output ->
-                XlsxCodec.write(output, snapshotSheets, snapshotStyles, metadataForSave(), snapshotMerges)
-                output.fd.sync()
-            }
-            val target = lastWorkbookFile()
-            if (!temp.renameTo(target)) {
-                temp.copyTo(target, overwrite = true)
-                temp.delete()
-            }
+            val snapshotMetadata = metadataForSave()
+            val snapshotSheetName = sheetName
+            val snapshotCell = selected
+
             getPreferences(MODE_PRIVATE).edit()
-                .putString("last_session_sheet", sheetName)
-                .putString("last_session_cell", selected)
+                .putString("last_session_sheet", snapshotSheetName)
+                .putString("last_session_cell", snapshotCell)
                 .apply()
+
+            val saveTask = Runnable {
+                val temp = java.io.File(filesDir, "niceexcel_last_session.tmp")
+                try {
+                    java.io.FileOutputStream(temp).use { output ->
+                        XlsxCodec.write(output, snapshotSheets, snapshotStyles, snapshotMetadata, snapshotMerges)
+                        output.fd.sync()
+                    }
+                    val target = lastWorkbookFile()
+                    if (!temp.renameTo(target)) {
+                        temp.copyTo(target, overwrite = true)
+                        temp.delete()
+                    }
+                    Log.d("NiceExcel", "Local workbook autosave completed")
+                } catch (error: Exception) {
+                    Log.e("NiceExcel", "Local workbook autosave failed", error)
+                    try { temp.delete() } catch (_: Exception) { }
+                }
+            }
+
+            try {
+                autosaveExecutor.execute(saveTask)
+            } catch (_: RejectedExecutionException) {
+                // Replace a stale queued snapshot with this newest workbook state.
+                autosaveExecutor.queue.poll()
+                try {
+                    autosaveExecutor.execute(saveTask)
+                } catch (error: RejectedExecutionException) {
+                    Log.e("NiceExcel", "Local workbook autosave queue is unavailable", error)
+                }
+            }
         } catch (error: Exception) {
-            Log.e("NiceExcel", "Local workbook autosave failed", error)
+            Log.e("NiceExcel", "Unable to prepare local workbook autosave", error)
         }
     }
 
     override fun onStop() {
-        // Save a recovery copy even when Android removes the app from recent tasks.
+        // Queue a recovery snapshot without performing XLSX serialization/fsync on the UI thread.
         persistLastWorkbook()
         super.onStop()
     }
@@ -796,7 +858,8 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                 "Open workbook…" to { openMenu() },
                 "Save" to { saveMenu() },
                 "Save As…" to { saveMenu() },
-                "Export CSV…" to { saveCsv() }
+                "Export CSV…" to { saveCsv() },
+                "Export PDF…" to { savePdfMenu() }
             )
             "Home" -> listOf(
                 "Undo" to { undo() }, "Redo" to { redo() },
@@ -807,6 +870,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
             "Insert" -> listOf(
                 "Insert 10 rows at selection" to { addRows(10) },
                 "Table tools…" to { tableMenu() },
+                "Table styles…" to { tableMenu() },
                 "Shapes…" to { showNativeShapesMenu() },
                 "Symbols…" to { showSymbolPickerMenu() },
                 "AI Auto Fill…" to { autoFillDialog() },
@@ -818,7 +882,6 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                 "Font size…" to { chooseFontSize() },
                 "Alignment…" to { chooseAlignmentForTargets(listOf(selected), selected) },
                 "Number format…" to { chooseNumberFormat() },
-                "Table styles…" to { tableMenu() },
                 "Clear formatting" to { clearFormattingSelection() }
             )
             "Data" -> listOf(
@@ -1052,7 +1115,15 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
             }
             view.text = text
             val st = sheetStyles[address]
-            view.setTextColor(themedCellTextColor(st?.textColor ?: Color.rgb(24, 32, 39)))
+            val cellBackground = when {
+                st == null -> themedSurface(Color.WHITE)
+                darkMode && st.fillColor == Color.WHITE -> Color.BLACK
+                else -> st.fillColor
+            }
+            // Explicit font colours are user formatting: never auto-replace them
+            // with black/white based on fill contrast. Theme colour is only for
+            // cells without a saved style.
+            view.setTextColor(readableCellTextColor(address, st))
             view.textSize = st?.fontSize ?: 13f
             view.typeface = Typeface.create(
                 Typeface.DEFAULT,
@@ -1110,7 +1181,14 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                         }
                         frozenRowHorizontal.visibility = android.view.View.VISIBLE
                         grid.requestLayout()
-                        status.text = if (criteria.isEmpty()) "Filter cleared" else "Filters applied: " + criteria.entries.joinToString(" AND ") { "${it.key} contains '${it.value}'" }
+                        status.text = if (criteria.isEmpty()) "Filter cleared" else "Filters applied: " + criteria.entries.joinToString(" AND ") { (column, encoded) ->
+                            val parts = encoded.split(":", limit = 2)
+                            val label = when (parts.firstOrNull()) { "equal" -> "equals"; "starts-with" -> "starts with"; "not-equal" -> "not equal"; "blank" -> "is blank"; else -> "contains" }
+                            "$column $label '${parts.getOrElse(1) { "" }}'"
+                        }
+                        // SUBTOTAL must be recalculated against the rows that remain visible
+                        // after this filter operation; ordinary SUM remains unaffected.
+                        scheduleFormulaRecalculation()
                     }
                 } catch (error: Exception) {
                     mainHandler.post {
@@ -1254,7 +1332,8 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         cellViews.forEach { (address, view) ->
             view.text = gridDisplay(address)
             val st = sheetStyles[address]
-            view.setTextColor(themedCellTextColor(st?.textColor ?: Color.rgb(24, 32, 39)))
+            // Keep a deliberately selected font colour exactly as chosen.
+            view.setTextColor(readableCellTextColor(address, st))
             view.textSize = st?.fontSize ?: 13f
             view.typeface = Typeface.create(
                 Typeface.DEFAULT,
@@ -1335,7 +1414,8 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
             val text = gridDisplay(address)
             if (view.text.toString() != text) view.text = text
             val st = sheetStyles[address]
-            val textColor = themedCellTextColor(st?.textColor ?: Color.rgb(24, 32, 39))
+            // Do not let dark-theme conversion override an explicit cell font colour.
+            val textColor = readableCellTextColor(address, st)
             if (view.currentTextColor != textColor) view.setTextColor(textColor)
             val textSize = st?.fontSize ?: 13f
             if (view.textSize != textSize) view.textSize = textSize
@@ -1507,6 +1587,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         val expected = parts.getOrElse(1) { encoded }
         return when (mode) {
             "equal" -> value.equals(expected, ignoreCase = true)
+            "starts-with" -> value.trim().startsWith(expected.trim(), ignoreCase = true)
             "not-equal" -> !value.equals(expected, ignoreCase = true)
             "blank" -> value.isBlank()
             else -> value.contains(expected, ignoreCase = true)
@@ -1697,7 +1778,17 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
             gravity = if (header || key == null) Gravity.CENTER else Gravity.CENTER_VERTICAL or Gravity.START
             setPadding(dp(3), 0, dp(3), 0)
             val st = if (key != null) sheetStyles[key] else null
-            setTextColor(if (header) { if (darkMode) Color.WHITE else dayPalettes[dayPaletteIndex.coerceIn(dayPalettes.indices)].ink } else themedCellTextColor(st?.textColor ?: Color.rgb(24,32,39)))
+            setTextColor(
+                if (header) {
+                    if (darkMode) Color.WHITE else dayPalettes[dayPaletteIndex.coerceIn(dayPalettes.indices)].ink
+                } else if (st != null) {
+                    // A saved cell style contains an explicit user-selected font colour.
+                    // Do not run it through theme conversion; that turns dark colours white.
+                    readableCellTextColor(key, st)
+                } else {
+                    readableCellTextColor(key, null)
+                }
+            )
             textSize = st?.fontSize ?: 13f
             typeface = Typeface.create(Typeface.DEFAULT, (if (st?.bold == true || header) Typeface.BOLD else Typeface.NORMAL) or (if (st?.italic == true) Typeface.ITALIC else Typeface.NORMAL))
             paint.isUnderlineText = st?.underline == true
@@ -2453,6 +2544,11 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         val activeSheet = sheetName
         val allSheetsSnapshot = sheets.mapValues { (_, cells) -> cells.toMap() }
         val stylesSnapshot = styles.mapValues { (_, map) -> map.toMap() }
+        val filterActiveForCalculation = filterCriteria.isNotEmpty() || (filterColumn != null && filterText != null)
+        val visibleRowsForCalculation = if (filterActiveForCalculation) {
+            (1..rowCount).filter { rowPassesFilter(it) }.toSet()
+        } else emptySet()
+        val visibleRowsBySheet = if (filterActiveForCalculation) mapOf(activeSheet to visibleRowsForCalculation) else emptyMap()
         val allFormulas = allSheetsSnapshot.flatMap { (name, cells) ->
             cells.filterValues { it.trimStart().startsWith("=") }.map { (address, raw) -> Triple(name, address, raw) }
         }
@@ -2475,7 +2571,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                 val results = linkedMapOf<String, Pair<String, String>>()
                 val hyperFormulaCalculation = runCatching {
                     HyperFormulaServiceClient.recalculateSnapshot(
-                        this@MainActivity, allSheetsSnapshot, formulas
+                        this@MainActivity, allSheetsSnapshot, formulas, visibleRowsBySheet
                     )
                 }.onFailure { failure ->
                     Log.e("NiceExcel-Formula", "HYPERFORMULA_RUNTIME_FAILURE: no alternate formula engine will be used", failure)
@@ -3338,13 +3434,90 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
     }
 
     private fun chooseNumberFormat() {
-        val opts = arrayOf("General", "Number (2 decimals)", "Percentage", "Currency", "Date (text display)", "Time", "Date & Time", "Text", "Scientific")
+        val opts = arrayOf("General", "Number (2 decimals)", "Percentage", "Currency…", "Date (text display)", "Time", "Date & Time", "Text", "Scientific", "Custom prefix / suffix…")
         AlertDialog.Builder(this).setTitle("Number format").setItems(opts) { _, i ->
-            styleFor(selected).numberFormat = opts[i]
-            refreshStyledCells(listOf(selected)); status.text = "Number format set: ${opts[i]}"
+            when (i) {
+                3 -> chooseCurrencyFormat()
+                9 -> customNumberFormatDialog()
+                else -> applyNumberFormatToTargets(opts[i])
+            }
         }.showProfessional()
     }
 
+    private fun numberFormatTargets(rangeText: String? = null): Pair<String, List<String>>? {
+        val label = rangeText?.trim()?.uppercase(Locale.ROOT)?.takeIf { it.isNotEmpty() }
+            ?: selectedRangeLabel?.takeIf { selectedRangeCells.isNotEmpty() }
+            ?: selected
+        val cells = if (rangeText == null && selectedRangeCells.isNotEmpty()) selectedRangeCells.toList() else parseCellRange(label)
+        if (cells.isEmpty()) { status.text = "Invalid range. Example: A1:C10"; return null }
+        return label to cells
+    }
+
+    private fun applyNumberFormatToTargets(format: String, rangeText: String? = null) {
+        val target = numberFormatTargets(rangeText) ?: return
+        target.second.forEach { styleFor(it).numberFormat = format }
+        refreshStyledCells(target.second)
+        status.text = "Number format applied to ${target.first} · ${target.second.size} cells"
+    }
+
+    private fun chooseCurrencyFormat() {
+        val currencies = listOf(
+            Triple("INR · Indian Rupee (₹)", "₹", 2),
+            Triple("USD · US Dollar ($)", "$", 2),
+            Triple("SAR · Saudi Riyal (ر.س)", "ر.س ", 2),
+            Triple("AED · UAE Dirham (د.إ)", "د.إ ", 2),
+            Triple("EUR · Euro (€)", "€", 2),
+            Triple("GBP · British Pound (£)", "£", 2),
+            Triple("JPY · Japanese Yen (¥)", "¥", 0),
+            Triple("CNY · Chinese Yuan (CN¥)", "CN¥", 2),
+            Triple("CAD · Canadian Dollar (C$)", "C$", 2),
+            Triple("AUD · Australian Dollar (A$)", "A$", 2),
+            Triple("CHF · Swiss Franc (CHF)", "CHF ", 2),
+            Triple("PKR · Pakistani Rupee (₨)", "₨", 2),
+            Triple("BDT · Bangladeshi Taka (৳)", "৳", 2),
+            Triple("LKR · Sri Lankan Rupee (රු)", "රු ", 2),
+            Triple("NPR · Nepalese Rupee (रू)", "रू ", 2),
+            Triple("QAR · Qatari Riyal (ر.ق)", "ر.ق ", 2),
+            Triple("KWD · Kuwaiti Dinar (د.ك)", "د.ك ", 3),
+            Triple("BHD · Bahraini Dinar (د.ب)", "د.ب ", 3),
+            Triple("OMR · Omani Rial (ر.ع.)", "ر.ع. ", 3),
+            Triple("SGD · Singapore Dollar (S$)", "S$", 2)
+        )
+        AlertDialog.Builder(this).setTitle("Choose currency").setItems(currencies.map { it.first }.toTypedArray()) { _, which ->
+            val currency = currencies[which]
+            val quote = 34.toChar().toString()
+            val format = quote + currency.second + quote + "#,##0" + if (currency.third > 0) "." + "0".repeat(currency.third) else ""
+            applyNumberFormatToTargets(format)
+        }.showProfessional()
+    }
+    /** Display-only literals: never modify the underlying numeric value or formula. */
+    private fun customNumberFormatDialog() {
+        val panel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(20), dp(8), dp(20), dp(4)) }
+        val prefix = EditText(this).apply { hint = "Before number (e.g. ₹)"; setSingleLine(true) }
+        val suffix = EditText(this).apply { hint = "After number (e.g. kg or %)"; setSingleLine(true) }
+        val range = EditText(this).apply {
+            hint = "Apply to range (e.g. A1:C10)"; setSingleLine(true)
+            setText(selectedRangeLabel?.takeIf { selectedRangeCells.isNotEmpty() } ?: selected)
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS
+        }
+        panel.addView(prefix); panel.addView(suffix)
+        panel.addView(TextView(this).apply { text = "Apply to range"; textSize = 13f; setPadding(0, dp(10), 0, dp(2)) })
+        panel.addView(range, LinearLayout.LayoutParams(-1, -2))
+        panel.addView(TextView(this).apply { text = "Display only • original value and formula remain unchanged"; textSize = 12f; setPadding(0, dp(8), 0, 0) })
+        AlertDialog.Builder(this).setTitle("Custom number display").setView(panel)
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Apply") { _, _ ->
+                val before = prefix.text.toString(); val after = suffix.text.toString()
+                val target = numberFormatTargets(range.text.toString()) ?: return@setPositiveButton
+                val quote = 34.toChar().toString()
+                fun quoted(value: String) = quote + value.replace(quote, quote + quote) + quote
+                val format = if (before.isEmpty() && after.isEmpty()) "General" else
+                    (if (before.isNotEmpty()) quoted(before) else "") + "#,##0.############" + (if (after.isNotEmpty()) quoted(after) else "")
+                target.second.forEach { styleFor(it).numberFormat = format }
+                refreshStyledCells(target.second)
+                status.text = "Custom display format applied to ${target.first} · ${target.second.size} cells; values preserved"
+            }.showProfessional()
+    }
     private fun tableMenu() {
         val rangeInput = EditText(this).apply {
             hint = "Enter range, e.g. A1:D20"
@@ -3409,7 +3582,11 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         val styles = listOf(
             "Blue" to "#1F4E78", "Green" to "#217346", "Purple" to "#7030A0",
             "Orange" to "#C65911", "Teal" to "#0F6B78", "Gray" to "#595959",
-            "Dark" to "#263746", "Light Blue" to "#4472C4"
+            "Dark" to "#263746", "Light" to "#4472C4", "Ruby" to "#7F1D1D",
+            "Gold" to "#806000", "Navy" to "#172554", "Cyan" to "#0891B2",
+            "Rose" to "#BE123C", "Lime" to "#4D7C0F", "Indigo" to "#4338CA",
+            "Coral" to "#E05D4F", "Mint" to "#0F766E", "Plum" to "#7E22CE",
+            "Slate" to "#475569", "Bronze" to "#92400E"
         )
         AlertDialog.Builder(this).setTitle("Choose table colour")
             .setItems(styles.map { it.first }.toTypedArray()) { _, which ->
@@ -3449,10 +3626,14 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                     st.border = false
                     st.thickBorder = false
                     if (row == headerRow) {
-                        st.bold = true; st.fillColor = headerColor; st.textColor = Color.WHITE
+                        st.bold = true
+                        st.fillColor = headerColor
+                        st.textColor = contrastAwareCellTextColor(Color.WHITE, headerColor)
                     } else {
-                        st.fillColor = if (darkMode) Color.rgb(18,26,43) else if ((row - headerRow) % 2 == 0) lighterColor else lightColor
-                        st.textColor = themedCellTextColor(Color.rgb(24, 32, 39))
+                        val bandFill = if (darkMode) Color.rgb(18,26,43)
+                            else if ((row - headerRow) % 2 == 0) lighterColor else lightColor
+                        st.fillColor = bandFill
+                        st.textColor = contrastAwareCellTextColor(Color.rgb(24, 32, 39), bandFill)
                     }
                 }
                 tableHeaderRow = headerRow
@@ -3699,12 +3880,12 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
     private fun showColumnFilterDialog(columnName: String) {
         val col = columnName.uppercase(Locale.ROOT)
         val current = filterCriteria[col].orEmpty().split(":", limit = 2)
-        val currentMode = current.getOrNull(0)?.takeIf { it in listOf("equal", "not-equal", "blank") } ?: "equal"
+        val currentMode = current.getOrNull(0)?.takeIf { it in listOf("equal", "starts-with", "not-equal", "blank") } ?: "equal"
         val currentValue = current.getOrElse(1) { "" }
-        val choices = arrayOf("Equal", "Not equal", "Blank")
+        val choices = arrayOf("Equal", "Starts with", "Not equal", "Blank")
         AlertDialog.Builder(this).setTitle("Filter column $col")
             .setItems(choices) { _, which ->
-                val mode = when (which) { 0 -> "equal"; 1 -> "not-equal"; else -> "blank" }
+                val mode = when (which) { 0 -> "equal"; 1 -> "starts-with"; 2 -> "not-equal"; else -> "blank" }
                 if (mode == "blank") {
                     filterCriteria[col] = "blank:"
                     filterColumn = filterCriteria.keys.lastOrNull()
@@ -3712,11 +3893,11 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                     refreshFilterVisibility()
                 } else {
                     val queryInput = EditText(this).apply {
-                        hint = if (mode == "equal") "Exact value to match" else "Value to exclude"
+                        hint = when (mode) { "equal" -> "Exact value to match"; "starts-with" -> "Beginning of value (e.g. 47)"; else -> "Value to exclude" }
                         setSingleLine(true)
                         setText(if (currentMode == mode) currentValue else "")
                     }
-                    AlertDialog.Builder(this).setTitle(if (mode == "equal") "Equal to…" else "Not equal to…")
+                    AlertDialog.Builder(this).setTitle(when (mode) { "equal" -> "Equal to…"; "starts-with" -> "Starts with…"; else -> "Not equal to…" })
                         .setView(queryInput)
                         .setPositiveButton("Apply") { _, _ ->
                             val q = queryInput.text.toString().trim()
@@ -3879,17 +4060,36 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         // Never synchronously invoke POI or the legacy local FormulaEngine here.
         return formulaDisplayCache[cacheKey] ?: "…"
     }
-    private fun formatNumber(value: Double, format: String, fallback: String): String = when (format) {
-        "Number (2 decimals)" -> String.format(Locale.US, "%.2f", value)
-        "Percentage" -> String.format(Locale.US, "%.2f%%", value * 100.0)
-        "Currency" -> String.format(Locale.US, "$%.2f", value)
-        "Date (text display)", "Date" -> java.text.SimpleDateFormat("yyyy-MM-dd", Locale.US).format(java.util.Date(((value - 25569.0) * 86400000.0).toLong()))
-        "Time" -> java.text.SimpleDateFormat("HH:mm:ss", Locale.US).format(java.util.Date(((value - Math.floor(value)) * 86400000.0).toLong()))
-        "Date & Time" -> java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US).format(java.util.Date(((value - 25569.0) * 86400000.0).toLong()))
-        "Scientific" -> String.format(Locale.US, "%.2E", value)
-        else -> if (value % 1.0 == 0.0) value.toLong().toString() else String.format(Locale.US, "%.4f", value)
+    private fun formatNumber(value: Double, format: String, fallback: String): String {
+        when (format) {
+            "Number (2 decimals)" -> return String.format(Locale.US, "%.2f", value)
+            "Percentage" -> return String.format(Locale.US, "%.2f%%", value * 100.0)
+            "Currency" -> return String.format(Locale.US, "$%.2f", value)
+            "Date (text display)", "Date" -> return java.text.SimpleDateFormat("yyyy-MM-dd", Locale.US).format(java.util.Date(((value - 25569.0) * 86400000.0).toLong()))
+            "Time" -> return java.text.SimpleDateFormat("HH:mm:ss", Locale.US).format(java.util.Date(((value - Math.floor(value)) * 86400000.0).toLong()))
+            "Date & Time" -> return java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US).format(java.util.Date(((value - 25569.0) * 86400000.0).toLong()))
+            "Scientific" -> return String.format(Locale.US, "%.2E", value)
+        }
+        if (format == "General" || format.isBlank() || format == "Text") return if (value % 1.0 == 0.0) value.toLong().toString() else String.format(Locale.US, "%.4f", value)
+        var pattern = format; var prefix = ""; var suffix = ""
+        if (pattern.startsWith("\"")) {
+            val end = pattern.indexOf("\"", 1)
+            if (end > 0) { prefix = pattern.substring(1, end).replace("\"\"", "\""); pattern = pattern.substring(end + 1) }
+        }
+        if (pattern.endsWith("\"")) {
+            val start = pattern.lastIndexOf("\"", pattern.lastIndex - 1)
+            if (start >= 0) { suffix = pattern.substring(start + 1, pattern.lastIndex).replace("\"\"", "\""); pattern = pattern.substring(0, start) }
+        }
+        if (prefix.isEmpty() && suffix.isEmpty()) return if (value % 1.0 == 0.0) value.toLong().toString() else String.format(Locale.US, "%.4f", value)
+        val decimals = pattern.substringAfter(".", "").takeWhile { it == '0' || it == '#' || it == '?' }
+        val maxDecimals = decimals.length.coerceIn(0, 12)
+        val minDecimals = decimals.count { it == '0' }.coerceIn(0, maxDecimals)
+        val number = java.text.NumberFormat.getNumberInstance(Locale.US).apply {
+            isGroupingUsed = pattern.substringBefore(".").contains(",")
+            minimumFractionDigits = minDecimals; maximumFractionDigits = maxDecimals
+        }.format(kotlin.math.abs(value))
+        return (if (value < 0) "-" else "") + prefix + number + suffix
     }
-
     private fun colName(index:Int):String {
         var n=index+1; var out=""
         while(n>0) { val r=(n-1)%26; out=('A'.code+r).toChar()+out; n=(n-1)/26 }
@@ -3979,6 +4179,283 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
         }
     }
 
+
+    private data class PdfExportOptions(
+        val paper: String = "A4",
+        val orientation: String = "Landscape",
+        val scaling: String = "Fit all columns",
+        val margins: String = "Normal",
+        val allSheets: Boolean = true,
+        val gridlines: Boolean = true,
+        val repeatHeadings: Boolean = true,
+        val showSheetName: Boolean = true
+    )
+    private var pendingPdfOptions = PdfExportOptions()
+
+    private fun savePdfMenu() {
+        val panel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(8), dp(18), dp(4))
+        }
+        fun addChoice(label: String, values: Array<String>, selectedIndex: Int = 0): Spinner {
+            panel.addView(TextView(this).apply {
+                text = label
+                textSize = 12f
+                setTextColor(themedColor(Color.rgb(75, 90, 105)))
+                setPadding(0, dp(8), 0, dp(3))
+            })
+            return Spinner(this).also { spinner ->
+                spinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, values)
+                spinner.setSelection(selectedIndex)
+                panel.addView(spinner)
+            }
+        }
+        val sheetsChoice = addChoice("Worksheets", arrayOf("All worksheets", "Current worksheet only"))
+        val paperChoice = addChoice("Paper size", arrayOf("A4", "A3", "Letter", "Legal"))
+        val orientationChoice = addChoice("Orientation", arrayOf("Landscape", "Portrait"))
+        val scaleChoice = addChoice("Content adjustment", arrayOf("Fit all columns", "Fit entire sheet on one page", "Actual size (multiple pages)"))
+        val marginChoice = addChoice("Page margins", arrayOf("Normal", "Narrow", "Wide"))
+        val gridCheck = CheckBox(this).apply { text = "Show cell gridlines"; isChecked = true }
+        val headingCheck = CheckBox(this).apply { text = "Repeat worksheet header row"; isChecked = true }
+        val sheetNameCheck = CheckBox(this).apply { text = "Show worksheet name"; isChecked = true }
+        panel.addView(gridCheck)
+        panel.addView(headingCheck)
+        panel.addView(sheetNameCheck)
+        AlertDialog.Builder(this)
+            .setTitle("Export Excel to PDF")
+            .setView(ScrollView(this).apply { addView(panel) })
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Continue") { _, _ ->
+                pendingPdfOptions = PdfExportOptions(
+                    paper = paperChoice.selectedItem.toString(),
+                    orientation = orientationChoice.selectedItem.toString(),
+                    scaling = scaleChoice.selectedItem.toString(),
+                    margins = marginChoice.selectedItem.toString(),
+                    allSheets = sheetsChoice.selectedItemPosition == 0,
+                    gridlines = gridCheck.isChecked,
+                    repeatHeadings = headingCheck.isChecked,
+                    showSheetName = sheetNameCheck.isChecked
+                )
+                val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                    type = "application/pdf"
+                    putExtra(Intent.EXTRA_TITLE, "NiceExcel.pdf")
+                }
+                startActivityForResult(intent, 15)
+            }
+            .showProfessional()
+    }
+
+    private fun saveWorkbookPdf(uri: android.net.Uri, options: PdfExportOptions) {
+        val cellSnapshot = if (options.allSheets) sheets.mapValues { it.value.toMap() }
+            else linkedMapOf(sheetName to (sheets[sheetName]?.toMap() ?: emptyMap()))
+        val styleSnapshot = if (options.allSheets) styles.mapValues { (_, map) -> map.mapValues { it.value.copy() } }
+            else linkedMapOf(sheetName to (styles[sheetName]?.mapValues { it.value.copy() } ?: emptyMap()))
+        val formulaSnapshot = formulaDisplayCache.toMap()
+        val widthSnapshot = columnWidthsBySheet.mapValues { it.value.toList() }
+        try {
+            backgroundExecutor.execute {
+                var document: PdfDocument? = null
+                try {
+                    document = PdfDocument()
+                    val base = when (options.paper) {
+                        "A3" -> 842 to 1191
+                        "Letter" -> 612 to 792
+                        "Legal" -> 612 to 1008
+                        else -> 595 to 842
+                    }
+                    val pageW = if (options.orientation == "Landscape") maxOf(base.first, base.second) else minOf(base.first, base.second)
+                    val pageH = if (options.orientation == "Landscape") minOf(base.first, base.second) else maxOf(base.first, base.second)
+                    val margin = when (options.margins) { "Narrow" -> 18f; "Wide" -> 54f; else -> 30f }
+                    val contentW = pageW - margin * 2f
+                    val contentH = pageH - margin * 2f
+                    var pageNumber = 0
+                    cellSnapshot.forEach { (name, cells) ->
+                        val stMap = styleSnapshot[name].orEmpty()
+                        fun colNumber(label: String): Int {
+                            var n = 0
+                            label.forEach { ch -> if (ch in 'A'..'Z') n = n * 26 + (ch - 'A' + 1) }
+                            return n
+                        }
+                        var maxRow = 1
+                        var maxCol = 1
+                        var hasPrintableContent = false
+                        // Determine the printable area from actual cell contents, not
+                        // style-only cells. Imported workbooks often carry formatting across
+                        // hundreds of otherwise empty cells; counting those styles creates
+                        // several blank PDF pages after the real data.
+                        cells.forEach cellLoop@ { (address, rawValue) ->
+                            if (rawValue.isBlank()) return@cellLoop
+                            val normalizedAddress = address.uppercase(Locale.US)
+                            val match = Regex("^([A-Z]+)([0-9]+)$").matchEntire(normalizedAddress) ?: return@cellLoop
+                            // A formula whose last calculated display value is empty is
+                            // visually blank; it must not extend the PDF print area to the
+                            // right or create extra trailing pages.
+                            if (rawValue.trimStart().startsWith("=")) {
+                                val cellStyle = stMap[address]
+                                val cacheKey = "$name|$address|$rawValue|${cellStyle?.numberFormat ?: "General"}"
+                                val calculated = formulaSnapshot[cacheKey]
+                                if (calculated != null && calculated.isBlank()) return@cellLoop
+                            }
+                            hasPrintableContent = true
+                            maxCol = maxOf(maxCol, colNumber(match.groupValues[1]))
+                            maxRow = maxOf(maxRow, match.groupValues[2].toIntOrNull() ?: 1)
+                        }
+                        // Do not create a blank PDF page for an empty worksheet. This also
+                        // prevents empty trailing tabs from adding pages after the real data.
+                        if (!hasPrintableContent) return@forEach
+                        maxRow = maxRow.coerceAtMost(10000)
+                        maxCol = maxCol.coerceIn(1, colLimit)
+                        val widths = (1..maxCol).map { c ->
+                            (widthSnapshot[name]?.getOrNull(c - 1)?.toFloat() ?: 82f).coerceIn(42f, 180f)
+                        }
+                        val totalW = widths.sum()
+                        val rowH = 22f
+                        val titleH = if (options.showSheetName) 22f else 0f
+                        // Fit-all-columns must use the full printable page width.
+                        // Do not cap this scale at 1x: narrower worksheets should expand
+                        // to the right edge instead of leaving a large empty strip.
+                        val widthScale = (contentW / totalW).coerceAtLeast(0.01f)
+                        val sheetScale = minOf(widthScale, contentH / (titleH + maxRow * rowH))
+                        val fitSinglePage = options.scaling == "Fit entire sheet on one page" && maxRow <= 120
+                        val scale = when {
+                            options.scaling == "Actual size (multiple pages)" -> 1f
+                            fitSinglePage -> sheetScale.coerceAtLeast(0.01f)
+                            else -> widthScale
+                        }
+                        val colChunks: List<IntRange> = if (options.scaling == "Actual size (multiple pages)") {
+                            val chunks = mutableListOf<IntRange>()
+                            var start = 1
+                            while (start <= maxCol) {
+                                var end = start
+                                var used = 0f
+                                while (end <= maxCol && (used + widths[end - 1]) <= contentW) {
+                                    used += widths[end - 1]; end++
+                                }
+                                if (end == start) end++
+                                chunks.add(start until end)
+                                start = end
+                            }
+                            chunks
+                        } else listOf(1..maxCol)
+                        // Reserve an extra line for the repeated worksheet heading row.
+                        val rowsPerPage = if (fitSinglePage) maxRow
+                            else (((contentH - titleH) / (rowH * scale)).toInt() - if (options.repeatHeadings) 1 else 0).coerceAtLeast(1)
+                        for (cols in colChunks) {
+                            var firstRow = 1
+                            while (firstRow <= maxRow) {
+                                val lastRow = minOf(maxRow, firstRow + rowsPerPage - 1)
+                                pageNumber++
+                                val page = document!!.startPage(PdfDocument.PageInfo.Builder(pageW, pageH, pageNumber).create())
+                                val canvas = page.canvas
+                                // Give the entire PDF page a solid white background so
+                                // unused space never appears black in PDF viewers.
+                                canvas.drawColor(Color.WHITE)
+                                val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+                                paint.color = Color.BLACK
+                                paint.textSize = 10f
+                                paint.typeface = android.graphics.Typeface.create("sans-serif", android.graphics.Typeface.BOLD)
+                                val xStart = margin
+                                if (options.showSheetName) canvas.drawText(name, margin, margin + 10f, paint)
+                                var y = margin + titleH
+                                // Repeat the actual worksheet heading row (usually row 1)
+                                // on every continuation page, not just the A/B/C column labels.
+                                if (firstRow > 1 && options.repeatHeadings) {
+                                    var hx = xStart
+                                    cols.forEach { c ->
+                                        val address = colName(c - 1) + 1
+                                        val raw = cells[address].orEmpty()
+                                        val style = stMap[address]
+                                        val key = name + "|" + address + "|" + raw + "|" + (style?.numberFormat ?: "General")
+                                        val value = if (raw.trimStart().startsWith("=")) formulaSnapshot[key] ?: raw else {
+                                            val number = raw.toDoubleOrNull()
+                                            if (number != null && style != null) formatNumber(number, style.numberFormat, raw) else raw
+                                        }
+                                        val w = widths[c - 1] * scale
+                                        paint.color = style?.fillColor ?: Color.rgb(232, 238, 245)
+                                        canvas.drawRect(hx, y, hx + w, y + rowH * scale, paint)
+                                        canvas.save()
+                                        canvas.clipRect(hx + 2f, y + 1f, hx + w - 2f, y + rowH * scale - 1f)
+                                        paint.color = style?.textColor ?: Color.DKGRAY
+                                        val typefaceStyle = (if (style?.bold == true) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL) or
+                                            (if (style?.italic == true) android.graphics.Typeface.ITALIC else 0)
+                                        paint.typeface = android.graphics.Typeface.create("sans-serif", typefaceStyle)
+                                        paint.textSize = ((style?.fontSize ?: 9f) * scale).coerceIn(1.5f, 12f)
+                                        canvas.drawText(value.replace("\n", " "), hx + 4f * scale, y + rowH * scale * 0.68f, paint)
+                                        canvas.restore()
+                                        if (options.gridlines || style?.border == true || style?.thickBorder == true) {
+                                            paint.color = if (style?.thickBorder == true) Color.DKGRAY else Color.LTGRAY
+                                            paint.style = Paint.Style.STROKE
+                                            paint.strokeWidth = if (style?.thickBorder == true) 1.5f else 0.45f
+                                            canvas.drawRect(hx, y, hx + w, y + rowH * scale, paint)
+                                            paint.style = Paint.Style.FILL
+                                        }
+                                        hx += w
+                                    }
+                                    y += rowH * scale
+                                }
+                                for (r in firstRow..lastRow) {
+                                    var x = xStart
+                                    cols.forEach { c ->
+                                        val address = colName(c - 1) + r
+                                        val raw = cells[address].orEmpty()
+                                        val style = stMap[address]
+                                        val formulaKey = "$name|$address|$raw|${style?.numberFormat ?: "General"}"
+                                        val value = if (raw.trimStart().startsWith("=")) formulaSnapshot[formulaKey] ?: raw else {
+                                            val number = raw.toDoubleOrNull()
+                                            if (number != null && style != null) formatNumber(number, style.numberFormat, raw) else raw
+                                        }
+                                        val w = widths[c - 1] * scale
+                                        paint.color = style?.fillColor ?: Color.WHITE
+                                        canvas.drawRect(x, y, x + w, y + rowH * scale, paint)
+                                        canvas.save()
+                                        canvas.clipRect(x + 2f, y + 1f, x + w - 2f, y + rowH * scale - 1f)
+                                        paint.color = style?.textColor ?: Color.BLACK
+                                        val typefaceStyle = (if (style?.bold == true) android.graphics.Typeface.BOLD else 0) or
+                                            (if (style?.italic == true) android.graphics.Typeface.ITALIC else 0)
+                                        paint.typeface = android.graphics.Typeface.create("sans-serif", typefaceStyle)
+                                        paint.textSize = ((style?.fontSize ?: 9f) * scale).coerceIn(1.5f, 12f)
+                                        val text = value.replace("\n", " ")
+                                        val textWidth = paint.measureText(text)
+                                        val align = style?.alignment ?: Gravity.START
+                                        val tx = when {
+                                            (align and Gravity.CENTER_HORIZONTAL) == Gravity.CENTER_HORIZONTAL -> x + (w - textWidth) / 2f
+                                            (align and Gravity.RIGHT) == Gravity.RIGHT -> x + w - textWidth - 4f
+                                            else -> x + 4f * scale
+                                        }
+                                        canvas.drawText(text, tx, y + rowH * scale * 0.68f, paint)
+                                        canvas.restore()
+                                        if (options.gridlines || style?.border == true || style?.thickBorder == true) {
+                                            paint.color = if (style?.thickBorder == true) Color.DKGRAY else Color.LTGRAY
+                                            paint.style = Paint.Style.STROKE
+                                            paint.strokeWidth = if (style?.thickBorder == true) 1.5f else 0.45f
+                                            canvas.drawRect(x, y, x + w, y + rowH * scale, paint)
+                                            paint.style = Paint.Style.FILL
+                                        }
+                                        x += w
+                                    }
+                                    y += rowH * scale
+                                }
+                                document!!.finishPage(page)
+                                if (fitSinglePage) break
+                                firstRow = lastRow + 1
+                            }
+                        }
+                    }
+                    val output = contentResolver.openOutputStream(uri) ?: error("Could not open PDF destination")
+                    output.use { document!!.writeTo(it) }
+                    mainHandler.post { if (!isFinishing && !isDestroyed) status.text = "PDF exported successfully • $pageNumber page(s)" }
+                } catch (error: Exception) {
+                    mainHandler.post { if (!isFinishing && !isDestroyed) status.text = "PDF export failed: ${error.message ?: "unknown error"}" }
+                } finally {
+                    document?.close()
+                }
+            }
+        } catch (error: RejectedExecutionException) {
+            status.text = "PDF export unavailable: background worker is closing"
+        }
+    }
+
     private fun buildCsvContent(): String {
         // Snapshot the active worksheet before the Android save picker opens.
         return (1..rowCount).joinToString("\r\n") { r ->
@@ -4016,6 +4493,8 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                 status.text = "CSV saved • $sheetName.csv"
             } else if(requestCode==13) {
                 saveXlsxWithCalc(intent.data!!)
+            } else if(requestCode==15) {
+                saveWorkbookPdf(intent.data!!, pendingPdfOptions)
             } else if(requestCode==12) {
                 val csvText = contentResolver.openInputStream(intent.data!!)?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
                     ?: error("Could not read the selected CSV file")

@@ -160,15 +160,24 @@ internal object XlsxCodec {
                 "<border><left style=\"$weight\"><color rgb=\"FF465058\"/></left><right style=\"$weight\"><color rgb=\"FF465058\"/></right><top style=\"$weight\"><color rgb=\"FF465058\"/></top><bottom style=\"$weight\"><color rgb=\"FF465058\"/></bottom><diagonal/></border>"
             } else "<border><left/><right/><top/><bottom/><diagonal/></border>"
         }
-        val numFormats = styles.map { it.numberFormat }.distinct().filter { it !in listOf("General", "Number (2 decimals)", "Percentage", "Date (text display)") }
+        val numFormats = styles.map { it.numberFormat }.distinct().filter {
+            it !in listOf("General", "Number (2 decimals)", "Percentage", "Date (text display)", "Time", "Date & Time", "Text", "Scientific", "Date")
+        }
         val fmtId = numFormats.withIndex().associate { it.value to (164 + it.index) }
-        val fmtXml = numFormats.map { fmt -> "<numFmt numFmtId=\"${fmtId[fmt]}\" formatCode=\"${esc(when(fmt){"Currency" -> "\$#,##0.00"; else -> "General"})}\"/>" }.joinToString("")
+        val fmtXml = numFormats.map { fmt ->
+            val code = when (fmt) { "Currency" -> "\$#,##0.00"; else -> fmt }
+            "<numFmt numFmtId=\"${fmtId[fmt]}\" formatCode=\"${esc(code)}\"/>"
+        }.joinToString("")
         val xfs = buildList {
             add("<xf numFmtId=\"0\" fontId=\"0\" fillId=\"0\" borderId=\"0\" xfId=\"0\"/>")
             styles.forEachIndexed { i, st ->
-                val fmt = when(st.numberFormat) { "Number (2 decimals)" -> 2; "Percentage" -> 10; "Date (text display)" -> 14; "Currency" -> fmtId[st.numberFormat] ?: 164; else -> 0 }
+                val fmt = when(st.numberFormat) {
+                    "Number (2 decimals)" -> 2; "Percentage" -> 10; "Date (text display)", "Date" -> 14
+                    "Time" -> 21; "Date & Time" -> 22; "Currency" -> fmtId[st.numberFormat] ?: 164
+                    "Scientific" -> 11; "Text" -> 49; else -> fmtId[st.numberFormat] ?: 0
+                }
                 val align = if (st.alignment == Gravity.CENTER) "center" else if (st.alignment == (Gravity.CENTER_VERTICAL or Gravity.END)) "right" else "left"
-                add("<xf numFmtId=\"$fmt\" fontId=\"${i+1}\" fillId=\"${i+1}\" borderId=\"${i+1}\" xfId=\"0\" applyFont=\"1\" applyFill=\"1\" applyBorder=\"1\" applyAlignment=\"1\"><alignment horizontal=\"$align\" vertical=\"center\"/></xf>")
+                add("<xf numFmtId=\"$fmt\" fontId=\"${i+1}\" fillId=\"${i+2}\" borderId=\"${i+1}\" xfId=\"0\" applyFont=\"1\" applyFill=\"1\" applyBorder=\"1\" applyAlignment=\"1\"><alignment horizontal=\"$align\" vertical=\"center\"/></xf>")
             }
         }.joinToString("")
         return """<?xml version="1.0" encoding="UTF-8"?><styleSheet xmlns="$MAIN">${if(fmtXml.isNotEmpty()) "<numFmts count=\"${numFormats.size}\">$fmtXml</numFmts>" else ""}<fonts count="${fonts.size+1}"><font><sz val="11"/><color theme="1"/><name val="Calibri"/></font>${fonts.joinToString("")}</fonts><fills count="${fills.size+2}"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>${fills.joinToString("")}</fills><borders count="${borders.size+1}"><border><left/><right/><top/><bottom/><diagonal/></border>${borders.joinToString("")}</borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="${styles.size+1}">$xfs</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>"""
@@ -185,9 +194,9 @@ internal object XlsxCodec {
                 "font" -> if(section=="fonts") { bold=false; italic=false; underline=false; size=11f; fontColor=Color.BLACK }
                 "b" -> if(section=="fonts") bold=true; "i" -> if(section=="fonts") italic=true; "u" -> if(section=="fonts") underline=true
                 "sz" -> if(section=="fonts") size=p.getAttributeValue(null,"val")?.toFloatOrNull()?:11f
-                "color" -> if(section=="fonts") fontColor=parseColor(p.getAttributeValue(null,"rgb"))?:Color.BLACK
+                "color" -> if(section=="fonts") fontColor=parseXlsxColor(p)?:Color.BLACK
                 "patternFill" -> if(section=="fills") fillColor=Color.WHITE
-                "fgColor" -> if(section=="fills") fillColor=parseColor(p.getAttributeValue(null,"rgb"))?:Color.WHITE
+                "fgColor" -> if(section=="fills") fillColor=parseXlsxColor(p)?:Color.WHITE
                 "border" -> if(section=="borders") { border=false; thickBorder=false }
                 "left","right","top","bottom" -> if(section=="borders") {
                     val weight = p.getAttributeValue(null,"style")
@@ -237,8 +246,38 @@ internal object XlsxCodec {
     private fun parseSharedStrings(xml:ByteArray):List<String>{val p=parser(xml);val out=mutableListOf<String>();var inside=false;var b=StringBuilder();while(p.eventType!=XmlPullParser.END_DOCUMENT){if(p.eventType==XmlPullParser.START_TAG&&p.name=="si"){inside=true;b=StringBuilder()}else if(inside&&p.eventType==XmlPullParser.START_TAG&&p.name=="t")b.append(readText(p))else if(p.eventType==XmlPullParser.END_TAG&&p.name=="si"){out.add(b.toString());inside=false};p.next()};return out}
     private fun styleKey(s:CellStyle)="${s.bold}|${s.italic}|${s.underline}|${s.textColor}|${s.fillColor}|${s.fontSize}|${s.alignment}|${s.numberFormat}|${s.border}|${s.thickBorder}"
     private fun parseColor(s:String?):Int? { if(s==null)return null; val h=s.removePrefix("#").uppercase(); return try { when(h.length){6->Color.parseColor("#$h");8->Color.parseColor("#${h.substring(2)}");else->null} }catch(_:Exception){null} }
+    // Excel stores many font/fill colors as theme or indexed references rather than RGB.
+    // Treating those as null silently turns colored cells into black text / white fill on reopen.
+    private fun parseXlsxColor(p: XmlPullParser): Int? {
+        p.getAttributeValue(null, "rgb")?.let { parseColor(it)?.let { color -> return color } }
+        p.getAttributeValue(null, "theme")?.toIntOrNull()?.let { theme ->
+            val palette = intArrayOf(
+                Color.WHITE, Color.BLACK, Color.rgb(231,230,230), Color.rgb(68,84,106),
+                Color.rgb(68,114,196), Color.rgb(237,125,49), Color.rgb(165,165,165),
+                Color.rgb(255,192,0), Color.rgb(91,155,213), Color.rgb(112,173,71),
+                Color.rgb(5,99,193), Color.rgb(149,79,114)
+            )
+            palette.getOrNull(theme)?.let { return it }
+        }
+        p.getAttributeValue(null, "indexed")?.toIntOrNull()?.let { indexed ->
+            val palette = intArrayOf(
+                Color.BLACK, Color.WHITE, Color.rgb(255,0,0), Color.rgb(0,255,0),
+                Color.rgb(0,0,255), Color.rgb(255,255,0), Color.rgb(255,0,255), Color.rgb(0,255,255),
+                Color.BLACK, Color.WHITE, Color.rgb(255,0,0), Color.rgb(0,255,0),
+                Color.rgb(0,0,255), Color.rgb(255,255,0), Color.rgb(255,0,255), Color.rgb(0,255,255),
+                Color.rgb(128,0,0), Color.rgb(0,128,0), Color.rgb(0,0,128), Color.rgb(128,128,0),
+                Color.rgb(128,0,128), Color.rgb(0,128,128), Color.rgb(192,192,192), Color.rgb(128,128,128)
+            )
+            palette.getOrNull(indexed)?.let { return it }
+        }
+        return null
+    }
     private fun argb(c:Int)="FF"+String.format("%06X", c and 0xFFFFFF)
-    private fun decodeFmt(s:String)=when { s.contains('%')->"Percentage"; s.contains("yy",true)||s.contains("dd",true)->"Date (text display)"; s.contains("$",true)||s.contains("€")||s.contains("£")->"Currency"; s.contains("0.00")->"Number (2 decimals)"; else->"General" }
+    private fun decodeFmt(s:String)=when (s) {
+        "0.00" -> "Number (2 decimals)"; "0.00%" , "0%" -> "Percentage"; "$#,##0.00" -> "Currency"
+        "yyyy-mm-dd" -> "Date (text display)"; "hh:mm:ss" -> "Time"; "yyyy-mm-dd hh:mm" -> "Date & Time"
+        "0.00E+00" -> "Scientific"; else -> s
+    }
     private fun readText(p:XmlPullParser)=try{p.nextText()}catch(_:Exception){""}
     private fun parser(bytes:ByteArray)=Xml.newPullParser().apply{setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES,false);setInput(bytes.inputStream(),"UTF-8")}
     private fun entry(zip:ZipOutputStream,name:String,text:String){zip.putNextEntry(ZipEntry(name));zip.write(text.toByteArray(Charsets.UTF_8));zip.closeEntry()}

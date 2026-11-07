@@ -33,7 +33,8 @@ internal object HyperFormulaServiceClient {
     fun recalculateSnapshot(
         context: Context,
         allSheets: Map<String, Map<String, String>>,
-        formulas: List<Triple<String, String, String>>
+        formulas: List<Triple<String, String, String>>,
+        visibleRowsBySheet: Map<String, Set<Int>> = emptyMap()
     ): HyperFormulaCalculationResult {
         check(Looper.myLooper() != Looper.getMainLooper()) {
             "HyperFormula service calls must run off the Android UI thread"
@@ -48,11 +49,16 @@ internal object HyperFormulaServiceClient {
             sheetsJson.put(sheetName, cellsJson)
         }
         val formulasJson = JSONArray()
-        formulas.forEach { (sheet, address, _) ->
-            formulasJson.put(JSONObject().put("sheet", sheet).put("address", address))
+        formulas.forEach { (sheet, address, formula) ->
+            formulasJson.put(JSONObject().put("sheet", sheet).put("address", address).put("formula", formula))
         }
         payload.put("sheets", sheetsJson)
         payload.put("formulas", formulasJson)
+        val visibleRowsJson = JSONObject()
+        visibleRowsBySheet.forEach { (name, rows) ->
+            visibleRowsJson.put(name, JSONArray(rows.sorted()))
+        }
+        payload.put("visibleRowsBySheet", visibleRowsJson)
 
         val appContext = context.applicationContext
         val payloadFile = File.createTempFile("niceexcel-hf-", ".json", appContext.cacheDir)
