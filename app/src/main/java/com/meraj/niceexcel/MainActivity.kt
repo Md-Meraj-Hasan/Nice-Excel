@@ -904,7 +904,7 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
                 "Clear formatting" to { clearFormattingSelection() }
             )
             "Data" -> listOf(
-                "Sort column A → Z" to { sortColumn() },
+                "Sort View…" to { sortColumn() },
                 "Clear Sort View" to { clearSortView() },
                 "Filter column…" to { filterMenu() },
                 "Clear filter" to { filterColumn = null; filterText = null; filterCriteria.clear(); filterAllColumns = false; refreshFilterVisibility() },
