@@ -224,3 +224,10 @@ def test_web_grid_expands_rows_and_columns_on_scroll():
     assert "COLS=Math.min(52,COLS+26)" in web
     assert "Unable to extend worksheet grid:" in web
     assert "&range=A1:Z40" not in web
+
+def test_web_add_rows_uses_single_bulk_api_request():
+    web = (ROOT / "backend" / "niceexcel_api" / "static" / "index.html").read_text(encoding="utf-8")
+    native_asset = (ROOT / "app" / "src" / "main" / "assets" / "niceexcel_index.html").read_text(encoding="utf-8")
+    assert web == native_asset
+    assert "json('POST',{sheet:activeSheet,row:p?.r||1,count})" in web
+    assert "for(let n=0;n<count;n++)await api('/workbooks/'+bookId+'/rows'" not in web
