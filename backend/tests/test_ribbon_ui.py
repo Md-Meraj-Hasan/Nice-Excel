@@ -333,3 +333,20 @@ def test_web_pdf_export_uses_same_page_print_frame_for_android_webview():
         assert "printWin.addEventListener('afterprint'" in source
         assert "setTimeout(()=>window.print(),250)" in source
     assert web == native_asset
+
+def test_web_pdf_export_chunks_ranges_below_api_limit_and_hides_legacy_status_lines():
+    files = [
+        ROOT / "backend" / "niceexcel_api" / "static" / "index.html",
+        ROOT / "app" / "src" / "main" / "assets" / "niceexcel_index.html",
+    ]
+    for path in files:
+        html = path.read_text(encoding="utf-8")
+        assert "const maxPdfRow=Math.max(1,Number(sheetInfo.max_row)||1)" in html
+        assert "const maxPdfCol=Math.max(1,Math.min(26,Number(sheetInfo.max_column)||26))" in html
+        assert "const rowsPerRequest=Math.max(1,Math.floor(10000/maxPdfCol))" in html
+        assert "rows.push(...(response.rows||[]))" in html
+        assert "&range=A1:Z1000" not in html
+        assert "#formulaPreview,.foot{display:none!important}" in html
+        assert "const pdfOrder=pdfSort?getViewRowOrder(lastRow,name)" in html
+    assert files[0].read_text(encoding="utf-8") == files[1].read_text(encoding="utf-8")
+
