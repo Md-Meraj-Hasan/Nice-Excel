@@ -212,3 +212,15 @@ def test_web_html_has_no_missing_dom_bindings_and_android_asset_matches():
     assert "savedBookId=localStorage.getItem('niceexcel.lastWorkbookId')" in web
     assert "try{await create();}" in web
     assert web.count("initializeWorkbook();") == 1
+
+def test_web_grid_expands_rows_and_columns_on_scroll():
+    web = (ROOT / "backend" / "niceexcel_api" / "static" / "index.html").read_text(encoding="utf-8")
+    native_asset = (ROOT / "app" / "src" / "main" / "assets" / "niceexcel_index.html").read_text(encoding="utf-8")
+    assert web == native_asset
+    assert "let COLS=26, ROWS=40, gridExpansionBusy=false;" in web
+    assert "&range=A1:'+colName(COLS)+ROWS" in web
+    assert "gridwrap.addEventListener('scroll',async()=>{" in web
+    assert "ROWS=Math.min(500,ROWS+40)" in web
+    assert "COLS=Math.min(52,COLS+26)" in web
+    assert "Unable to extend worksheet grid:" in web
+    assert "&range=A1:Z40" not in web
