@@ -1,0 +1,229 @@
+(function () {
+  'use strict';
+  let engine = null;
+  let previous = null;
+  let sheetNames = [];
+  const parseAddress = (address) => {
+    const match = /^([A-Z]+)([1-9][0-9]*)$/i.exec(String(address));
+    if (!match) return null;
+    let col = 0;
+    for (const ch of match[1].toUpperCase()) col = col * 26 + ch.charCodeAt(0) - 64;
+    return { row: Number(match[2]) - 1, col: col - 1 };
+  };
+  // HyperFormula 3.x treats bare TRUE/FALSE as unknown named expressions.
+  // Convert only standalone formula tokens; never alter quoted text or longer names.
+  function normalizeFormulaBooleans(value) {
+    if (typeof value !== 'string' || value.charAt(0) !== '=') return value;
+    let output = '', token = '', inString = false;
+    const flush = (nextChar = '') => {
+      if (token) {
+        const upper = token.toUpperCase();
+        // Normalize Excel CONCAT alias only when it is a function call.
+        if (upper === 'CONCAT' && nextChar === '(') output += 'CONCATENATE';
+        else output += upper === 'TRUE' && nextChar !== '(' ? 'TRUE()' : upper === 'FALSE' && nextChar !== '(' ? 'FALSE()' : token;
+        token = '';
+      }
+    };
+    for (let i = 0; i < value.length; i++) {
+      const ch = value[i];
+      if (inString) {
+        output += ch;
+        if (ch === '"') {
+          if (value[i + 1] === '"') output += value[++i];
+          else inString = false;
+        }
+        continue;
+      }
+      if (ch === '"') { flush(ch); output += ch; inString = true; continue; }
+      if (/[A-Za-z0-9_.]/.test(ch)) { token += ch; continue; }
+      flush(ch); output += ch;
+    }
+    flush('');
+    return output;
+  }
+  const normalize = (value) => {
+    if (value === null || value === undefined) return '';
+    if (Array.isArray(value)) return value.map(normalize);
+    if (typeof value === 'boolean') return value ? 'TRUE' : 'FALSE';
+    if (typeof value === 'object') {
+      if (typeof value.value === 'string') return value.value;
+      return String(value);
+    }
+    return value;
+  };
+  function build(sheets) {
+    const started = performance.now();
+    const source = {};
+    let inputCells = 0, allocatedRowSlots = 0;
+    for (const [name, cells] of Object.entries(sheets)) {
+      let maxRow = 0, maxCol = 0;
+      const parsed = [];
+      for (const [address, raw] of Object.entries(cells || {})) {
+        const pos = parseAddress(address);
+        if (!pos || pos.row >= 10000 || pos.col >= 512) continue;
+        parsed.push([pos, raw]);
+        maxRow = Math.max(maxRow, pos.row + 1);
+        maxCol = Math.max(maxCol, pos.col + 1);
+      }
+      // Preserve absolute row/column coordinates but keep empty rows and trailing
+      // columns sparse. The previous rectangular allocation could create millions
+      // of null slots for workbooks with distant or sparse cells.
+      const matrix = new Array(maxRow);
+      for (const [pos, raw] of parsed) {
+        if (!matrix[pos.row]) matrix[pos.row] = [];
+        matrix[pos.row][pos.col] = raw === '' ? null : normalizeFormulaBooleans(raw);
+        inputCells++;
+      }
+      allocatedRowSlots += matrix.reduce((total, row) => total + (row ? row.length : 0), 0);
+      source[name] = matrix;
+      console.info('HF_SHEET_INPUT name=' + name + ' cells=' + parsed.length
+        + ' rows=' + maxRow + ' columns=' + maxCol);
+    }
+    console.info('HF_BUILD_BEGIN sheets=' + Object.keys(sheets).length
+      + ' cells=' + inputCells + ' allocatedSlots=' + allocatedRowSlots);
+    engine = window.HyperFormula.buildFromSheets(source, {
+      licenseKey: 'gpl-v3', maxRows: 10000, maxColumns: 512,
+      useArrayArithmetic: true,
+    });
+    previous = JSON.parse(JSON.stringify(sheets));
+    sheetNames = Object.keys(sheets);
+    console.info('HF_BUILD_DONE ms=' + Math.round(performance.now() - started)
+      + ' sheets=' + sheetNames.length);
+  }
+  function synchronize(sheets) {
+    const names = Object.keys(sheets);
+    if (!engine || names.length !== sheetNames.length || names.some((name, i) => name !== sheetNames[i])) {
+      build(sheets);
+      return;
+    }
+    const allNames = new Set([...Object.keys(previous || {}), ...names]);
+    for (const name of allNames) {
+      const before = previous[name] || {};
+      const after = sheets[name] || {};
+      const addresses = new Set([...Object.keys(before), ...Object.keys(after)]);
+      const sheetId = engine.getSheetId(name);
+      if (sheetId === undefined) { build(sheets); return; }
+      for (const address of addresses) {
+        if (before[address] === after[address]) continue;
+        const pos = parseAddress(address);
+        if (!pos || pos.row >= 10000 || pos.col >= 512) continue;
+        engine.setCellContents({ sheet: sheetId, row: pos.row, col: pos.col }, [[after[address] === undefined || after[address] === '' ? null : normalizeFormulaBooleans(after[address])]]);
+      }
+    }
+    previous = JSON.parse(JSON.stringify(sheets));
+  }
+  function filteredSubtotalFormula(formula, formulaSheet, visibleRowsBySheet, formulaItems) {
+    if (typeof formula !== 'string') return null;
+    const match = /^=SUBTOTAL\(\s*(10[1-9]|11[01]|1[01]|[1-9])\s*,\s*(?:(?:'([^']+)'|([A-Za-z0-9_ ]+))!)?\$?([A-Z]+)\$?(\d+)\s*:\s*\$?([A-Z]+)\$?(\d+)\s*\)$/i.exec(formula.trim());
+    if (!match) return null;
+    const code = Number(match[1]);
+    const sourceSheet = (match[2] || match[3] || formulaSheet).trim();
+    const visible = visibleRowsBySheet[sourceSheet];
+    const sourceId = engine.getSheetId(sourceSheet);
+    if (!Array.isArray(visible) || sourceId === undefined) return null;
+    const visibleSet = new Set(visible.map(Number));
+    const first = parseAddress(match[4] + match[5]);
+    const last = parseAddress(match[6] + match[7]);
+    if (!first || !last) return null;
+    const minRow = Math.min(first.row, last.row), maxRow = Math.max(first.row, last.row);
+    const minCol = Math.min(first.col, last.col), maxCol = Math.max(first.col, last.col);
+    const quoteSheet = sourceSheet === formulaSheet ? '' : "'" + sourceSheet.replace(/'/g, "''") + "'!";
+    const subtotalCells = new Set((formulaItems || [])
+      .filter(item => item.sheet === sourceSheet && /^=SUBTOTAL\s*\(/i.test(String(item.formula || '').trim()))
+      .map(item => item.address.toUpperCase()));
+    const refs = [];
+    for (let row = minRow; row <= maxRow; row++) {
+      if (!visibleSet.has(row + 1)) continue;
+      for (let col = minCol; col <= maxCol; col++) {
+        let n = col + 1, letters = '';
+        while (n > 0) { const rem = (n - 1) % 26; letters = String.fromCharCode(65 + rem) + letters; n = Math.floor((n - 1) / 26); }
+        const address = letters + (row + 1);
+        if (subtotalCells.has(address)) continue;
+        refs.push(quoteSheet + address);
+      }
+    }
+    const args = refs.length ? refs.join(',') : '0';
+    const baseCode = code >= 100 ? code - 100 : code;
+    const functions = { 1: 'AVERAGE', 2: 'COUNT', 3: 'COUNTA', 4: 'MAX', 5: 'MIN', 6: 'PRODUCT', 7: 'STDEV.S', 8: 'STDEV.P', 9: 'SUM', 10: 'VAR.S', 11: 'VAR.P' };
+    const fn = functions[baseCode];
+    return fn ? '=' + fn + '(' + args + ')' : null;
+  }
+  window.NiceExcelHF = {
+    ready: true,
+    calculate(payloadText) {
+      try {
+        const started = performance.now();
+        const payload = JSON.parse(payloadText);
+        console.info('HF_CALCULATE_BEGIN sheets=' + Object.keys(payload.sheets || {}).length
+          + ' formulas=' + (payload.formulas || []).length);
+        const syncStarted = performance.now();
+        synchronize(payload.sheets || {});
+        console.info('HF_SYNCHRONIZE_DONE ms=' + Math.round(performance.now() - syncStarted));
+        const results = {};
+        const visibleRowsBySheet = payload.visibleRowsBySheet || {};
+        // Temporarily translate filtered SUBTOTAL(1-11/101-111, range) formulas into
+        // SUM over visible cell references inside HyperFormula itself. This keeps
+        // dependent formulas correct too; the workbook's original formula text is
+        // never changed and is restored in the engine whenever the filter is cleared.
+        for (const item of payload.formulas || []) {
+          const sheetId = engine.getSheetId(item.sheet);
+          const pos = parseAddress(item.address);
+          if (sheetId === undefined || !pos || pos.row >= 10000 || pos.col >= 512) continue;
+          if (!/^=SUBTOTAL\s*\(/i.test(String(item.formula || '').trim())) continue;
+          const filteredFormula = filteredSubtotalFormula(item.formula, item.sheet, visibleRowsBySheet, payload.formulas);
+          const engineFormula = filteredFormula || normalizeFormulaBooleans(item.formula);
+          engine.setCellContents({ sheet: sheetId, row: pos.row, col: pos.col }, [[engineFormula]]);
+        }
+        for (const item of payload.formulas || []) {
+          const sheetId = engine.getSheetId(item.sheet);
+          const pos = parseAddress(item.address);
+          if (sheetId === undefined || !pos || pos.row >= 10000 || pos.col >= 512) continue;
+          results[item.sheet + '!' + item.address] = normalize(engine.getCellValue({ sheet: sheetId, row: pos.row, col: pos.col }));
+        }
+        // HyperFormula array formulas occupy fixed result ranges. Return non-anchor
+        // array cells separately so the native grid can render FILTER/array results
+        // without overwriting the workbook's original cell contents.
+        const spill = {};
+        const allValues = engine.getAllSheetsValues();
+        const allFormulas = engine.getAllSheetsFormulas();
+        for (const name of sheetNames) {
+          const sheetId = engine.getSheetId(name);
+          const dimensions = engine.getSheetDimensions(sheetId);
+          const values = allValues[name] || [];
+          const formulas = allFormulas[name] || [];
+          // Inspect only formula cells first. Sheets without array formulas avoid a
+          // full used-range scan, which keeps normal workbook recalculation fast.
+          for (let row = 0; row < formulas.length && row < 10000; row++) {
+            const formulaRow = formulas[row] || [];
+            for (let col = 0; col < formulaRow.length && col < 512; col++) {
+              if (!formulaRow[col]) continue;
+              const anchor = { sheet: sheetId, row, col };
+              if (!engine.isCellPartOfArray(anchor)) continue;
+              let height = 1, width = 1;
+              while (row + height < dimensions.height && row + height < 10000 &&
+                     engine.isCellPartOfArray({ sheet: sheetId, row: row + height, col })) height++;
+              while (col + width < dimensions.width && col + width < 512 &&
+                     engine.isCellPartOfArray({ sheet: sheetId, row, col: col + width })) width++;
+              for (let spillRow = row; spillRow < row + height; spillRow++) {
+                for (let spillCol = col; spillCol < col + width; spillCol++) {
+                  if (spillRow === row && spillCol === col) continue;
+                  const address = { sheet: sheetId, row: spillRow, col: spillCol };
+                  if (!engine.isCellPartOfArray(address)) continue;
+                  let n = spillCol + 1, letters = '';
+                  while (n > 0) { const rem = (n - 1) % 26; letters = String.fromCharCode(65 + rem) + letters; n = Math.floor(n / 26); }
+                  spill[name + '!' + letters + (spillRow + 1)] = normalize(values[spillRow]?.[spillCol]);
+                }
+              }
+            }
+          }
+        }
+        console.info('HF_CALCULATE_DONE ms=' + Math.round(performance.now() - started)
+          + ' results=' + Object.keys(results).length + ' spills=' + Object.keys(spill).length);
+        return JSON.stringify({ ok: true, results, spill });
+      } catch (error) {
+        return JSON.stringify({ ok: false, error: String(error && error.stack || error) });
+      }
+    }
+  };
+  if (window.NiceExcelHFReady) window.NiceExcelHFReady();
+})();
