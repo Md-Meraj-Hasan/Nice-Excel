@@ -24,6 +24,9 @@ import java.net.URL
 
 /** Optional Flask-powered web spreadsheet. Existing native workbook UI remains available. */
 class FlaskActivity : Activity() {
+    companion object {
+        const val EXTRA_OPEN_EXTERNAL_BROWSER = "com.meraj.niceexcel.OPEN_EXTERNAL_BROWSER"
+    }
     private lateinit var webView: WebView
     private lateinit var loadingText: TextView
     private val localUrl = "http://127.0.0.1:8765/"
@@ -199,7 +202,21 @@ class FlaskActivity : Activity() {
         if (isFinishing || !::webView.isInitialized) return
         mainFrameErrorShown = false
         if (::loadingText.isInitialized) loadingText.visibility = android.view.View.GONE
-        webView.loadUrl(localUrl)
+        if (intent.getBooleanExtra(EXTRA_OPEN_EXTERNAL_BROWSER, false)) {
+            try {
+                val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse(localUrl)).apply {
+                    addCategory(Intent.CATEGORY_BROWSABLE)
+                }
+                startActivity(browserIntent)
+                Toast.makeText(this, "Opening $localUrl in browser", Toast.LENGTH_LONG).show()
+                finish()
+            } catch (e: Exception) {
+                Toast.makeText(this, "No browser available: ${e.message}", Toast.LENGTH_LONG).show()
+                webView.loadUrl(localUrl)
+            }
+        } else {
+            webView.loadUrl(localUrl)
+        }
     }
 
     private fun copyUiAsset() {
