@@ -256,3 +256,15 @@ def test_web_workbook_startup_has_exactly_one_initializer():
     assert "startSession().catch(" not in web
     assert "await info();" in web
     assert "await create();" in web
+
+
+def test_advanced_web_page_offers_in_app_and_same_device_browser_options():
+    native = (ROOT / "app" / " " / "src").as_posix() if False else (ROOT / "app" / "src" / "main" / "java" / "com" / "meraj" / "niceexcel" / "MainActivity.kt").read_text(encoding="utf-8")
+    flask = (ROOT / "app" / "src" / "main" / "java" / "com" / "meraj" / "niceexcel" / "FlaskActivity.kt").read_text(encoding="utf-8")
+    assert '"Web Page" to { showWebPageOptions() }' in native
+    assert 'arrayOf("Open inside APK", "Open in Browser (localhost)")' in native
+    assert 'FlaskActivity.EXTRA_OPEN_EXTERNAL_BROWSER, true' in native
+    assert 'const val EXTRA_OPEN_EXTERNAL_BROWSER' in flask
+    assert 'private val localUrl = "http://127.0.0.1:8765/"' in flask
+    assert 'Intent(Intent.ACTION_VIEW, Uri.parse(localUrl))' in flask
+    assert 'waitForHealth(25000)' in flask
