@@ -356,7 +356,7 @@ def test_android_web_page_copies_and_serves_offline_pdf_bundle():
     build_script = (root / "scripts/build-hyperformula.mjs").read_text()
     assert '"niceexcel_pdf.bundle.js" to "niceexcel_pdf.bundle.js"' in activity
     assert '("niceexcel_pdf.bundle.js", "niceexcel_pdf.bundle.js")' in server
-    assert "@JavascriptInterface\\n            fun savePdf(base64Data: String, fileName: String)" in activity
+    assert "@JavascriptInterface\n            fun savePdf(base64Data: String, fileName: String)" in activity
     assert "Intent.ACTION_CREATE_DOCUMENT" in activity
     assert "contentResolver.openOutputStream(uri)" in activity
     assert "pdfSaveRequestCode" in activity
