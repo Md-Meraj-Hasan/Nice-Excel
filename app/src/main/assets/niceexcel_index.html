@@ -333,7 +333,10 @@
  const gridwrap=$('gridwrap');
  gridwrap.addEventListener('paste',async e=>{const text=e.clipboardData?.getData('text/plain');if(!text||(!text.includes('\t')&&!text.includes('\n')))return;e.preventDefault();await pasteTabularText(text);});
   gridwrap.addEventListener('scroll',async()=>{
-    if(gridExpansionBusy||!bookId)return;
+    // Do not rebuild the worksheet DOM while a cell editor is active. Mobile
+    // keyboard/viewport scrolling can otherwise trigger grid expansion, destroy
+    // the focused input, and leave the editor lock stuck in the editing state.
+    if(editing||gridExpansionBusy||!bookId)return;
     const nearBottom=gridwrap.scrollHeight-gridwrap.clientHeight-gridwrap.scrollTop<180;
     const nearRight=gridwrap.scrollWidth-gridwrap.clientWidth-gridwrap.scrollLeft<180;
     if(!nearBottom&&!nearRight)return;
