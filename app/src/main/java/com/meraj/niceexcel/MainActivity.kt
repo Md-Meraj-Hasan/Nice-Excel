@@ -269,6 +269,38 @@ DayPalette("Black", Color.rgb(24,28,36), Color.rgb(238,238,238), Color.rgb(20,20
             columnWidthsBySheet["Sheet3"] = defaultWidths
         }
         buildUi()
+        handleIncomingFileIntent(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleIncomingFileIntent(intent)
+    }
+
+    /** Open a document shared by Android's file manager without modifying its source. */
+    private fun handleIncomingFileIntent(incoming: Intent?) {
+        if (incoming == null || (incoming.action != Intent.ACTION_VIEW && incoming.action != Intent.ACTION_SEND)) return
+        val uri = incoming.data ?: (incoming.getParcelableExtra(Intent.EXTRA_STREAM) as? android.net.Uri) ?: return
+        try {
+            val displayName = contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                val index = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                if (index >= 0 && cursor.moveToFirst()) cursor.getString(index) else null
+            } ?: uri.lastPathSegment ?: "document"
+            val extension = displayName.substringAfterLast('.', "").lowercase(Locale.ROOT)
+            val requestCode = when (extension) {
+                "csv" -> 12
+                "xlsx" -> 14
+                else -> {
+                    Toast.makeText(this, "Nice Excel supports .xlsx and .csv files", Toast.LENGTH_LONG).show()
+                    return
+                }
+            }
+            onActivityResult(requestCode, RESULT_OK, Intent().setData(uri))
+        } catch (error: Exception) {
+            Log.e("NiceExcel", "Could not open incoming file", error)
+            Toast.makeText(this, "Could not open file: ${error.message ?: "unknown error"}", Toast.LENGTH_LONG).show()
+        }
     }
 
     private fun lastWorkbookFile() = java.io.File(filesDir, "niceexcel_last_session.xlsx")
